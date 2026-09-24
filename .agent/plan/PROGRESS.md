@@ -5,9 +5,45 @@
 
 ## 当前阶段
 
-**S1 核心循环进行中**。S0 已完成；S1.1 物理内核、S1.2 场景与相机、S1.3 轨迹均已交付并有证据。
+**S1 核心循环进行中**。S0 已完成；S1.1–S1.4 均已交付并有证据；仅剩 S1.5 状态机与主循环。
 
 ## 变更日志
+
+### 会话 9 · S1.4 拖拽矄准与发射
+
+**已实现（源码）**
+
+- `game/Hud.ts`（273 行）— 拖拽矄准：
+  - `computeAim(probeOffset, touchOffset, maxDragPx)` — 纯计算：方向 = 探测器→触摸点，
+    力度 = 拖动距离/满力距离（夹紧），速度线性映射 [AimMinSpeed, AimMaxSpeed]
+  - `localToOffset` / `offsetToLocal` — 全屏节点局部坐标 ↔ 投影偏移空间换算
+  - `createAimInput(parent, viewW, viewH)` — 全屏触摸层 + `onDrag`/`onRelease`/`setEnabled`
+  - `handleLocal` / `handleOffset` — 输入源可替换的缝隙（键盘降级/回放/无头测试）
+- `game/Config.ts` — 新增 `AimMinSpeed=2` / `AimMaxSpeed=22` / `AimMaxDragPx=380`
+- `game/Projection.ts` — 新增 `screenToPlaneY`（射线与 y=0 平面求交）
+- `Test/HudTest.ts`（17 断言）、`Test/HudProbe.ts`（运行时链路探针）
+
+**已验证的证据**
+
+- **编译**：全量 `build` 通过。
+- **单测**：`Test/HudTest.ts` → `passed checks=17 failures=0`
+  （无拖动默认值、四方向语义、力度线性/夹紧/单调、投影往返、坐标换算互逆）。
+- **运行时（`Test/HudProbe.ts`）**：
+  - 驱动一次拖拽：`power=0.692`、`unit=(0.152, -0.988)`、`velocity=(2.41, -15.66)`
+  - 该向量推演 → `outcome=crashed points=25`（直冲行星，物理正确）
+  - 预测线在画面中可见（6 个区域，从探测器延伸向行星）
+
+**关键设计修正（本次自查发现）**
+
+初版把“探测器屏幕位置”（`project()` 输出 = **相对屏幕中心的偏移**）
+与“触摸位置”（换算后 = **绝对像素**）直接相减 —— 两个空间不一致，方向会算错。
+已统一为**投影偏移空间**（中心原点、+Y 向下），换算集中在 `localToOffset()`。
+
+**局限（如实记录）**
+
+- `Touch` 是私有构造，**无法**程序化注入真触摸事件 → 真实触摸的坐标系
+  （`touch.location` 的原点/Y 方向）需一次人工校对；`localToOffset` 是唯一校准点。
+- `onRelease` 回调只能由真触摸结束触发，无头环境无法验证（代码路径已由单测覆盖计算部分）。
 
 ### 会话 8 · S1.3 轨迹渲染（预测线 + 真实尾迹）
 

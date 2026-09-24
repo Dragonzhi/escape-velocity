@@ -26,6 +26,46 @@
 export const HANDEDNESS: Handedness = 1;
 export const FLIP_Y = false;
 
+/** 用预计算的基把屏幕偏移量（与 project() 同空间）反投影成世界射线方向。 */
+export function unprojectDirectionPrepared(screen: { x: number; y: number }, b: CameraBasis): V3 {
+	const ndcX = (screen.x * 2) / b.viewW;
+	const ndcY = ((b.flipY ? -screen.y : screen.y) * 2) / b.viewH;
+
+	const vx = (ndcX * b.aspect) / b.focal;
+	const vy = ndcY / b.focal;
+
+	return normalize({
+		x: b.forward.x + vx * b.right.x + vy * b.up.x,
+		y: b.forward.y + vx * b.right.y + vy * b.up.y,
+		z: b.forward.z + vx * b.right.z + vy * b.up.z,
+	});
+}
+
+/**
+ * 把屏幕偏移量（与 project() 同空间）反投影到世界 y = planeY 平面上。
+ *
+ * 用于“玩家拖到哪里” → “平面上的哪个点”。
+ * 射线与平面平行、或交点在相机后方时返回 undefined。
+ */
+export function screenToPlaneY(
+	screen: { x: number; y: number },
+	b: CameraBasis,
+	planeY: number,
+): V3 | undefined {
+	const dir = unprojectDirectionPrepared(screen, b);
+	if (Math.abs(dir.y) < 1e-9) return undefined;
+
+	// eye.y + t * dir.y = planeY
+	const t = (planeY - b.eye.y) / dir.y;
+	if (t <= 1e-6) return undefined;
+
+	return {
+		x: b.eye.x + t * dir.x,
+		y: planeY,
+		z: b.eye.z + t * dir.z,
+	};
+}
+
 /**
  * 把 project() 的输出转成 Dora 2D 覆盖层坐标（中心原点、+Y 向上）。
  *

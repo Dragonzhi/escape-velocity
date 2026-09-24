@@ -28,4 +28,10 @@ ____exports.CameraMinDistance = 25 -- 57
 ____exports.CameraMaxDistance = 100 -- 58
 --- 相机跟随的平滑系数（0–1，每帧向目标插值的比例）。
 ____exports.CameraLerp = 0.1 -- 61
-return ____exports -- 61
+--- 发射速度下限（平面单位/秒）。极短拖动时的速度。
+____exports.AimMinSpeed = 2 -- 68
+--- 发射速度上限（平面单位/秒）。满力时的速度。
+____exports.AimMaxSpeed = 22 -- 71
+--- 拖动多远算“满力”（**视图像素**）。
+____exports.AimMaxDragPx = 380 -- 74
+return ____exports -- 74
