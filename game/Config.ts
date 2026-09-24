@@ -72,3 +72,6 @@ export const AimMaxSpeed = 22;
 
 /** 拖动多远算“满力”（**视图像素**）。 */
 export const AimMaxDragPx = 380;
+
+/** 飞行回放速度（模拟秒 / 真实秒）。1 = 实时；2 = 两倍速。 */
+export const FlightPlayback = 2;

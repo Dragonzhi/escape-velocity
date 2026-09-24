@@ -34,4 +34,6 @@ ____exports.AimMinSpeed = 2 -- 68
 ____exports.AimMaxSpeed = 22 -- 71
 --- 拖动多远算“满力”（**视图像素**）。
 ____exports.AimMaxDragPx = 380 -- 74
-return ____exports -- 74
+--- 飞行回放速度（模拟秒 / 真实秒）。1 = 实时；2 = 两倍速。
+____exports.FlightPlayback = 2 -- 77
+return ____exports -- 77

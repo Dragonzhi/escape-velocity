@@ -37,7 +37,7 @@
 - [x] S1.2 `game/Scene.ts` / `CameraRig.ts`：行星、探测器、跟随相机。已交付 `Test/SceneProbe.ts`（运行时：`draws=4 triangles=260`）与 `Test/CameraRigTest.ts`（11 断言）；跟随拉远实测 `min=53.95 max=82.55`。
 - [x] S1.3 `game/Trajectory.ts`：预测线（拖动实时重画）+ 真实尾迹。已交付 `Test/TrajectoryTest.ts`（10 断言）与 `Test/TrajectoryProbe.ts`（运行时 40+ 区域检出）；预测线与尾迹共用同一份 `simulate` 结果。
 - [x] S1.4 `game/Hud.ts`：单指拖拽瞄准、松手发射。已交付 `Test/HudTest.ts`（17 断言）与 `Test/HudProbe.ts`（运行时链路验证）；真触摸坐标系待人工校对。
-- [ ] S1.5 `game/Game.ts` + `init.ts`：`Aiming → Flying → Result` 状态机与单一主循环
+- [x] S1.5 `game/Game.ts` + `init.ts`：`Aiming → Flying → Result` 状态机与单一主循环。已交付 `Test/GameTest.ts`（22 断言）与 `Test/GameProbe.ts`（完整循环运行时验证 `RESULT=PASS`）。
 
 验收判据：一关可触屏完成"拖→松手→飞行→结算"；物理单测证明同一输入结果一致。
 

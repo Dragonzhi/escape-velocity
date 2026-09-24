@@ -5,9 +5,50 @@
 
 ## 当前阶段
 
-**S1 核心循环进行中**。S0 已完成；S1.1–S1.4 均已交付并有证据；仅剩 S1.5 状态机与主循环。
+**S1 核心循环已完成**。S0、S1.1–S1.5 全部交付并有证据；下一步 S2 关卡与结算。
 
 ## 变更日志
+
+### 会话 10 · S1.5 状态机与主循环（S1 完成）
+
+**已实现（源码）**
+
+- `game/Game.ts`（280 行）— 状态机 + 主循环逻辑：
+  - `GameCore`（纯逻辑可单测）：`coreLaunch`（发射时预推演整段飞行）/
+    `coreUpdate`（回放推进 + 结局判定）/ `coreRetry` / `coreProbeIndex`
+  - `resolveOutcome` — 物理结局 → 三态（§5.8 的 S1 简化版：escaped=success）
+  - `createGame(level, deps)` — 驱动场景/相机/轨迹/矄准，回调 `onPhase`/`onResult`
+  - **确定性设计**：发射瞬间用与预测线相同的 `simulate` 预推演，之后逐帧回放
+    → “预测线看见的就是飞出来的”
+- `init.ts` — 从 S0 静态场景改为**真实游戏入口**：组装全部模块 + 单一 `threadLoop`
+  + 结果 Label + 重试点按层（仅 Result 态启用）
+- `game/Config.ts` — 新增 `FlightPlayback=2`（回放速度）
+- `Test/GameTest.ts`（22 断言）、`Test/GameProbe.ts`（完整循环探针）
+
+**已验证的证据**
+
+- **编译**：全量 `build` 26/26 通过。
+- **单测**：`Test/GameTest.ts` → `passed checks=22 failures=0`
+  （结局映射、发射守卫、回放时长与 FlightPlayback 一致、重试守卫与重置、
+  索引夹紧、两次完整流程结局一致）。
+- **运行时（`Test/GameProbe.ts`）**：完整循环 `RESULT=PASS`：
+  - 拖拽 → `power=1.000`、`vel=(12.09,-18.38)` → 预测线可见（ASCII 图弯曲亮线）
+  - 发射 @f20 → Flying → 飞行 6.2s（1500 步回放）→ `Result(missed)` @f395
+  - 重试 @f406 → 回到 `Aiming` ✓
+- **真实入口**：`init.ts` 运行 3 秒 `running=true`，`stopEntry()` 后干净退出。
+
+**踩到的坑（本次新增）**
+
+- **`threadLoop` 回调没有参数**：帧间隔要用 `App.deltaTime`（签名是 `(this: void) => boolean`）。
+- **增量构建再次未转译 `Config.lua`**：新增 `FlightPlayback` 后运行时 nil → 全量重建解决。
+- 探针脚本自身两个 bug：分析块门条件用了未赋值的 `retryFrame`（导致重试前就终止）、
+  `App.elapsedTime` 在此环境恒为 0（改用帧号）。
+
+**局限（如实记录）**
+
+- 真实触摸的“松手发射”与“点按重试”无法无头验证（`Touch` 私有构造），
+  需人工校对（与 S1.4 同一校准点 `localToOffset`）。
+- 结算 UI 是最小版（一个 Label）；正式三态面板与“返回关卡选择”在 S2.2/S2.3。
 
 ### 会话 9 · S1.4 拖拽矄准与发射
 
