@@ -32,6 +32,11 @@ export interface PlanetVisualDef {
 	b: number;
 	displayRadius: number;
 	ring: boolean;
+	/**
+	 * 模型名（不含路径与扩展名，如 'Planet_Mars'），S3.1 已入库的 11 个 .glb 之一。
+	 * 留空表示回退到代码生成的 Sphere.gltf（单位球）。**只影响视觉，不参与物理**。
+	 */
+	model?: string;
 }
 
 /** 目标规格。 */
@@ -90,7 +95,7 @@ const LEVELS: LevelDef[] = [
 			{ gm: 0, radius: 1.2, orbitCenter: { x: 0, y: -30 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
 		],
 		visuals: [
-			{ r: 0.80, g: 0.45, b: 0.30, displayRadius: 1.2, ring: false },
+			{ r: 0.80, g: 0.45, b: 0.30, displayRadius: 1.2, ring: false, model: 'Planet_Mars' },
 		],
 		goal: { kind: 'planet', planetIndex: 0, tolerance: 3.0 },
 		escapeRadius: 400,
@@ -108,8 +113,8 @@ const LEVELS: LevelDef[] = [
 			{ gm: 0, radius: 1.2, orbitCenter: { x: -2, y: -32 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
 		],
 		visuals: [
-			{ r: 0.90, g: 0.78, b: 0.55, displayRadius: 1.8, ring: false },
-			{ r: 0.80, g: 0.45, b: 0.30, displayRadius: 1.2, ring: false },
+			{ r: 0.90, g: 0.78, b: 0.55, displayRadius: 1.8, ring: false, model: 'Planet_Venus' },
+			{ r: 0.80, g: 0.45, b: 0.30, displayRadius: 1.2, ring: false, model: 'Planet_Mars' },
 		],
 		goal: { kind: 'planet', planetIndex: 1, tolerance: 3.0 },
 		escapeRadius: 400,
@@ -127,8 +132,8 @@ const LEVELS: LevelDef[] = [
 			{ gm: 0, radius: 1.4, orbitCenter: { x: -26, y: -26 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
 		],
 		visuals: [
-			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 2.6, ring: false },
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 1.4, ring: true },
+			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 2.6, ring: false, model: 'Planet_Jupiter' },
+			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 1.4, ring: true, model: 'Planet_Saturn' },
 		],
 		goal: { kind: 'planet', planetIndex: 1, tolerance: 3.0 },
 		escapeRadius: 400,
@@ -144,7 +149,7 @@ const LEVELS: LevelDef[] = [
 			{ gm: 500, radius: 1.6, orbitCenter: { x: 0, y: -6 }, orbitRadius: 9, orbitPeriod: 9, phase0: 0, orbitDirection: 1 },
 		],
 		visuals: [
-			{ r: 0.80, g: 0.45, b: 0.30, displayRadius: 1.6, ring: false },
+			{ r: 0.80, g: 0.45, b: 0.30, displayRadius: 1.6, ring: false, model: 'Planet_Mars' },
 		],
 		goal: { kind: 'planet', planetIndex: 0, tolerance: 3.2 },
 		escapeRadius: 400,
@@ -164,9 +169,10 @@ const LEVELS: LevelDef[] = [
 			{ gm: 0, radius: 1.3, orbitCenter: { x: -20, y: -34 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
 		],
 		visuals: [
-			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 2.4, ring: false },
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 2.2, ring: true },
-			{ r: 0.55, g: 0.75, b: 0.80, displayRadius: 1.3, ring: false },
+			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 2.4, ring: false, model: 'Planet_Jupiter' },
+			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 2.2, ring: true, model: 'Planet_Saturn' },
+			// 天王星：库里没有 Uranus，用 Planet_Neptune 代用，靠青蓝色染色区分
+			{ r: 0.55, g: 0.75, b: 0.80, displayRadius: 1.3, ring: false, model: 'Planet_Neptune' },
 		],
 		goal: { kind: 'planet', planetIndex: 2, tolerance: 3.0 },
 		escapeRadius: 400,
@@ -182,7 +188,7 @@ const LEVELS: LevelDef[] = [
 			{ gm: 1100, radius: 1.6, orbitCenter: { x: 4, y: -6 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
 		],
 		visuals: [
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 1.6, ring: true },
+			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 1.6, ring: true, model: 'Planet_Saturn' },
 		],
 		goal: { kind: 'planet', planetIndex: 0, tolerance: 2.2 },
 		escapeRadius: 400,

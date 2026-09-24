@@ -8,9 +8,19 @@
  * - 距离与注视点都做**一阶平滑**，避免抖动。
  * - 俯视倾角固定在安全区间（20–60°，实测 >70° 会贴边）。
  *
+ * ===== 取景改为“按真实投影求解”（S3.1 修正，会话 23）=====
+ * 旧做法是 `距离 = minDistance + 包围盒半对角 × fitFactor` —— 一个**与相机无关的启发式**。
+ * 竖屏（aspect 0.56）下横向可用空间只有纵向的一半，而透视还会放大靠近相机的点，
+ * 于是位于包围盒角上的探测器**整个跑到画面外**：L3 真机/截图实测「进关看不到自己的飞行器，
+ * 预测线从画面外射进来」（子智能体只报了 stats，是截图看出来的）。
+ * 现在改为：在 [minDistance, maxDistance] 上二分求解「所有关键点投影都在画面内缩 margin 内」
+ * 的**最小**距离，投影复用 game/Projection.ts（与渲染/预测线同一套已标定公式）；
+ * 探测器的模型外接半径也计入（它是**有体积**的，只约束中心点会被画面边缘切掉天线）。
+ *
  * 纯逻辑可测：`computeFit` / `computeRigStep` 不碰引擎对象，只有 `apply` 才写回相机。
  */
 import { Camera3D, Vec3 } from 'Dora';
+import { CameraView, HANDEDNESS, FLIP_Y, prepareCamera, projectPrepared } from 'game/Projection';
 import { CameraLerp, CameraMaxDistance, CameraMinDistance, CameraTiltDefault } from 'game/Config';
 import { P2 } from 'game/Gravity';
 import { planeToWorld } from 'game/Scene';
@@ -24,17 +34,29 @@ export interface RigOptions {
 	maxDistance: number;
 	/** 平滑系数（0–1）；1 = 不平滑。 */
 	lerp: number;
-	/** 距离 = minDistance + 包围盒半对角 * fitFactor。 */
-	fitFactor: number;
+	/** 垂直视野角（度）；传 `View.fieldOfView`（本机实测 45）。 */
+	fovYDeg: number;
+	/** 视图宽高比（宽/高）；传 `View.aspectRatio`。竖屏 < 1 ⇒ 横向更挤。 */
+	aspect: number;
+	/** 关键点距画面边缘的最小留白（占半屏比例）。0.05 = 四边各留 5%。 */
+	margin: number;
 }
 
-export function defaultRigOptions(): RigOptions {
+/**
+ * 默认参数。
+ *
+ * @param fovYDeg 垂直视野角，来自 `View.fieldOfView`；省略按 45（引擎默认）算。
+ * @param aspect 宽高比，来自 `View.aspectRatio`；省略按 1（正方形）算。
+ */
+export function defaultRigOptions(fovYDeg?: number, aspect?: number): RigOptions {
 	return {
 		tiltDeg: CameraTiltDefault,
 		minDistance: CameraMinDistance,
 		maxDistance: CameraMaxDistance,
 		lerp: CameraLerp,
-		fitFactor: 1.6,
+		fovYDeg: fovYDeg !== undefined ? fovYDeg : 45,
+		aspect: aspect !== undefined && aspect > 0 ? aspect : 1,
+		margin: 0.05,
 	};
 }
 
@@ -61,9 +83,10 @@ export interface CameraRig {
 	/**
 	 * 推进一帧，返回新的相机参数（纯计算）。
 	 *
-	 * @param points 需要保持在画面内的关键点（探测器、行星、目标）。
+	 * @param points 需要保持在画面内的关键点（探测器、行星、目标）；**约定 points[0] = 探测器**。
+	 * @param probeRadius 探测器模型的外接半径（世界单位）；计入取景，免得天线被画面边缘切掉。
 	 */
-	step(points: P2[]): RigFrame;
+	step(points: P2[], probeRadius?: number): RigFrame;
 	/** 把机架参数写到真实相机。 */
 	apply(camera: Camera3D.Type, frame: RigFrame): void;
 }
@@ -115,21 +138,105 @@ export function computeFit(points: P2[]): Fit {
 	};
 }
 
+/** 由注视点（平面坐标）与距离构造一帧相机参数（纯计算，不碰引擎相机对象）。 */
+function frameAt(centerX: number, centerY: number, distance: number, opts: RigOptions): RigFrame {
+	const targetWorld = planeToWorld({ x: centerX, y: centerY }, 0);
+	const tilt = opts.tiltDeg * Math.PI / 180;
+	return {
+		target: targetWorld,
+		eye: Vec3(
+			targetWorld.x,
+			targetWorld.y + Math.sin(tilt) * distance,
+			targetWorld.z + Math.cos(tilt) * distance,
+		),
+	};
+}
+
+/**
+ * 这一组关键点在给定距离下，是否**全部**落在“画面内缩 margin”的安全区内。
+ *
+ * 投影走 game/Projection.ts（与渲染、预测线同一套已标定公式）。
+ * 把 viewW/viewH 取 2 ⇒ `projectPrepared` 的返回值就是 NDC（±1 = 画面边缘），
+ * 于是安全区就是 ±(1 - margin)。
+ *
+ * @param probeRadius points[0]（探测器）的模型外接半径（世界单位）；它是**有体积**的，
+ *        只约束中心点会让碟形天线被边缘切掉。屏幕上多占的 NDC ≈ (r / 深度) × focal。
+ */
+function frameFits(
+	points: P2[],
+	centerX: number,
+	centerY: number,
+	distance: number,
+	probeRadius: number,
+	opts: RigOptions,
+): boolean {
+	const frame = frameAt(centerX, centerY, distance, opts);
+	const view: CameraView = {
+		eye: frame.eye,
+		target: frame.target,
+		up: { x: 0, y: 1, z: 0 },
+		fovYDeg: opts.fovYDeg,
+		aspect: opts.aspect,
+		viewW: 2,
+		viewH: 2,
+	};
+	const basis = prepareCamera(view, HANDEDNESS, FLIP_Y);
+	const limit = 1 - opts.margin;
+
+	for (let i = 0; i < points.length; i++) {
+		const p = projectPrepared(planeToWorld(points[i], 0), basis);
+		if (p === undefined) return false; // 落在相机后方：这一帧装不下
+		const r = i === 0 ? probeRadius : 0;
+		const ry = r > 0 ? (r / p.vz) * basis.focal : 0;
+		const rx = ry / opts.aspect;
+		if (Math.abs(p.x) + rx > limit) return false;
+		if (Math.abs(p.y) + ry > limit) return false;
+	}
+	return true;
+}
+
+/**
+ * 把所有关键点塞进画面所需的最小相机距离。
+ *
+ * 距离越大画面越广 ⇒ 约束单调，可以二分；每一步只在“确实装得下”时收紧上界，
+ * 所以返回值**一定**满足约束（两个端点都装不下时退化为 maxDistance）。
+ */
+function fitDistance(
+	points: P2[],
+	centerX: number,
+	centerY: number,
+	probeRadius: number,
+	opts: RigOptions,
+): number {
+	const lo = opts.minDistance;
+	const hi = opts.maxDistance;
+	if (frameFits(points, centerX, centerY, lo, probeRadius, opts)) return lo;
+	if (!frameFits(points, centerX, centerY, hi, probeRadius, opts)) return hi;
+
+	let a = lo;
+	let b = hi;
+	for (let i = 0; i < 24; i++) {
+		const mid = (a + b) / 2;
+		if (frameFits(points, centerX, centerY, mid, probeRadius, opts)) b = mid; else a = mid;
+	}
+	return b;
+}
+
 /**
  * 纯计算：根据关键点集合，算出这一帧的相机参数。
  *
- * `points` 中应包含探测器、行星与目标；顺序无关。
+ * `points` 中应包含探测器、行星与目标；**约定 points[0] = 探测器**（`probeRadius` 只作用于它）。
  */
 export function computeRigStep(
 	state: RigState,
 	points: P2[],
 	opts: RigOptions,
+	probeRadius?: number,
 ): RigFrame {
 	const fit = computeFit(points);
+	const radius = probeRadius !== undefined ? probeRadius : 0;
 
-	let wantDistance = opts.minDistance + fit.extent * opts.fitFactor;
-	if (wantDistance < opts.minDistance) wantDistance = opts.minDistance;
-	if (wantDistance > opts.maxDistance) wantDistance = opts.maxDistance;
+	const wantDistance = fitDistance(points, fit.centerX, fit.centerY, radius, opts);
 
 	if (!state.initialized) {
 		// 首帧直接吸附，避免从原点“飞过去”的镜头运动
@@ -144,17 +251,8 @@ export function computeRigStep(
 		state.distance += (wantDistance - state.distance) * k;
 	}
 
-	const targetWorld = planeToWorld({ x: state.focusX, y: state.focusY }, 0);
-
 	// 相机在注视点的斜上方：倾角决定高度/进深比例。
-	const tilt = opts.tiltDeg * Math.PI / 180;
-	const eye = Vec3(
-		targetWorld.x,
-		targetWorld.y + Math.sin(tilt) * state.distance,
-		targetWorld.z + Math.cos(tilt) * state.distance,
-	);
-
-	return { target: targetWorld, eye };
+	return frameAt(state.focusX, state.focusY, state.distance, opts);
 }
 
 /** 创建一个机架（持有平滑状态）。 */
@@ -163,8 +261,8 @@ export function createCameraRig(opts?: RigOptions): CameraRig {
 	const state: RigState = { focusX: 0, focusY: 0, distance: options.minDistance, initialized: false };
 
 	return {
-		step: (points: P2[]): RigFrame => {
-			return computeRigStep(state, points, options);
+		step: (points: P2[], probeRadius?: number): RigFrame => {
+			return computeRigStep(state, points, options, probeRadius);
 		},
 		apply: (camera: Camera3D.Type, frame: RigFrame): void => {
 			camera.lookAt(frame.eye, frame.target, Vec3(0, 1, 0));

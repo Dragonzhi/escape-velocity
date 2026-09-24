@@ -4,8 +4,10 @@
  * 输出格式：首行为 `passed` 或 `failed`。
  *   const m = requireProjectModule("Test.CameraRigTest"); print(m.runTests())
  */
-import { createCameraRig, computeFit, defaultRigOptions } from 'game/CameraRig';
+import { RigFrame, RigOptions, createCameraRig, computeFit, defaultRigOptions } from 'game/CameraRig';
+import { PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
 import { P2 } from 'game/Gravity';
+import { CameraView, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 
 interface Failure {
 	name: string;
@@ -71,6 +73,85 @@ function testDistanceMonotonic(): void {
 	check('rig-distance-grows', grew, `first=${dists[0].toFixed(1)} last=${dists[dists.length - 1].toFixed(1)}`);
 }
 
+/**
+ * 6) 取景：关键点（**含探测器的模型半径**）必须全部落在画面内。
+ *
+ * 这是 S3.1 的回归点：旧算法「距离 = min + 半对角 × 1.6」是与相机无关的启发式，
+ * 竖屏（aspect 0.5638）下 L3 的探测器中心被投到 ndcX = 1.11 —— 整个跑到画面外，
+ * 表现为「进关卡看不到自己的飞行器，预测线从画面外射进来」（截图发现）。
+ */
+function overflowOf(frame: RigFrame, opts: RigOptions, pts: P2[], radius: number): number {
+	const view: CameraView = {
+		eye: frame.eye,
+		target: frame.target,
+		up: { x: 0, y: 1, z: 0 },
+		fovYDeg: opts.fovYDeg,
+		aspect: opts.aspect,
+		viewW: 2,
+		viewH: 2,
+	};
+	const basis = prepareCamera(view, HANDEDNESS, FLIP_Y);
+	let worst = 0;
+	for (let i = 0; i < pts.length; i++) {
+		const p = projectPrepared(
+			{ x: pts[i].x * PlaneToWorldX, y: 0, z: pts[i].y * PlaneToWorldZ },
+			basis,
+		);
+		if (p === undefined) return 99; // 在相机后方
+		const r = i === 0 ? radius : 0;
+		const ry = (r / p.vz) * basis.focal;
+		const rx = ry / opts.aspect;
+		const ox = Math.abs(p.x) + rx;
+		const oy = Math.abs(p.y) + ry;
+		if (ox > worst) worst = ox;
+		if (oy > worst) worst = oy;
+	}
+	return worst;
+}
+
+function testFraming(): void {
+	// L3 实测那组关键点：探测器 (0,18)、木星 (0,-2)、土星 (-26,-26)
+	const pts: P2[] = [{ x: 0, y: 18 }, { x: 0, y: -2 }, { x: -26, y: -26 }];
+	// Probe_Voyager_v1：局部最长边 3.227 × scale 1.2 × 1.1 余量 ÷ 2
+	const probeRadius = 2.13;
+
+	const portrait = defaultRigOptions(45, 601 / 1066);
+	const rigP = createCameraRig(portrait);
+	const frameP = rigP.step(pts, probeRadius);
+	const overP = overflowOf(frameP, portrait, pts, probeRadius);
+	const limit = 1 - portrait.margin;
+	check('rig-frame-portrait-fits', overP <= limit + 1e-6, `max|ndc|=${overP.toFixed(4)} limit=${limit.toFixed(2)}`);
+
+	// 旧算法会给出 ndcX > 1：新的必须明显留有余量
+	check('rig-frame-probe-inside', overP < 0.99, `max|ndc|=${overP.toFixed(4)}（旧算法 1.11 = 出画）`);
+
+	// 距离仍受夹紧约束
+	const dx = frameP.eye.x - frameP.target.x;
+	const dy = frameP.eye.y - frameP.target.y;
+	const dz = frameP.eye.z - frameP.target.z;
+	const distP = Math.sqrt(dx * dx + dy * dy + dz * dz);
+	check(
+		'rig-frame-portrait-distance',
+		distP >= portrait.minDistance * 0.999 && distP <= portrait.maxDistance * 1.001,
+		`dist=${distP.toFixed(2)} range=[${portrait.minDistance}, ${portrait.maxDistance}]`,
+	);
+
+	// 横屏（同一组关键点）：横向空间大得多，要求同样成立
+	const landscape = defaultRigOptions(45, 2024 / 1231);
+	const rigL = createCameraRig(landscape);
+	const frameL = rigL.step(pts, probeRadius);
+	const overL = overflowOf(frameL, landscape, pts, probeRadius);
+	check('rig-frame-landscape-fits', overL <= 1 - landscape.margin + 1e-6, `max|ndc|=${overL.toFixed(4)}`);
+
+	// 探测器半径变大时必须拉得更远（约束真的在起作用，而不是被忽略）
+	const frameFar = createCameraRig(portrait).step(pts, 8.0);
+	const fx = frameFar.eye.x - frameFar.target.x;
+	const fy = frameFar.eye.y - frameFar.target.y;
+	const fz = frameFar.eye.z - frameFar.target.z;
+	const distFar = Math.sqrt(fx * fx + fy * fy + fz * fz);
+	check('rig-frame-radius-matters', distFar > distP + 0.5, `r=2.13 → ${distP.toFixed(2)}, r=8.0 → ${distFar.toFixed(2)}`);
+}
+
 /** 3) 距离夹紧：不超出 [min, max]。 */
 function testClamp(): void {
 	const opts = defaultRigOptions();
@@ -127,6 +208,7 @@ export function runTests(): string {
 	testClamp();
 	testTilt();
 	testSmoothing();
+	testFraming();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

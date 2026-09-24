@@ -147,10 +147,13 @@ function ____exports.createGame(level, deps) -- 229
 		for ____, p in ipairs(deps.scene.planets) do -- 254
 			planetPts[#planetPts + 1] = bodyPositionAt(p.def, 0) -- 254
 		end -- 254
-		local frame = deps.rig.step({ -- 256
-			level.probeStart, -- 256
-			table.unpack(planetPts) -- 256
-		}) -- 256
+		local frame = deps.rig.step( -- 256
+			{ -- 256
+				level.probeStart, -- 256
+				table.unpack(planetPts) -- 256
+			}, -- 256
+			deps.scene.probeRadius -- 256
+		) -- 256
 		deps.rig.apply(deps.camera, frame) -- 257
 		local basis = makeBasis(frame) -- 258
 		local pp = projectPrepared( -- 261
@@ -182,10 +185,13 @@ function ____exports.createGame(level, deps) -- 229
 		for ____, p in ipairs(deps.scene.planets) do -- 294
 			planetPts[#planetPts + 1] = bodyPositionAt(p.def, t) -- 294
 		end -- 294
-		local frame = deps.rig.step({ -- 296
-			pos, -- 296
-			table.unpack(planetPts) -- 296
-		}) -- 296
+		local frame = deps.rig.step( -- 296
+			{ -- 296
+				pos, -- 296
+				table.unpack(planetPts) -- 296
+			}, -- 296
+			deps.scene.probeRadius -- 296
+		) -- 296
 		deps.rig.apply(deps.camera, frame) -- 297
 		local basis = makeBasis(frame) -- 298
 		local trail = {} -- 301

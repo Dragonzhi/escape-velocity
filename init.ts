@@ -148,10 +148,14 @@ if (levelTotal <= 0) {
 			bodies,
 			visuals: def.visuals,
 			probeStart: level.probeStart,
-			probeScale: 1.6,
+			// S3.1：探测器换 Probe_Voyager_v1.glb。⚠️ 该资产在接线当天被**重新导出过**
+			// （13.8 KB / 164 面 → 43.6 KB / 21 mesh / 600 面，见手册 §5.9 的提示），
+			// 下面按**当前**文件：包围盒 x±1.6137、y±1.4050、z[-1.8460, 1.0000]，最长边 3.227
+			// ⇒ scale 1.2 时世界最长边 3.87（旧四面体 Probe.gltf 只有 2.4）。
+			probeScale: 1.2,
 			spherePath: 'Assets/Model/Sphere.gltf',
 			ringPath: 'Assets/Model/Ring.gltf',
-			probePath: 'Assets/Model/Probe.gltf',
+			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
 		});
 		if (scene === undefined) {
 			print('[escape-velocity] FATAL: scene build failed for L' + (index + 1).toFixed(0));
@@ -159,7 +163,9 @@ if (levelTotal <= 0) {
 		}
 
 		const camera = Camera3D();
-		const rig = createCameraRig(defaultRigOptions());
+		// 取景要按真实投影求解，所以必须把当前的视野角与宽高比一起传进去
+		// （竖屏 aspect 0.56 ⇒ 横向可用空间只有纵向一半，这两个值直接决定相机拉多远）
+		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio));
 		const trajectory = createTrajectoryView(levelLayers[index], trajectoryOptions());
 		const aim = createAimInput(levelLayers[index], viewW, viewH);
 

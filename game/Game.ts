@@ -247,13 +247,13 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	const updateAiming = (): void => {
 		deps.aim.setEnabled(true);
-		deps.scene.syncBodies(0); // D2：矄准态全局冻结
+		deps.scene.syncBodies(0); // D2：瞄准态全局冻结
 		deps.scene.syncProbe(level.probeStart);
 
 		const planetPts: P2[] = [];
 		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, 0));
 
-		const frame = deps.rig.step([level.probeStart, ...planetPts]);
+		const frame = deps.rig.step([level.probeStart, ...planetPts], deps.scene.probeRadius);
 		deps.rig.apply(deps.camera, frame);
 		const basis = makeBasis(frame);
 
@@ -262,7 +262,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (pp !== undefined) deps.aim.setProbeOffset({ x: pp.x, y: pp.y });
 
 		// ⚠️ 预测线必须**每帧**重画，不能只在拖动时重画：
-		// 重试后相机会用 lerp 从飞行终点视图滑回矄准视图（约 20-30 帧），
+		// 重试后相机会用 lerp 从飞行终点视图滑回瞄准视图（约 20-30 帧），
 		// 若只在 aimDirty 时画一次，线会冻结在过渡中途的投影上，
 		// 看起来“不是从探测器出发”（实测踩过）。
 		// 代价：每帧 600 步 simulate + ~150 点投影，可忽略。
@@ -293,7 +293,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const planetPts: P2[] = [];
 		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, t));
 
-		const frame = deps.rig.step([pos, ...planetPts]);
+		const frame = deps.rig.step([pos, ...planetPts], deps.scene.probeRadius);
 		deps.rig.apply(deps.camera, frame);
 		const basis = makeBasis(frame);
 

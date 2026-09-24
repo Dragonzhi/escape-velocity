@@ -5,12 +5,127 @@
 
 ## 当前阶段
 
-**S2 关卡与结算已交付（S2.1 / S2.2 / S2.3 全部完成）**，两轮真机问题（触摸命中框、视口变化）已修并入库。
-S0、S1 全部完成；S3.1 的**美术资产已入库但尚未接线**（11 个 `.glb`，见会话 21）。
-下一步：**S3.1 接线**（`game/Scene.ts` 换成 `.glb` 行星/探测器）→ S3.2 轨迹发光与星空。
+**S2 全部交付；S3.1 模型接线与标定已完成（会话 22），并在会话 23 修正了相机取景。**
+行星/探测器已按关换成 Blender `.glb`，尺度系数 k 与探测器朝向偏移均为**实测**；星空壳（方案 C2）已接线。
+下一步：**S3.2 轨迹发光与星点调优** → S3.3 开场（金唱片 + `Probe_Voyager` 细节版特写）。
+**待用户决定**：① 星空守 B（贴图，70 KB、2 面、观感更好但破"零贴图"）还是守 C2（现方案，零贴图但 180 KB、1940 面、
+横屏星点偏方）；② `Probe_Voyager_v1.glb` 在 23:38 被重新导出过（164 面 → 600 面），需确认是有意更新。
 **唯一开放的真机项**：手机浏览器上重跑 Web 导出包（选关 → 拖 → 松手 → 结算）。
 
 ## 变更日志
+
+### 会话 23 · 相机取景改为"按真实投影求解"（S3.1 复核中发现并修复）
+
+**起因**：复核 S3.1 交付时**看截图**（不是看 stats）发现 L3 进关卡后**探测器整个在画面外** ——
+只有预测线从画面右下角射进来。子智能体的报告写的是"几乎被挤出画面右下"，实际已经完全出画；
+它报的 `view.stats` 之所以"六关全对"，正是因为提前关了 `frustumCulling`。
+**根因不在 S3.1 的接线，而在 `CameraRig` 的取景公式**，且可复算：
+
+- 旧公式 `距离 = minDistance(25) + 包围盒半对角 × fitFactor(1.6)` 是**与相机无关的启发式**。
+- L3 关键点 (0,18)/(0,-2)/(−26,−26) ⇒ 中心 (−13,−4)、半对角 25.55 ⇒ 距离 65.9。
+- 竖屏 `aspect = 601/1066 = 0.5638`、`fovY = 45`：探测器的相机空间深度 vz = 50.3，
+  **比注视点的 65.9 更靠近相机**（屏幕下方就是近景侧），于是
+  `ndcX = (13/50.3) × focal / aspect = 1.11` ⇒ **出画**（|ndc| > 1）。
+
+**已实现（源码）**
+
+- `game/CameraRig.ts`：`RigOptions` 用 `fovYDeg` / `aspect` / `margin(0.05)` 取代 `fitFactor`；
+  新增 `frameAt` / `frameFits` / `fitDistance` —— 在 `[minDistance, maxDistance]` 上**二分**求解
+  "所有关键点都投影在画面内缩 margin 内"的**最小**距离，投影复用 `game/Projection.ts`
+  （与渲染/预测线同一套已标定公式；`viewW/viewH` 取 2 ⇒ 返回值就是 NDC）。
+  `step(points, probeRadius?)` 的第 2 个参数只作用于 `points[0]`（约定 = 探测器）。
+- `game/Scene.ts`：`GameScene` 新增 `probeRadius` = 局部 AABB **最大边一半** × scale × 1.1
+  （不取外接球：两根吊杆沿飞行轴伸出、屏幕不占宽度，用外接球会把相机推得过远；取不到包围盒时用兜底值）。
+- `game/Game.ts`：两处 `rig.step(...)` 传 `deps.scene.probeRadius`；顺手修两处 `矄准` → `瞄准` 错别字。
+- `init.ts`：`createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio))`；
+  `probeScale` 注释改为**当前**资产数字（旧的 164 面/2.9 世界单位已过期）。
+- 文档：手册 §5.4 **重写为"已落地实现"**（原描述还是设计稿：加权中点 / 距离随目标距离单调，与实现不符）、
+  参数表补 `RigOptions.margin` 与 `View.fieldOfView/aspectRatio`、断言数 164 → **169**；`AGENTS.md` 构建基线改正。
+- 清理：删掉星空方案 A/B/C 的一次性探针（`Test/StarProbe*`、`StarDiag*`、`StarCommon`、`PathProbe`、
+  `Test/Shader/`、`Test/StarQuad.gltf`、`Test/*.png`、`Test/StarShell*.gltf` 重复副本）；
+  `Test/gen_star_assets.py` 保留并改为**直接写 `Assets/Model/`**（实测重新生成的两个壳与原文件**逐字节一致**）。
+
+**已验证的证据**
+
+- 构建：`node tools/dora-build/build.mjs --all` → **48 成功 / 0 失败**。
+- 单测：`SUMMARY passed=7 failed=0 total=7`，其中 `CameraRigTest :: passed | checks=16`（新增 5 条：
+  `rig-frame-portrait-fits` / `rig-frame-probe-inside` / `rig-frame-portrait-distance` /
+  `rig-frame-landscape-fits` / `rig-frame-radius-matters`）。
+- 游戏内截图（`Test/GameShot.lua` + 合成鼠标；竖屏客户区 400×710 → `View.size` 601×1066）：
+  `shot-002.png`（L3 Aiming，修复后）**探测器完整在框内**（碟形天线 + 支杆，右侧留白约 20 px），
+  预测线从探测器出发射向木星；对照修复前 `s31-portrait-L3-aiming.png`（只剩一根支杆贴在角落）。
+  L1 竖屏 / L1 横屏同样正常；横屏是从竖屏**切窗口**得到的，日志有 `viewport rebuilt: 2024x1231`
+  且随后 `enter L1` ⇒ 视口变化会重建关卡运行时，新宽高比自动生效（回归了 AGENTS.md 第 8 条）。
+
+**未验证 / 残留**
+
+- 飞行途中探测器仍可能短暂出画：距离被 `CameraMaxDistance = 100` 夹住时只能保证"尽量"（夹紧优先于取景）。
+- 手感无结论（机架距离在竖屏普遍比旧公式更远，横屏更近）—— 需要真人试玩校准。
+- 手机浏览器仍未复测（三处"待复测"依旧）。
+- 星空星点在横屏明显偏方（截图 `shot-003.png` 左侧可见明显白色菱形）⇒ S3.2 处理，或改用方案 B。
+
+**下一步**：S3.2 轨迹双层发光 + 星点大小/亮度（或按用户决定切方案 B）→ S3.3 开场。
+
+### 会话 22 · S3.1 模型接线与标定（行星/探测器换 .glb + 星空壳接线）
+
+**已实现（源码）**
+
+- `game/LevelData.ts`：`PlanetVisualDef` 新增可选 `model?: string`；六关按文件注释填天体
+  （**只加视觉字段，物理数值一字未动**）：L1 `Planet_Mars`；L2 `Planet_Venus`+`Planet_Mars`；
+  L3 `Planet_Jupiter`+`Planet_Saturn`；L4 `Planet_Mars`；L5 `Planet_Jupiter`+`Planet_Saturn`+`Planet_Neptune`（**当天王星代用**）；
+  L6 `Planet_Saturn`。
+- `game/Scene.ts`：`vis.model` 非空 → `Model3D('Assets/Model/'+model+'.glb')`，否则回退 `spherePath`；
+  染色用 `while` 循环 `getMaterial(k)` 直到 `undefined`（**不写死材质数量**）；
+  尺度 `scale = displayRadius / MODEL_RADIUS[model]`；**只有「没有 model 且 ring:true」才叠 `Ring.gltf`**；
+  探测器 = `Probe_Voyager_v1.glb` + `ProbeYawOffsetDeg`；
+  星空 = `StarShell.gltf` + `StarShellBright.gltf`（emissive、不放大、与行星同根）。
+- `init.ts`：`probePath` → `Assets/Model/Probe_Voyager_v1.glb`，`probeScale` 1.6 → **1.2**（新常量均带注释）。
+- 新工具：`Test/ModelCalibProbe.ts`（标定）、`Test/SceneWireProbe.ts`（逐关 stats 核对）、`Test/GameShot.lua`（游戏内抓帧驱动）。
+
+**已实测的标定数字**
+
+- **行星半径系数 k**（= 模型 scale=1 时的外接半径；两个独立口径 ±4% 内一致）：
+  Mars **1.0227** / Venus **1.0215** / Jupiter **1.0000** / Saturn **0.9837**（本体；环 ±2.2 不参与）/ Neptune **1.0170**。
+  口径①=引擎 `getLocalBoundsMin/Max`；口径②=与已知半径 1 的 `Sphere.gltf` **并排同 scale 渲染**后的像素直径比
+  （参考球实测 17.0 px 半径 ↔ fov 推算 17.83；对象屏幕位置与自建投影逐点吻合）。
+- **探测器朝向**：`Probe_Voyager_v1.glb` 的抛物面天线是**朝上的圆盘**（直径 3.227 = 模型最长边）、
+  **两根粗主杆沿局部 +Z**（z=+1.00）、**细磁强计杆沿 -Z**（z=-1.85）⇒ `ProbeYawOffsetDeg = -90`
+  （细杆朝前、主杆拖后）。`angleY` 的世界映射（局部 +X → (cosθ,0,-sinθ)）用**已知朝 +X 的旧 `Probe.gltf` 四面体**
+  在 yaw=0/90/180/270 读**世界包围盒**标定（顶点分别在 world +x / −z / −x / +z），并用俯视网格的标记球（大小不同）
+  实测“屏幕右 = 世界 +X、屏幕下 = 世界 +Z”。
+- ⚠️ **资产在本次会话期间被替换过**：`Probe_Voyager_v1.glb` 现为 **43,596 B / 21 mesh / 600 三角面 / 6 材质**
+  （会话 21 记录的 13.8 KB / 5 mesh / 164 面已过期）。第一次标定用的是旧文件，**全部结论已按当前文件重测**。
+
+**已验证的证据**
+
+- 构建：`node tools/dora-build/build.mjs --all` → **47 成功 / 0 失败**。
+- 单测：`Test/UnitRunner.lua` → **`SUMMARY passed=7 failed=0 total=7`**，其中 `LevelDataTest :: passed | checks=34 failures=0`。
+- 接线核对（`.agent/test-results/s31-wire.txt`，逐关 buildScene + `view.stats`）：三角面
+  **2620(L1) / 2700(L2) / 3324(L3) / 2620(L4) / 3404(L5) / 3004(L6)**，draws 24–29，
+  **六关全部 `match=true`**（= 该关各模型面数 + 探测器 600 + 星空 1940 的精确和）；
+  另附**逐资产**表：Mars/Venus/Neptune 80、Jupiter 320、Saturn 464、Sphere 120、Ring 16、
+  Probe 4、Probe_Voyager_v1 600、StarShell 1800、StarShellBright 140 —— 全部与离线 GLB 解析一致。
+  ⇒ 每关确实加载了指定模型（`Planet_Voyager_v1` 的 600 也是从这张表里发现旧文档写的 164 已过期）。
+  单关开销远在 1 万三角面预算内（星空占 1940 / 2 draws）。
+  ⚠️ 测量前提：`view.stats` 只统计**本帧画出来**的三角形，**必须** `View.frustumCulling = false`
+  （L3 的机架会把探测器留到画面外，否则少算几百面）。
+- 游戏内截图（**真正跑 `init.lua`**，合成鼠标驱动；全部在仓库根 `.agent/test-results/`）：
+  竖屏 `s31-portrait-L1-aiming` / `s31-portrait-L1-flying`（朝向 + 拖尾：主杆拖后、尾迹在正后方）、
+  `s31-portrait-L3-aiming`（Jupiter + Saturn 自带环）、`s31-portrait-L5-aiming`（三星 + 青色代用天王星 + 探测器 + 预测线）、
+  `s31-portrait-L6-aiming`；横屏回归 `s31-landscape-L1-aiming`（2024×1231）。
+  星空在两套形态下均可见且不遮挡轨迹/行星读数。日志依次有 `enter L1/L3/L5/L6`、`phase -> Aiming`、`result = success`。
+- 标定证据：`s31-scale.txt/.png`（并排像素 + 包围盒）、`s31-orient.txt/.png` + `zoom-v1-yaw0-new.png`（俯视形状）。
+
+**未验证 / 残留**
+
+- ⚠️ **L3 瞄准帧里探测器几乎被挤出画面右下**（相机按“探测器+两颗行星”构图，Saturn 在 x=−26 把机架拉远）——
+  这是 S2 相机取景的既有行为，本轮未动相机。**会话 23 复核截图后确认：不是"几乎"，是完全出画**，已修正（见会话 23）。
+- `probeScale=1.2` ⇒ 探测器世界长度 3.87（旧四面体 2.4），观感更大；只有截图证据，无手感结论。
+- `Planet_Jupiter` 的 3 个材质被**统一染成关卡色** ⇒ 模型自带的条纹分层被染平（按任务要求“全部染色”）。
+- 星空星点在竖屏偏亮偏方（几何是四边形）⇒ 交给 S3.2 调。
+- 真机（手机浏览器）仍未复测；本轮截图全部是 Windows 桌面 + 合成鼠标。
+
+**下一步**：S3.2 轨迹发光与星空调优（星点大小/亮度）→ S3.3 开场（金唱片 + `Probe_Voyager` 细节版特写 + `Sun`/`BlackHole`）。
 
 ### 会话 21 · 文档同步（含一次误删恢复）+ S3.1 资产入库
 
