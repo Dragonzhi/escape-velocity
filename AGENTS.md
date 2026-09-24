@@ -56,6 +56,7 @@ python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"
 `client_x = view_x·(clientW/W)`、`client_y = (H−view_y)·(clientH/H)`（`set-window.ps1` 改窗口后 W/H 会变）。
 回归模板：点选关(674,191) → 拖动(674,600→690,320) → 日志应依次出现 `enter L1`、`phase -> Flying`、`result = ...`、`phase -> Aiming`（点重试 674,470）。
 真机多点触控/手势差异仍建议人工抽查；日志请用 `POST /log` 读（`log.txt` 有缓冲与轮转）。
+⚠️ **单文件入口的搜索根陷阱**：`POST /run {asProj:false}` 时引擎把**入口文件所在目录**当搜索根（`Content.searchPaths[0]` = `<proj>/Test`）——于是 `require("game.Scene")`、`Model3D("Assets/...")` 全部解析失败，标记文件也会落到 `Test/.agent/...`。**正确做法**：遍历 `Content.searchPaths` 找**含 `init.lua`** 的那一个当项目根（照 `Test/UnitRunner.lua`），并用绝对路径访问 Assets。
 
 ## 交付习惯
 
