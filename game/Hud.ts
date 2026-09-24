@@ -1,10 +1,14 @@
 /**
  * 拖拽矄准与发射（手册 §5.7）。
  *
- * 矄准语义（严格按手册 §5.7，不自行发挥）：
- * - 按下并拖动 → 由“**探测器位置 → 触摸点**”的方向决定发射角；
- * - 拖动距离决定力度（夹紧到 [AimMinSpeed, AimMaxSpeed]）；
+ * 矄准语义（手册 §5.7，2026-09-24 按用户真机反馈改为**相对拖动**）：
+ * - 按下点即“摇杆零点”：按下瞬间瞄准**归零到直飞**（正对目标、最小力度）；
+ * - 之后的**位移**（相对按下点）决定方向与力度 —— 所以**按在哪里都能瞄**；
+ * - 位移方向 = 发射方向（屏幕上 = 直飞，右 = 右偏），位移长度 = 力度（夹紧到 [AimMinSpeed, AimMaxSpeed]）；
  * - 抬起 = 松手 = 发射（不可撤销，愿景 §3）。
+ *
+ * 为什么不用“探测器 → 触摸点”的绝对方向（旧模型）：真机上按下位置与探测器位置无关联，
+ * 玩家一按就已经按距离拿到了力度、方向也由按下点决定，手感与预期不符。
  *
  * 职责边界：本模块只负责“把触摸变成发射向量”，**不碰物理、不碰渲染**。
  * 预测线重画由调用方（S1.5 主循环）拿到新向量后自己做。
@@ -167,8 +171,10 @@ export interface AimInput {
 	/** 当前矄准结果（未拖动时是默认值）。 */
 	current: () => AimResult;
 	/**
-	 * 设定探测器当前的屏幕位置（**投影偏移空间**）。
-	 * 每帧由主循环根据相机投影更新。
+	 * 设定探测器当前的屏幕位置（**投影偏移空间**）。每帧由主循环更新。
+	 *
+	 * ⚠️ 相对拖动模型下瞄准**不再**用它（方向只由"相对按下点的位移"决定）；
+	 * 保留供诊断（见 `debugProbeOffset`）与将来可能的手柄 UI 使用。
 	 */
 	setProbeOffset: (offset: ScreenOffset) => void;
 	/**
@@ -210,7 +216,12 @@ export function createAimInput(
 ): AimInput {
 	const root = Node();
 	root.size = Size(viewW, viewH);
-	root.anchor = Vec2(0.5, 0.5);
+	// ⚠️ anchor 必须是 (0,0)：子节点坐标以“位置 − anchor×尺寸”为原点，
+	// (0.5,0.5) 会把整棵子树再推走半个屏幕 —— 触摸命中框因此只剩左下象限
+	// （真机表现：“不是按哪里都能瞄”：view x > W/2 或 y > H/2 处按下无效）。
+	// 父层（levelLayers[i]）的子空间是“左下原点绝对像素”，取 (0,0) 后命中框
+	// 正好等于整屏 [0,W]×[0,H]，且 touch.location 与 localToOffset 的假设一致。
+	root.anchor = Vec2(0, 0);
 	root.position = Vec2(0, 0);
 
 	// 一个不可见的全屏层，只用来接收触摸。
@@ -233,26 +244,42 @@ export function createAimInput(
 	let dragHandler: ((a: AimResult) => void) | undefined = undefined;
 	let releaseHandler: ((a: AimResult) => void) | undefined = undefined;
 
-	const handleOffset = (offset: ScreenOffset): void => {
-		aim = computeAim(probeOffset, offset, AimMaxDragPx);
+	// ---- 相对拖动模型（用户 2026-09-24 真机反馈后确定）----
+	//
+	// 按下点 = 摇杆零点：按下瞬间**瞄准归零到"直飞"**（正对目标、最小力度），
+	// 之后的位移（相对按下点）才决定方向与力度，因此**按在哪里都能瞄**，
+	// 且松手才发射。旧模型是"探测器 → 手指"的绝对方向，按下即按距离给力度，
+	// 与手感预期不符（真机反馈："按下的地方不是飞行器所在的地方"）。
+	//
+	// 位移语义复用 computeAim：把按下点当作它的 probeOffset，则
+	//   方向 = 位移方向（屏幕上方 = 直飞，向右 = 右偏），力度 = |位移| / AimMaxDragPx。
+	let pressOffset: ScreenOffset = { x: 0, y: 0 };
+
+	/** 用"相对按下点的位移"驱动一次瞄准（位移为 0 时即 computeAim 的中性解 = 直飞）。 */
+	const handleDelta = (delta: ScreenOffset): void => {
+		aim = computeAim({ x: 0, y: 0 }, delta, AimMaxDragPx);
 		if (dragHandler !== undefined) dragHandler(aim);
 	};
 
 	touchLayer.onTapBegan((touch) => {
 		if (!enabled) return;
 		dragging = true;
-		handleOffset(localToOffset({ x: touch.location.x, y: touch.location.y }, space));
+		pressOffset = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
+		// 按下即回到直飞：立刻让预测线显示中性方向（不等到第一次移动）
+		handleDelta({ x: 0, y: 0 });
 	});
 
 	touchLayer.onTapMoved((touch) => {
 		if (!enabled || !dragging) return;
-		handleOffset(localToOffset({ x: touch.location.x, y: touch.location.y }, space));
+		const cur = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
+		handleDelta({ x: cur.x - pressOffset.x, y: cur.y - pressOffset.y });
 	});
 
 	touchLayer.onTapEnded((touch) => {
 		if (!enabled || !dragging) return;
 		dragging = false;
-		handleOffset(localToOffset({ x: touch.location.x, y: touch.location.y }, space));
+		const cur = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
+		handleDelta({ x: cur.x - pressOffset.x, y: cur.y - pressOffset.y });
 		if (releaseHandler !== undefined) releaseHandler(aim);
 	});
 
@@ -283,11 +310,13 @@ export function createAimInput(
 		setProbeOffset: (offset: ScreenOffset): void => {
 			probeOffset = offset;
 		},
+		// 程序化缝隙（键盘降级/回放/无头测试）：参数是**相对按下点的位移**，
+		// 不是绝对屏幕位置 —— 与真实拖动同语义。
 		handleLocal: (local: ScreenOffset): void => {
-			handleOffset(localToOffset(local, space));
+			handleDelta(localToOffset(local, space));
 		},
 		// 包一层箭头函数：简写属性会让 TSTL 为对象成员函数引入 self
-		handleOffset: (offset: ScreenOffset): void => handleOffset(offset),
+		handleOffset: (delta: ScreenOffset): void => handleDelta(delta),
 		debugProbeOffset: (): ScreenOffset => probeOffset,
 		root,
 	};

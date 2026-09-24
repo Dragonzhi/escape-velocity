@@ -2,27 +2,27 @@
 local ____lualib = require("lualib_bundle") -- 1
 local __TS__NumberToFixed = ____lualib.__TS__NumberToFixed -- 1
 local ____exports = {} -- 1
-local ____Dora = require("Dora") -- 28
-local Node = ____Dora.Node -- 28
-local Size = ____Dora.Size -- 28
-local Vec2 = ____Dora.Vec2 -- 28
-local ____Projection = require("game.Projection") -- 29
-local screenToPlaneY = ____Projection.screenToPlaneY -- 29
-local ____Config = require("game.Config") -- 31
-local AimMaxDragPx = ____Config.AimMaxDragPx -- 31
-local AimMaxSpeed = ____Config.AimMaxSpeed -- 31
-local AimMinSpeed = ____Config.AimMinSpeed -- 31
-local PlaneToWorldX = ____Config.PlaneToWorldX -- 31
-local PlaneToWorldZ = ____Config.PlaneToWorldZ -- 31
-local ____Ui = require("game.Ui") -- 33
-local MinButtonHeight = ____Ui.MinButtonHeight -- 33
-local MinButtonWidth = ____Ui.MinButtonWidth -- 33
-local createButton = ____Ui.createButton -- 33
-local createLabel = ____Ui.createLabel -- 33
-local createPanel = ____Ui.createPanel -- 33
-local setLabelCenter = ____Ui.setLabelCenter -- 33
-local setLabelColor = ____Ui.setLabelColor -- 33
-local setLabelText = ____Ui.setLabelText -- 33
+local ____Dora = require("Dora") -- 32
+local Node = ____Dora.Node -- 32
+local Size = ____Dora.Size -- 32
+local Vec2 = ____Dora.Vec2 -- 32
+local ____Projection = require("game.Projection") -- 33
+local screenToPlaneY = ____Projection.screenToPlaneY -- 33
+local ____Config = require("game.Config") -- 35
+local AimMaxDragPx = ____Config.AimMaxDragPx -- 35
+local AimMaxSpeed = ____Config.AimMaxSpeed -- 35
+local AimMinSpeed = ____Config.AimMinSpeed -- 35
+local PlaneToWorldX = ____Config.PlaneToWorldX -- 35
+local PlaneToWorldZ = ____Config.PlaneToWorldZ -- 35
+local ____Ui = require("game.Ui") -- 37
+local MinButtonHeight = ____Ui.MinButtonHeight -- 37
+local MinButtonWidth = ____Ui.MinButtonWidth -- 37
+local createButton = ____Ui.createButton -- 37
+local createLabel = ____Ui.createLabel -- 37
+local createPanel = ____Ui.createPanel -- 37
+local setLabelCenter = ____Ui.setLabelCenter -- 37
+local setLabelColor = ____Ui.setLabelColor -- 37
+local setLabelText = ____Ui.setLabelText -- 37
 --- 纯计算：由“探测器屏幕偏移”与“当前触摸屏幕偏移”解算发射向量。
 -- 
 -- 方向语义（手册 §5.7）：发射方向 = **探测器 → 触摸点**。
@@ -31,45 +31,45 @@ local setLabelText = ____Ui.setLabelText -- 33
 -- @param probeOffset 探测器在投影偏移空间中的位置
 -- @param touchOffset 触摸点在投影偏移空间中的位置
 -- @param maxDragPx 拖动多少像素算满力
-function ____exports.computeAim(probeOffset, touchOffset, maxDragPx) -- 61
-	local dx = touchOffset.x - probeOffset.x -- 70
-	local dy = touchOffset.y - probeOffset.y -- 71
-	local len = math.sqrt(dx * dx + dy * dy) -- 73
-	if len < 0.000001 then -- 73
-		return {velocity = {x = 0, y = -AimMinSpeed}, power = 0, unit = {x = 0, y = -1}} -- 76
-	end -- 76
-	local ux = dx / len -- 79
-	local uy = -dy / len -- 84
-	local safeMax = maxDragPx > 1 and maxDragPx or 1 -- 86
-	local power = len / safeMax -- 87
-	if power < 0 then -- 87
-		power = 0 -- 88
-	end -- 88
-	if power > 1 then -- 88
-		power = 1 -- 89
-	end -- 89
-	local speed = AimMinSpeed + (AimMaxSpeed - AimMinSpeed) * power -- 91
-	return {velocity = {x = ux * speed, y = uy * speed}, power = power, unit = {x = ux, y = uy}} -- 93
-end -- 61
+function ____exports.computeAim(probeOffset, touchOffset, maxDragPx) -- 65
+	local dx = touchOffset.x - probeOffset.x -- 74
+	local dy = touchOffset.y - probeOffset.y -- 75
+	local len = math.sqrt(dx * dx + dy * dy) -- 77
+	if len < 0.000001 then -- 77
+		return {velocity = {x = 0, y = -AimMinSpeed}, power = 0, unit = {x = 0, y = -1}} -- 80
+	end -- 80
+	local ux = dx / len -- 83
+	local uy = -dy / len -- 88
+	local safeMax = maxDragPx > 1 and maxDragPx or 1 -- 90
+	local power = len / safeMax -- 91
+	if power < 0 then -- 91
+		power = 0 -- 92
+	end -- 92
+	if power > 1 then -- 92
+		power = 1 -- 93
+	end -- 93
+	local speed = AimMinSpeed + (AimMaxSpeed - AimMinSpeed) * power -- 95
+	return {velocity = {x = ux * speed, y = uy * speed}, power = power, unit = {x = ux, y = uy}} -- 97
+end -- 65
 --- 把屏幕位置（**投影偏移空间**，与 `project()` 同空间）转成平面坐标。
 -- 
 -- 不是矄准必需（矄准只用方向），但调试与关卡设计时有用。
 -- 与 `project()` 互逆（已有往返测试守着）。
-function ____exports.screenToPlane(viewPoint, basis) -- 106
-	local world = screenToPlaneY(viewPoint, basis, 0) -- 110
-	if world == nil then -- 110
-		return nil -- 111
-	end -- 111
-	return {x = world.x / PlaneToWorldX, y = world.z / PlaneToWorldZ} -- 113
-end -- 106
+function ____exports.screenToPlane(viewPoint, basis) -- 110
+	local world = screenToPlaneY(viewPoint, basis, 0) -- 114
+	if world == nil then -- 114
+		return nil -- 115
+	end -- 115
+	return {x = world.x / PlaneToWorldX, y = world.z / PlaneToWorldZ} -- 117
+end -- 110
 --- 默认的力度→拖动像素映射（供 UI 层统一引用）。
-function ____exports.defaultMaxDragPx() -- 117
-	return AimMaxDragPx -- 118
-end -- 117
+function ____exports.defaultMaxDragPx() -- 121
+	return AimMaxDragPx -- 122
+end -- 121
 --- 默认速度区间（供 UI 层展示）。
-function ____exports.defaultSpeedRange() -- 122
-	return {min = AimMinSpeed, max = AimMaxSpeed} -- 123
-end -- 122
+function ____exports.defaultSpeedRange() -- 126
+	return {min = AimMinSpeed, max = AimMaxSpeed} -- 127
+end -- 126
 --- 全屏输入节点的局部坐标 → 投影偏移空间（中心原点、+Y 向上）。
 -- 
 -- 两个空间的差异（已核对 `Projection.ts` 的修正后约定）：
@@ -80,13 +80,13 @@ end -- 122
 -- | 投影偏移空间 | **屏幕中心** | ±W/2, ±H/2 | **+Y 向上** |
 -- 
 -- 换算：`offset.x = local.x - W/2`，`offset.y = local.y - H/2`。
-function ____exports.localToOffset(____local, space) -- 144
-	return {x = ____local.x - space.viewW / 2, y = ____local.y - space.viewH / 2} -- 145
-end -- 144
+function ____exports.localToOffset(____local, space) -- 148
+	return {x = ____local.x - space.viewW / 2, y = ____local.y - space.viewH / 2} -- 149
+end -- 148
 --- 反向换算（投影偏移空间 → 全屏节点局部坐标）。
-function ____exports.offsetToLocal(offset, space) -- 149
-	return {x = offset.x + space.viewW / 2, y = offset.y + space.viewH / 2} -- 150
-end -- 149
+function ____exports.offsetToLocal(offset, space) -- 153
+	return {x = offset.x + space.viewW / 2, y = offset.y + space.viewH / 2} -- 154
+end -- 153
 --- 创建拖拽矄准输入层。
 -- 
 -- ### 为何要一个带尺寸的全屏节点
@@ -99,153 +99,158 @@ end -- 149
 -- @param parent 挂载父节点（通常是 Director.ui）
 -- @param viewW 视图宽（`View.size.width`）
 -- @param viewH 视图高（`View.size.height`）
-function ____exports.createAimInput(parent, viewW, viewH) -- 206
-	local root = Node() -- 211
-	root.size = Size(viewW, viewH) -- 212
-	root.anchor = Vec2(0.5, 0.5) -- 213
-	root.position = Vec2(0, 0) -- 214
-	local touchLayer = Node() -- 217
-	touchLayer.size = Size(viewW, viewH) -- 218
-	touchLayer.anchor = Vec2(0.5, 0.5) -- 219
-	touchLayer.position = Vec2(viewW / 2, viewH / 2) -- 220
-	touchLayer.swallowTouches = true -- 221
-	root:addChild(touchLayer) -- 222
-	local space = {viewW = viewW, viewH = viewH} -- 224
-	local enabled = false -- 226
-	local dragging = false -- 227
-	local aim = {velocity = {x = 0, y = -AimMinSpeed}, power = 0, unit = {x = 0, y = -1}} -- 228
-	local probeOffset = {x = 0, y = 0} -- 231
-	local dragHandler = nil -- 233
-	local releaseHandler = nil -- 234
-	local function handleOffset(offset) -- 236
-		aim = ____exports.computeAim(probeOffset, offset, AimMaxDragPx) -- 237
-		if dragHandler ~= nil then -- 237
-			dragHandler(aim) -- 238
-		end -- 238
-	end -- 236
-	touchLayer:onTapBegan(function(touch) -- 241
-		if not enabled then -- 241
-			return -- 242
-		end -- 242
-		dragging = true -- 243
-		handleOffset(____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space)) -- 244
-	end) -- 241
-	touchLayer:onTapMoved(function(touch) -- 247
-		if not enabled or not dragging then -- 247
-			return -- 248
-		end -- 248
-		handleOffset(____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space)) -- 249
-	end) -- 247
-	touchLayer:onTapEnded(function(touch) -- 252
-		if not enabled or not dragging then -- 252
-			return -- 253
-		end -- 253
-		dragging = false -- 254
-		handleOffset(____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space)) -- 255
-		if releaseHandler ~= nil then -- 255
-			releaseHandler(aim) -- 256
-		end -- 256
-	end) -- 252
-	touchLayer.touchEnabled = false -- 264
-	parent:addChild(root) -- 266
-	return { -- 268
-		onDrag = function(____, callback) -- 269
-			dragHandler = callback -- 270
-		end, -- 269
-		onRelease = function(____, callback) -- 272
-			releaseHandler = callback -- 273
-		end, -- 272
-		setEnabled = function(____, value) -- 275
-			enabled = value -- 276
-			touchLayer.touchEnabled = value -- 279
-			if not value then -- 279
-				dragging = false -- 280
-			end -- 280
-		end, -- 275
-		current = function() return aim end, -- 282
-		setProbeOffset = function(____, offset) -- 283
-			probeOffset = offset -- 284
-		end, -- 283
-		handleLocal = function(____, ____local) -- 286
-			handleOffset(____exports.localToOffset(____local, space)) -- 287
-		end, -- 286
-		handleOffset = function(____, offset) return handleOffset(offset) end, -- 290
-		debugProbeOffset = function() return probeOffset end, -- 291
-		root = root -- 292
-	} -- 292
-end -- 206
-local ResultBackdropHex = 329484 -- 309
-local ResultCardHex = 1252395 -- 310
-local ResultCardBorderHex = 3362938 -- 311
-local ResultLevelHex = 9417948 -- 312
-local ResultBodyHex = 14149367 -- 313
-local ResultHintHex = 8229803 -- 314
-local ResultButtonBgHex = 1919610 -- 315
-local ResultButtonAltBgHex = 1779509 -- 316
-local ResultButtonFgHex = 15398143 -- 317
-local ResultButtonBorderHex = 5211846 -- 318
-local TitleSuccessHex = 8381344 -- 319
-local TitleMissedHex = 16766073 -- 320
-local TitleCrashedHex = 16743019 -- 321
-local SelectBackdropHex = 329484 -- 323
-local SelectTitleHex = 16777215 -- 324
-local SelectSubtitleHex = 10470632 -- 325
-local SelectHintHex = 7309478 -- 326
-local SelectOpenBgHex = 1919610 -- 327
-local SelectOpenFgHex = 15398143 -- 328
-local SelectLockedBgHex = 1383204 -- 329
-local SelectLockedFgHex = 6912140 -- 330
-local SelectBorderHex = 4157096 -- 331
+function ____exports.createAimInput(parent, viewW, viewH) -- 212
+	local root = Node() -- 217
+	root.size = Size(viewW, viewH) -- 218
+	root.anchor = Vec2(0, 0) -- 224
+	root.position = Vec2(0, 0) -- 225
+	local touchLayer = Node() -- 228
+	touchLayer.size = Size(viewW, viewH) -- 229
+	touchLayer.anchor = Vec2(0.5, 0.5) -- 230
+	touchLayer.position = Vec2(viewW / 2, viewH / 2) -- 231
+	touchLayer.swallowTouches = true -- 232
+	root:addChild(touchLayer) -- 233
+	local space = {viewW = viewW, viewH = viewH} -- 235
+	local enabled = false -- 237
+	local dragging = false -- 238
+	local aim = {velocity = {x = 0, y = -AimMinSpeed}, power = 0, unit = {x = 0, y = -1}} -- 239
+	local probeOffset = {x = 0, y = 0} -- 242
+	local dragHandler = nil -- 244
+	local releaseHandler = nil -- 245
+	local pressOffset = {x = 0, y = 0} -- 256
+	--- 用"相对按下点的位移"驱动一次瞄准（位移为 0 时即 computeAim 的中性解 = 直飞）。
+	local function handleDelta(delta) -- 259
+		aim = ____exports.computeAim({x = 0, y = 0}, delta, AimMaxDragPx) -- 260
+		if dragHandler ~= nil then -- 260
+			dragHandler(aim) -- 261
+		end -- 261
+	end -- 259
+	touchLayer:onTapBegan(function(touch) -- 264
+		if not enabled then -- 264
+			return -- 265
+		end -- 265
+		dragging = true -- 266
+		pressOffset = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 267
+		handleDelta({x = 0, y = 0}) -- 269
+	end) -- 264
+	touchLayer:onTapMoved(function(touch) -- 272
+		if not enabled or not dragging then -- 272
+			return -- 273
+		end -- 273
+		local cur = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 274
+		handleDelta({x = cur.x - pressOffset.x, y = cur.y - pressOffset.y}) -- 275
+	end) -- 272
+	touchLayer:onTapEnded(function(touch) -- 278
+		if not enabled or not dragging then -- 278
+			return -- 279
+		end -- 279
+		dragging = false -- 280
+		local cur = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 281
+		handleDelta({x = cur.x - pressOffset.x, y = cur.y - pressOffset.y}) -- 282
+		if releaseHandler ~= nil then -- 282
+			releaseHandler(aim) -- 283
+		end -- 283
+	end) -- 278
+	touchLayer.touchEnabled = false -- 291
+	parent:addChild(root) -- 293
+	return { -- 295
+		onDrag = function(____, callback) -- 296
+			dragHandler = callback -- 297
+		end, -- 296
+		onRelease = function(____, callback) -- 299
+			releaseHandler = callback -- 300
+		end, -- 299
+		setEnabled = function(____, value) -- 302
+			enabled = value -- 303
+			touchLayer.touchEnabled = value -- 306
+			if not value then -- 306
+				dragging = false -- 307
+			end -- 307
+		end, -- 302
+		current = function() return aim end, -- 309
+		setProbeOffset = function(____, offset) -- 310
+			probeOffset = offset -- 311
+		end, -- 310
+		handleLocal = function(____, ____local) -- 315
+			handleDelta(____exports.localToOffset(____local, space)) -- 316
+		end, -- 315
+		handleOffset = function(____, delta) return handleDelta(delta) end, -- 319
+		debugProbeOffset = function() return probeOffset end, -- 320
+		root = root -- 321
+	} -- 321
+end -- 212
+local ResultBackdropHex = 329484 -- 338
+local ResultCardHex = 1252395 -- 339
+local ResultCardBorderHex = 3362938 -- 340
+local ResultLevelHex = 9417948 -- 341
+local ResultBodyHex = 14149367 -- 342
+local ResultHintHex = 8229803 -- 343
+local ResultButtonBgHex = 1919610 -- 344
+local ResultButtonAltBgHex = 1779509 -- 345
+local ResultButtonFgHex = 15398143 -- 346
+local ResultButtonBorderHex = 5211846 -- 347
+local TitleSuccessHex = 8381344 -- 348
+local TitleMissedHex = 16766073 -- 349
+local TitleCrashedHex = 16743019 -- 350
+local SelectBackdropHex = 329484 -- 352
+local SelectTitleHex = 16777215 -- 353
+local SelectSubtitleHex = 10470632 -- 354
+local SelectHintHex = 7309478 -- 355
+local SelectOpenBgHex = 1919610 -- 356
+local SelectOpenFgHex = 15398143 -- 357
+local SelectLockedBgHex = 1383204 -- 358
+local SelectLockedFgHex = 6912140 -- 359
+local SelectBorderHex = 4157096 -- 360
 --- 夹紧到 [lo, hi]（NaN 会原样穿过去，所以调用方必须传已校验的数）。
-local function clampNumber(value, lo, hi) -- 334
-	if value < lo then -- 334
-		return lo -- 335
-	end -- 335
-	if value > hi then -- 335
-		return hi -- 336
-	end -- 336
-	return value -- 337
-end -- 334
+local function clampNumber(value, lo, hi) -- 363
+	if value < lo then -- 363
+		return lo -- 364
+	end -- 364
+	if value > hi then -- 364
+		return hi -- 365
+	end -- 365
+	return value -- 366
+end -- 363
 --- 三态标题（逐字，手册 §5.8）。
-local function resultTitle(result) -- 341
-	if result == "success" then -- 341
-		return "借力成功" -- 342
-	end -- 342
-	if result == "crashed" then -- 342
-		return "信号中断" -- 343
-	end -- 343
-	return "错过目标" -- 344
-end -- 341
+local function resultTitle(result) -- 370
+	if result == "success" then -- 370
+		return "借力成功" -- 371
+	end -- 371
+	if result == "crashed" then -- 371
+		return "信号中断" -- 372
+	end -- 372
+	return "错过目标" -- 373
+end -- 370
 --- 三态说明句（逐字）。
-local function resultBody(result) -- 348
-	if result == "success" then -- 348
-		return "行星把探测器甩了出去，速度够了。" -- 349
-	end -- 349
-	if result == "crashed" then -- 349
-		return "探测器撞上行星，任务到此为止。" -- 350
-	end -- 350
-	return "从行星身侧掠过，没能借到那一点速度。" -- 351
-end -- 348
+local function resultBody(result) -- 377
+	if result == "success" then -- 377
+		return "行星把探测器甩了出去，速度够了。" -- 378
+	end -- 378
+	if result == "crashed" then -- 378
+		return "探测器撞上行星，任务到此为止。" -- 379
+	end -- 379
+	return "从行星身侧掠过，没能借到那一点速度。" -- 380
+end -- 377
 --- 标题配色：成功偏青绿、错过偏暖黄、撞毁偏红。
-local function resultTitleColor(result) -- 355
-	if result == "success" then -- 355
-		return TitleSuccessHex -- 356
-	end -- 356
-	if result == "crashed" then -- 356
-		return TitleCrashedHex -- 357
-	end -- 357
-	return TitleMissedHex -- 358
-end -- 355
+local function resultTitleColor(result) -- 384
+	if result == "success" then -- 384
+		return TitleSuccessHex -- 385
+	end -- 385
+	if result == "crashed" then -- 385
+		return TitleCrashedHex -- 386
+	end -- 386
+	return TitleMissedHex -- 387
+end -- 384
 --- 第四行提示（面板自有文案，不属于三态说明句）。
 -- 
 -- 为什么要有这一行：解锁是 S2.3 的核心反馈，玩家成功时必须**当场**看到
 -- “下一关开了”，否则只会以为“回到关卡选择还要自己找”。
-local function resultHint(result) -- 367
-	if result == "success" then -- 367
-		return "下一关已解锁" -- 368
-	end -- 368
-	return "可重试本关，或返回关卡选择" -- 369
-end -- 367
+local function resultHint(result) -- 396
+	if result == "success" then -- 396
+		return "下一关已解锁" -- 397
+	end -- 397
+	return "可重试本关，或返回关卡选择" -- 398
+end -- 396
 --- 建结算面板：半透明全屏底 + 居中卡片（宽 = 0.88 × 视宽）+ 4 行内容 + 2 个按钮。
 -- 
 -- ⚠️ 全屏底**不能**设 `touch: true`（真机验收踩到的坑）：
@@ -256,115 +261,115 @@ end -- 367
 -- 
 -- @param viewW 视图逻辑宽（`View.size.width`）
 -- @param viewH 视图逻辑高
-function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 398
-	local root = createPanel( -- 404
-		parent, -- 404
-		viewW, -- 404
-		viewH, -- 404
-		ResultBackdropHex, -- 404
-		{alpha = 0.78} -- 404
-	) -- 404
-	local cardW = viewW * 0.88 -- 407
-	local btnW = math.max( -- 408
-		MinButtonWidth, -- 408
-		math.min(cardW - 80, 900) -- 408
-	) -- 408
-	local btnH = math.max(MinButtonHeight, 150) -- 409
-	local padX = (cardW - btnW) / 2 -- 410
-	local padY = 44 -- 411
-	local fontLevel = 34 -- 413
-	local fontTitle = 66 -- 414
-	local fontBody = 34 -- 415
-	local fontHint = 30 -- 416
-	local btnFont = 40 -- 417
-	local rowGap = 26 -- 418
-	local hLevel = fontLevel + 10 -- 421
-	local hTitle = fontTitle + 18 -- 422
-	local hBody = fontBody * 2 + 12 -- 423
-	local hHint = fontHint + 10 -- 424
-	local cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22 -- 425
-	local card = createPanel( -- 427
-		root, -- 427
-		cardW, -- 427
-		cardH, -- 427
-		ResultCardHex, -- 427
-		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 427
-	) -- 427
-	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2) -- 432
-	local cursor = cardH - padY -- 435
-	cursor = cursor - hLevel -- 437
-	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 438
-	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 439
-	cursor = cursor - (rowGap + hTitle) -- 441
-	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 442
-	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 443
-	cursor = cursor - (rowGap + hBody) -- 445
-	local bodyLabel = createLabel(card, "", fontBody, ResultBodyHex) -- 446
-	setLabelCenter(bodyLabel, cardW / 2, cursor + hBody / 2) -- 447
-	if bodyLabel ~= nil then -- 447
-		bodyLabel.textWidth = cardW - 80 -- 448
-	end -- 448
-	cursor = cursor - (rowGap + hHint) -- 450
-	local hintLabel = createLabel(card, "", fontHint, ResultHintHex) -- 451
-	setLabelCenter(hintLabel, cardW / 2, cursor + hHint / 2) -- 452
-	cursor = cursor - (rowGap + btnH) -- 455
-	local retryButton = createButton(card, { -- 456
-		w = btnW, -- 457
-		h = btnH, -- 458
-		text = "重试本关", -- 459
-		fontSize = btnFont, -- 460
-		bgHex = ResultButtonBgHex, -- 461
-		fgHex = ResultButtonFgHex, -- 462
-		borderHex = ResultButtonBorderHex, -- 463
-		onTap = opts.onRetry -- 464
-	}) -- 464
-	retryButton.root.position = Vec2(padX, cursor) -- 466
-	cursor = cursor - (22 + btnH) -- 468
-	local backButton = createButton(card, { -- 469
-		w = btnW, -- 470
-		h = btnH, -- 471
-		text = "返回关卡选择", -- 472
-		fontSize = btnFont, -- 473
-		bgHex = ResultButtonAltBgHex, -- 474
-		fgHex = ResultButtonFgHex, -- 475
-		borderHex = ResultButtonBorderHex, -- 476
-		onTap = opts.onBackToSelect -- 477
-	}) -- 477
-	backButton.root.position = Vec2(padX, cursor) -- 479
-	root.visible = false -- 481
-	retryButton:setEnabled(false) -- 484
-	backButton:setEnabled(false) -- 485
-	return { -- 487
-		root = root, -- 488
-		show = function(____, result, levelName) -- 489
-			retryButton:setEnabled(true) -- 491
-			backButton:setEnabled(true) -- 492
-			setLabelText(levelLabel, levelName) -- 493
-			setLabelText( -- 494
-				titleLabel, -- 494
-				resultTitle(result) -- 494
-			) -- 494
-			setLabelColor( -- 495
-				titleLabel, -- 495
-				resultTitleColor(result) -- 495
-			) -- 495
-			setLabelText( -- 496
-				bodyLabel, -- 496
-				resultBody(result) -- 496
-			) -- 496
-			setLabelText( -- 497
-				hintLabel, -- 497
-				resultHint(result) -- 497
-			) -- 497
-			root.visible = true -- 498
-		end, -- 489
-		hide = function() -- 500
-			root.visible = false -- 501
-			retryButton:setEnabled(false) -- 504
-			backButton:setEnabled(false) -- 505
-		end -- 500
-	} -- 500
-end -- 398
+function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 427
+	local root = createPanel( -- 433
+		parent, -- 433
+		viewW, -- 433
+		viewH, -- 433
+		ResultBackdropHex, -- 433
+		{alpha = 0.78} -- 433
+	) -- 433
+	local cardW = viewW * 0.88 -- 436
+	local btnW = math.max( -- 437
+		MinButtonWidth, -- 437
+		math.min(cardW - 80, 900) -- 437
+	) -- 437
+	local btnH = math.max(MinButtonHeight, 150) -- 438
+	local padX = (cardW - btnW) / 2 -- 439
+	local padY = 44 -- 440
+	local fontLevel = 34 -- 442
+	local fontTitle = 66 -- 443
+	local fontBody = 34 -- 444
+	local fontHint = 30 -- 445
+	local btnFont = 40 -- 446
+	local rowGap = 26 -- 447
+	local hLevel = fontLevel + 10 -- 450
+	local hTitle = fontTitle + 18 -- 451
+	local hBody = fontBody * 2 + 12 -- 452
+	local hHint = fontHint + 10 -- 453
+	local cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22 -- 454
+	local card = createPanel( -- 456
+		root, -- 456
+		cardW, -- 456
+		cardH, -- 456
+		ResultCardHex, -- 456
+		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 456
+	) -- 456
+	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2) -- 461
+	local cursor = cardH - padY -- 464
+	cursor = cursor - hLevel -- 466
+	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 467
+	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 468
+	cursor = cursor - (rowGap + hTitle) -- 470
+	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 471
+	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 472
+	cursor = cursor - (rowGap + hBody) -- 474
+	local bodyLabel = createLabel(card, "", fontBody, ResultBodyHex) -- 475
+	setLabelCenter(bodyLabel, cardW / 2, cursor + hBody / 2) -- 476
+	if bodyLabel ~= nil then -- 476
+		bodyLabel.textWidth = cardW - 80 -- 477
+	end -- 477
+	cursor = cursor - (rowGap + hHint) -- 479
+	local hintLabel = createLabel(card, "", fontHint, ResultHintHex) -- 480
+	setLabelCenter(hintLabel, cardW / 2, cursor + hHint / 2) -- 481
+	cursor = cursor - (rowGap + btnH) -- 484
+	local retryButton = createButton(card, { -- 485
+		w = btnW, -- 486
+		h = btnH, -- 487
+		text = "重试本关", -- 488
+		fontSize = btnFont, -- 489
+		bgHex = ResultButtonBgHex, -- 490
+		fgHex = ResultButtonFgHex, -- 491
+		borderHex = ResultButtonBorderHex, -- 492
+		onTap = opts.onRetry -- 493
+	}) -- 493
+	retryButton.root.position = Vec2(padX, cursor) -- 495
+	cursor = cursor - (22 + btnH) -- 497
+	local backButton = createButton(card, { -- 498
+		w = btnW, -- 499
+		h = btnH, -- 500
+		text = "返回关卡选择", -- 501
+		fontSize = btnFont, -- 502
+		bgHex = ResultButtonAltBgHex, -- 503
+		fgHex = ResultButtonFgHex, -- 504
+		borderHex = ResultButtonBorderHex, -- 505
+		onTap = opts.onBackToSelect -- 506
+	}) -- 506
+	backButton.root.position = Vec2(padX, cursor) -- 508
+	root.visible = false -- 510
+	retryButton:setEnabled(false) -- 513
+	backButton:setEnabled(false) -- 514
+	return { -- 516
+		root = root, -- 517
+		show = function(____, result, levelName) -- 518
+			retryButton:setEnabled(true) -- 520
+			backButton:setEnabled(true) -- 521
+			setLabelText(levelLabel, levelName) -- 522
+			setLabelText( -- 523
+				titleLabel, -- 523
+				resultTitle(result) -- 523
+			) -- 523
+			setLabelColor( -- 524
+				titleLabel, -- 524
+				resultTitleColor(result) -- 524
+			) -- 524
+			setLabelText( -- 525
+				bodyLabel, -- 525
+				resultBody(result) -- 525
+			) -- 525
+			setLabelText( -- 526
+				hintLabel, -- 526
+				resultHint(result) -- 526
+			) -- 526
+			root.visible = true -- 527
+		end, -- 518
+		hide = function() -- 529
+			root.visible = false -- 530
+			retryButton:setEnabled(false) -- 533
+			backButton:setEnabled(false) -- 534
+		end -- 529
+	} -- 529
+end -- 427
 --- 建关卡选择：标题 + 副标题 + 六关竖排按钮 + 底部提示。
 -- 
 -- 未解锁的按钮**整块不可点**（`setEnabled(false)` 会关掉 `touchEnabled`）——
@@ -378,101 +383,101 @@ end -- 398
 -- 
 -- @param viewW 视图逻辑宽
 -- @param viewH 视图逻辑高
-function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 543
-	local root = createPanel( -- 549
-		parent, -- 549
-		viewW, -- 549
-		viewH, -- 549
-		SelectBackdropHex, -- 549
-		{alpha = 0.9} -- 549
-	) -- 549
-	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 551
-	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 552
-	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 554
-	setLabelCenter(subtitleLabel, viewW / 2, viewH - 168) -- 555
-	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 557
-	setLabelCenter(hintLabel, viewW / 2, 64) -- 558
-	local count = #opts.levels -- 560
-	local btnW = math.max( -- 561
-		MinButtonWidth, -- 561
-		math.min(viewW * 0.8, 820) -- 561
-	) -- 561
-	local gap = 18 -- 562
-	local headerH = 220 -- 563
-	local footerH = 120 -- 564
-	local avail = viewH - headerH - footerH - gap * (count - 1) -- 565
-	local btnH = clampNumber(count > 0 and avail / count or MinButtonHeight, MinButtonHeight, 190) -- 568
-	local topY = viewH - headerH -- 569
-	local buttons = {} -- 571
-	do -- 571
-		local i = 0 -- 572
-		while i < count do -- 572
-			local index = i -- 574
-			local button = createButton( -- 575
-				root, -- 575
-				{ -- 575
-					w = btnW, -- 576
-					h = btnH, -- 577
-					text = opts.levels[index + 1].name, -- 578
-					fontSize = 38, -- 579
-					bgHex = SelectLockedBgHex, -- 580
-					fgHex = SelectLockedFgHex, -- 581
-					borderHex = SelectBorderHex, -- 582
-					onTap = function() return opts:onPick(index) end -- 583
-				} -- 583
-			) -- 583
-			button.root.position = Vec2((viewW - btnW) / 2, topY - (index + 1) * btnH - index * gap) -- 585
-			buttons[#buttons + 1] = button -- 586
-			i = i + 1 -- 572
-		end -- 572
-	end -- 572
-	root.visible = false -- 589
-	do -- 589
-		local i = 0 -- 590
-		while i < count do -- 590
-			buttons[i + 1]:setEnabled(false) -- 590
-			i = i + 1 -- 590
-		end -- 590
-	end -- 590
-	return { -- 592
-		root = root, -- 593
-		show = function(____, unlocked) -- 594
-			local maxUnlocked = clampNumber( -- 595
-				math.floor(unlocked), -- 595
-				0, -- 595
-				count - 1 -- 595
-			) -- 595
-			setLabelText( -- 596
-				subtitleLabel, -- 596
-				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 596
-			) -- 596
-			do -- 596
-				local i = 0 -- 597
-				while i < count do -- 597
-					local button = buttons[i + 1] -- 598
-					local open = i <= maxUnlocked -- 599
-					button:setEnabled(open) -- 600
-					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 601
-					if open then -- 601
-						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 602
-					else -- 602
-						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 603
-					end -- 603
-					i = i + 1 -- 597
-				end -- 597
-			end -- 597
-			root.visible = true -- 605
-		end, -- 594
-		hide = function() -- 607
-			root.visible = false -- 608
-			do -- 608
-				local i = 0 -- 610
-				while i < count do -- 610
-					buttons[i + 1]:setEnabled(false) -- 610
-					i = i + 1 -- 610
-				end -- 610
-			end -- 610
-		end -- 607
-	} -- 607
-end -- 543
-return ____exports -- 543
+function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 572
+	local root = createPanel( -- 578
+		parent, -- 578
+		viewW, -- 578
+		viewH, -- 578
+		SelectBackdropHex, -- 578
+		{alpha = 0.9} -- 578
+	) -- 578
+	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 580
+	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 581
+	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 583
+	setLabelCenter(subtitleLabel, viewW / 2, viewH - 168) -- 584
+	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 586
+	setLabelCenter(hintLabel, viewW / 2, 64) -- 587
+	local count = #opts.levels -- 589
+	local btnW = math.max( -- 590
+		MinButtonWidth, -- 590
+		math.min(viewW * 0.8, 820) -- 590
+	) -- 590
+	local gap = 18 -- 591
+	local headerH = 220 -- 592
+	local footerH = 120 -- 593
+	local avail = viewH - headerH - footerH - gap * (count - 1) -- 594
+	local btnH = clampNumber(count > 0 and avail / count or MinButtonHeight, MinButtonHeight, 190) -- 597
+	local topY = viewH - headerH -- 598
+	local buttons = {} -- 600
+	do -- 600
+		local i = 0 -- 601
+		while i < count do -- 601
+			local index = i -- 603
+			local button = createButton( -- 604
+				root, -- 604
+				{ -- 604
+					w = btnW, -- 605
+					h = btnH, -- 606
+					text = opts.levels[index + 1].name, -- 607
+					fontSize = 38, -- 608
+					bgHex = SelectLockedBgHex, -- 609
+					fgHex = SelectLockedFgHex, -- 610
+					borderHex = SelectBorderHex, -- 611
+					onTap = function() return opts:onPick(index) end -- 612
+				} -- 612
+			) -- 612
+			button.root.position = Vec2((viewW - btnW) / 2, topY - (index + 1) * btnH - index * gap) -- 614
+			buttons[#buttons + 1] = button -- 615
+			i = i + 1 -- 601
+		end -- 601
+	end -- 601
+	root.visible = false -- 618
+	do -- 618
+		local i = 0 -- 619
+		while i < count do -- 619
+			buttons[i + 1]:setEnabled(false) -- 619
+			i = i + 1 -- 619
+		end -- 619
+	end -- 619
+	return { -- 621
+		root = root, -- 622
+		show = function(____, unlocked) -- 623
+			local maxUnlocked = clampNumber( -- 624
+				math.floor(unlocked), -- 624
+				0, -- 624
+				count - 1 -- 624
+			) -- 624
+			setLabelText( -- 625
+				subtitleLabel, -- 625
+				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 625
+			) -- 625
+			do -- 625
+				local i = 0 -- 626
+				while i < count do -- 626
+					local button = buttons[i + 1] -- 627
+					local open = i <= maxUnlocked -- 628
+					button:setEnabled(open) -- 629
+					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 630
+					if open then -- 630
+						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 631
+					else -- 631
+						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 632
+					end -- 632
+					i = i + 1 -- 626
+				end -- 626
+			end -- 626
+			root.visible = true -- 634
+		end, -- 623
+		hide = function() -- 636
+			root.visible = false -- 637
+			do -- 637
+				local i = 0 -- 639
+				while i < count do -- 639
+					buttons[i + 1]:setEnabled(false) -- 639
+					i = i + 1 -- 639
+				end -- 639
+			end -- 639
+		end -- 636
+	} -- 636
+end -- 572
+return ____exports -- 572
