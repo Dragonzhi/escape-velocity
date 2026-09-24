@@ -18,7 +18,7 @@
  *   LevelSelect --选关--> Aiming（拖动矄准）→ 松手发射 → Flying → Result
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
-import { App, Camera3D, Color, Content, Director, DrawNode, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
+import { App, Camera3D, Director, Node, Node3D, Size, Vec2, View, threadLoop } from 'Dora';
 import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
