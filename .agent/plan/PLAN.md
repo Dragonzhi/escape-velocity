@@ -33,7 +33,7 @@
 
 依赖：S0。
 
-- [ ] S1.1 `game/Gravity.ts`：固定步长积分 + 纯函数可测
+- [x] S1.1 `game/Gravity.ts`：固定步长积分 + 纯函数可测。已交付 `Test/GravityTest.ts`（25 断言全过，跨运行逐位一致，且已验证测试判别力）。
 - [ ] S1.2 `game/Scene.ts` / `CameraRig.ts`：行星、探测器、跟随相机
 - [ ] S1.3 `game/Trajectory.ts`：预测线（拖动实时重画）+ 真实尾迹
 - [ ] S1.4 `game/Hud.ts`：单指拖拽瞄准、松手发射

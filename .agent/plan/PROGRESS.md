@@ -5,9 +5,37 @@
 
 ## 当前阶段
 
-**S0 裸测基本完成**（R1/R2/R3/R4 均已关闭；仅剩 R6 包体积缺口，用户决定暂不处理）。可进入 S1 核心循环。
+**S1 核心循环进行中**。S0 已完成（R1/R2/R3/R4 关闭，仅剩 R6 包体积暂不处理）；S1.1 物理内核已交付并有证据。
 
 ## 变更日志
+
+### 会话 6 · S1.1 物理内核（确定性）
+
+**已实现（源码）**
+
+- `game/Gravity.ts`（253 行，**零引擎依赖**，不 import 'Dora'）：
+  - 类型：`P2` / `Body` / `ProbeState` / `SimOptions` / `SimResult` / `Outcome`
+  - 函数：`bodyPositionAt`（公转）、`accelerationAt`（平方反比）、`step`（半隐式欧拉）、
+    `collisionIndex`（撞毁）、`simulate`（**预测与真实共用**的推演）、
+    `orbitalSpeed`、`applyScales`、`sub`/`length`/`distance`
+- `Test/GravityTest.ts` — 10 组 / 25 项断言，首行输出 `passed`/`failed`，
+  用 `requireProjectModule("Test.GravityTest")` 加载，**无需运行场景**。
+
+**已验证的证据**
+
+- **编译**：`game/Gravity.ts` 与 `Test/GravityTest.ts` 均通过（1/1）。
+- **单测**：`checks=25 failures=0` → `passed`。
+- **确定性（验收硬指标）**：同一输入连跑 5 次，轨迹 101 个采样点 **逐位相同**（bit-exact）。
+- **物理正确性交叉验证**：`a(1)=100.0000`（= `gm/r²`）；`a(1)/a(2)=4.0`、`a(1)/a(4)=16.0`（平方反比）；
+  圆轨道漂移 **0.000%**。
+- **测试判别力（防止恒真测试）**：故意把平方反比改成线性（`invd3 → invd`），
+  测试立即报 `failed failures=4`（`inverse-square`、`circular-orbit-radius`、`escape-detected`、`gravity-pulls-inward`）；
+  已撤销并重跑确认 `passed`。
+  - 额外发现：注入缺陷时 `determinism` **依然通过** → 确定性测试与物理正确性测试是**互补**的两类证据。
+
+**未验证 / 待办**
+
+- `Gravity.ts` 尚未接入渲染与玩法（S1.2–S1.5）。
 
 ### 会话 5 · 文本化视觉验证 + 关闭 R3（竖屏相机）
 
