@@ -1,0 +1,16 @@
+# 换行与二进制约定
+#
+# 背景：本机 core.autocrlf=true，而 Assets/ 下的模型是**按字节校验过**的资产
+# （尺度/朝向标定、Test/gen_star_assets.py 的"重新生成逐字节一致"都依赖字节稳定）。
+# .gltf 是自包含 JSON（几何用 base64 data URI 内嵌）—— 一旦被 CRLF 重写，
+# 哈希校验与"可复现"的说法就都不成立了。所以显式声明它们不做换行转换。
+#
+# 文本源码保持默认（autocrlf 处理），PowerShell 脚本必须 CRLF 见 AGENTS.md 第 9 条。
+
+*.glb   binary
+*.gltf  -text
+*.png   binary
+*.jpg   binary
+*.tga   binary
+*.wav   binary
+*.mp4   binary
