@@ -380,8 +380,11 @@ export interface ResultPanel {
 /**
  * 建结算面板：半透明全屏底 + 居中卡片（宽 = 0.88 × 视宽）+ 4 行内容 + 2 个按钮。
  *
- * 层级用意：全屏底设 `touch: true`，把落在结算界面上的点击全部吞掉 ——
- * 否则底下的矄准触摸层仍会收到拖动，玩家“关掉结算”时会顺手改掉下一发的方向。
+ * ⚠️ 全屏底**不能**设 `touch: true`（真机验收踩到的坑）：
+ * 全屏 + `swallowTouches` 的节点会独占它覆盖范围内的点击，而节点树里它排在瞄准层之前；
+ * 只要它存在，进入关卡后怎么拖都没反应（表现为“进关卡不能拖动飞行器”）。
+ * 不需要它吞点击：结算态瞄准层本来就已 `setEnabled(false)`（Flying 起就关），
+ * 能点的只有卡片里那两个按钮。
  *
  * @param viewW 视图逻辑宽（`View.size.width`）
  * @param viewH 视图逻辑高
@@ -392,7 +395,7 @@ export function createResultPanel(
 	viewH: number,
 	opts: ResultPanelOptions,
 ): ResultPanel {
-	const root = createPanel(parent, viewW, viewH, ResultBackdropHex, { alpha: 0.78, touch: true });
+	const root = createPanel(parent, viewW, viewH, ResultBackdropHex, { alpha: 0.78 });
 
 	// 尺寸全部按视图逻辑像素推导，不写死：竖屏 1080×1920 与桌面 2024×1230 都要能看
 	const cardW = viewW * 0.88;
@@ -474,6 +477,9 @@ export function createResultPanel(
 	return {
 		root,
 		show: (result: ResultKind, levelName: string): void => {
+			// 只让面板在显示时才可点（见 hide 的兜底说明）
+			retryButton.setEnabled(true);
+			backButton.setEnabled(true);
 			setLabelText(levelLabel, levelName);
 			setLabelText(titleLabel, resultTitle(result));
 			setLabelColor(titleLabel, resultTitleColor(result));
@@ -483,6 +489,10 @@ export function createResultPanel(
 		},
 		hide: (): void => {
 			root.visible = false;
+			// 兜底：隐藏时把两个按钮的触摸也断掉 —— 任何“隐藏但仍参与命中”的引擎行为
+			// 都不会再吞掉点击（瞄准层在下面，收不到就拖不动）
+			retryButton.setEnabled(false);
+			backButton.setEnabled(false);
 		},
 	};
 }
@@ -512,6 +522,11 @@ export interface LevelSelect {
  * 只在回调里判断“锁了就 return”是不够的：那样按钮仍会吞掉触摸，
  * 表现为“点了没反应”，玩家分不清是坏了还是锁着。
  *
+ * ⚠️ 全屏底**不设** `touch: true`：全屏 + `swallowTouches` 会独占整屏点击，
+ * 而它在节点树里排在瞄准层之前 —— 隐藏后若仍参与命中，进入关卡就再也拖不动
+ * （真机验收即为此症状）。选关期间没有任何关卡处于 Aiming，瞄准层本就关着，
+ * 不需要全屏底代劳；能点的只有这六个按钮。
+ *
  * @param viewW 视图逻辑宽
  * @param viewH 视图逻辑高
  */
@@ -521,7 +536,7 @@ export function createLevelSelect(
 	viewH: number,
 	opts: LevelSelectOptions,
 ): LevelSelect {
-	const root = createPanel(parent, viewW, viewH, SelectBackdropHex, { alpha: 0.9, touch: true });
+	const root = createPanel(parent, viewW, viewH, SelectBackdropHex, { alpha: 0.9 });
 
 	const titleLabel = createLabel(root, '选择任务', 60, SelectTitleHex);
 	setLabelCenter(titleLabel, viewW / 2, viewH - 96);
@@ -580,6 +595,8 @@ export function createLevelSelect(
 		},
 		hide: (): void => {
 			root.visible = false;
+			// 兜底：隐藏时把六个按钮的触摸全部断掉，避免“隐藏但仍命中”吞掉瞄准层的拖动
+			for (let i = 0; i < count; i++) buttons[i].setEnabled(false);
 		},
 	};
 }

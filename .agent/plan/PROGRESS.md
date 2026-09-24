@@ -11,6 +11,35 @@
 
 ## 变更日志
 
+### 会话 15 · 真机验收发现的触摸 bug：全屏"吞触摸层"独占点击（已修，待复测）
+
+**用户真机反馈**：「进入关卡不能拖动飞行器了」。日志可见用户确实点进了 L1：
+`built L1 L1 直飞 / phase -> Aiming (L1) / enter L1 直飞`（`log.txt` 21:51:08）—— 即**关卡能进、瞄准收不到触摸**。
+
+**根因（代码定位）**：S2.2 给结算面板与关卡选择各加了一层**全屏、`touchEnabled + swallowTouches`** 的底板
+（`createPanel(..., { touch: true })`），用意是"吞掉落在面板上的点击"。问题在于：
+
+- 这两层在节点树里排在**瞄准层之后**（`init.ts` 先建 `levelLayers` 再建 `uiLayer`），全屏 + `swallowTouches`
+  意味着它们会独占覆盖范围内的点击；
+- `hide()` 只关 `visible`，**没有关 `touchEnabled`** —— 选关界面隐藏后仍参与命中，
+  于是瞄准层永远收不到触摸，表现就是"进关卡拖不动"。
+- 为什么之前没发现：探针用 `handleOffset` 程序化驱动瞄准，**完全绕过引擎命中判定**；
+  `Touch` 是私有构造，无头注入不了真实触摸 —— 这正是"人工触摸验收"不可省的原因。
+
+**修复（`game/Hud.ts`）**：两块全屏底板**都不再设 `touch: true`**（面板不需要代劳吞点击：
+结算态瞄准层本就 `setEnabled(false)`，选关期间没有任何关卡处于 Aiming）；并做兜底 ——
+`hide()` 里一并 `setEnabled(false)` 面板按钮/六个关卡按钮，任何"隐藏但仍命中"的行为都不会再吞掉拖动。
+
+**已验证的证据**
+
+- `node tools/dora-build/build.mjs --all` → **36/36 成功**；编译产物 `game/Hud.lua` 里
+  `swallowTouches = true` **只剩瞄准层一处**（`touchEnabled` 写入也只剩瞄准层的创建与 `setEnabled`）——
+  即全屏独占层已被彻底移除。
+- 整项目 `POST /run init.lua` → `running=true`，日志 `started: 6 levels, unlocked=0, level select shown`，
+  `POST /stop` → `running=false`（启动路径未破坏）。
+
+**未验证**：真实触摸复测（需用户再点一次）——本次修复的判定依据是"移除全屏独占层"，
+真实命中判定无法无头执行。
 ### 会话 14 · S2.2 结算面板 + S2.3 关卡选择与解锁进度
 
 **已实现（源码）**
