@@ -269,106 +269,107 @@ function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 427
 		ResultBackdropHex, -- 433
 		{alpha = 0.78} -- 433
 	) -- 433
-	local cardW = viewW * 0.88 -- 436
-	local btnW = math.max( -- 437
-		MinButtonWidth, -- 437
-		math.min(cardW - 80, 900) -- 437
-	) -- 437
-	local btnH = math.max(MinButtonHeight, 150) -- 438
-	local padX = (cardW - btnW) / 2 -- 439
-	local padY = 44 -- 440
-	local fontLevel = 34 -- 442
-	local fontTitle = 66 -- 443
-	local fontBody = 34 -- 444
-	local fontHint = 30 -- 445
-	local btnFont = 40 -- 446
-	local rowGap = 26 -- 447
-	local hLevel = fontLevel + 10 -- 450
-	local hTitle = fontTitle + 18 -- 451
-	local hBody = fontBody * 2 + 12 -- 452
-	local hHint = fontHint + 10 -- 453
-	local cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22 -- 454
-	local card = createPanel( -- 456
-		root, -- 456
-		cardW, -- 456
-		cardH, -- 456
-		ResultCardHex, -- 456
-		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 456
-	) -- 456
-	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2) -- 461
-	local cursor = cardH - padY -- 464
-	cursor = cursor - hLevel -- 466
-	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 467
-	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 468
-	cursor = cursor - (rowGap + hTitle) -- 470
-	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 471
-	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 472
-	cursor = cursor - (rowGap + hBody) -- 474
-	local bodyLabel = createLabel(card, "", fontBody, ResultBodyHex) -- 475
-	setLabelCenter(bodyLabel, cardW / 2, cursor + hBody / 2) -- 476
-	if bodyLabel ~= nil then -- 476
-		bodyLabel.textWidth = cardW - 80 -- 477
-	end -- 477
-	cursor = cursor - (rowGap + hHint) -- 479
-	local hintLabel = createLabel(card, "", fontHint, ResultHintHex) -- 480
-	setLabelCenter(hintLabel, cardW / 2, cursor + hHint / 2) -- 481
-	cursor = cursor - (rowGap + btnH) -- 484
-	local retryButton = createButton(card, { -- 485
-		w = btnW, -- 486
-		h = btnH, -- 487
-		text = "重试本关", -- 488
-		fontSize = btnFont, -- 489
-		bgHex = ResultButtonBgHex, -- 490
-		fgHex = ResultButtonFgHex, -- 491
-		borderHex = ResultButtonBorderHex, -- 492
-		onTap = opts.onRetry -- 493
-	}) -- 493
-	retryButton.root.position = Vec2(padX, cursor) -- 495
-	cursor = cursor - (22 + btnH) -- 497
-	local backButton = createButton(card, { -- 498
-		w = btnW, -- 499
-		h = btnH, -- 500
-		text = "返回关卡选择", -- 501
-		fontSize = btnFont, -- 502
-		bgHex = ResultButtonAltBgHex, -- 503
-		fgHex = ResultButtonFgHex, -- 504
-		borderHex = ResultButtonBorderHex, -- 505
-		onTap = opts.onBackToSelect -- 506
-	}) -- 506
-	backButton.root.position = Vec2(padX, cursor) -- 508
-	root.visible = false -- 510
-	retryButton:setEnabled(false) -- 513
-	backButton:setEnabled(false) -- 514
-	return { -- 516
-		root = root, -- 517
-		show = function(____, result, levelName) -- 518
-			retryButton:setEnabled(true) -- 520
-			backButton:setEnabled(true) -- 521
-			setLabelText(levelLabel, levelName) -- 522
-			setLabelText( -- 523
-				titleLabel, -- 523
-				resultTitle(result) -- 523
-			) -- 523
-			setLabelColor( -- 524
-				titleLabel, -- 524
-				resultTitleColor(result) -- 524
-			) -- 524
-			setLabelText( -- 525
-				bodyLabel, -- 525
-				resultBody(result) -- 525
-			) -- 525
-			setLabelText( -- 526
-				hintLabel, -- 526
-				resultHint(result) -- 526
-			) -- 526
-			root.visible = true -- 527
-		end, -- 518
-		hide = function() -- 529
-			root.visible = false -- 530
-			retryButton:setEnabled(false) -- 533
-			backButton:setEnabled(false) -- 534
-		end -- 529
-	} -- 529
+	local cardW = viewW * 0.88 -- 438
+	local btnW = clampNumber(cardW - 60, MinButtonWidth, 900) -- 439
+	local btnH = clampNumber(viewH * 0.13, MinButtonHeight, 150) -- 440
+	local padX = (cardW - btnW) / 2 -- 441
+	local padY = 44 -- 442
+	local fontLevel = 34 -- 444
+	local fontTitle = 66 -- 445
+	local fontBody = 34 -- 446
+	local fontHint = 30 -- 447
+	local btnFont = 40 -- 448
+	local rowGap = 26 -- 449
+	local hLevel = fontLevel + 10 -- 452
+	local hTitle = fontTitle + 18 -- 453
+	local hBody = fontBody * 2 + 12 -- 454
+	local hHint = fontHint + 10 -- 455
+	local cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22 -- 456
+	if cardH > viewH - 24 then -- 456
+		btnH = math.max(MinButtonHeight, btnH - (cardH - (viewH - 24)) / 2) -- 459
+		cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22 -- 460
+	end -- 460
+	local card = createPanel( -- 463
+		root, -- 463
+		cardW, -- 463
+		cardH, -- 463
+		ResultCardHex, -- 463
+		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 463
+	) -- 463
+	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2) -- 468
+	local cursor = cardH - padY -- 471
+	cursor = cursor - hLevel -- 473
+	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 474
+	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 475
+	cursor = cursor - (rowGap + hTitle) -- 477
+	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 478
+	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 479
+	cursor = cursor - (rowGap + hBody) -- 481
+	local bodyLabel = createLabel(card, "", fontBody, ResultBodyHex) -- 482
+	setLabelCenter(bodyLabel, cardW / 2, cursor + hBody / 2) -- 483
+	if bodyLabel ~= nil then -- 483
+		bodyLabel.textWidth = cardW - 80 -- 484
+	end -- 484
+	cursor = cursor - (rowGap + hHint) -- 486
+	local hintLabel = createLabel(card, "", fontHint, ResultHintHex) -- 487
+	setLabelCenter(hintLabel, cardW / 2, cursor + hHint / 2) -- 488
+	cursor = cursor - (rowGap + btnH) -- 491
+	local retryButton = createButton(card, { -- 492
+		w = btnW, -- 493
+		h = btnH, -- 494
+		text = "重试本关", -- 495
+		fontSize = btnFont, -- 496
+		bgHex = ResultButtonBgHex, -- 497
+		fgHex = ResultButtonFgHex, -- 498
+		borderHex = ResultButtonBorderHex, -- 499
+		onTap = opts.onRetry -- 500
+	}) -- 500
+	retryButton.root.position = Vec2(padX, cursor) -- 502
+	cursor = cursor - (22 + btnH) -- 504
+	local backButton = createButton(card, { -- 505
+		w = btnW, -- 506
+		h = btnH, -- 507
+		text = "返回关卡选择", -- 508
+		fontSize = btnFont, -- 509
+		bgHex = ResultButtonAltBgHex, -- 510
+		fgHex = ResultButtonFgHex, -- 511
+		borderHex = ResultButtonBorderHex, -- 512
+		onTap = opts.onBackToSelect -- 513
+	}) -- 513
+	backButton.root.position = Vec2(padX, cursor) -- 515
+	root.visible = false -- 517
+	retryButton:setEnabled(false) -- 520
+	backButton:setEnabled(false) -- 521
+	return { -- 523
+		root = root, -- 524
+		show = function(____, result, levelName) -- 525
+			retryButton:setEnabled(true) -- 527
+			backButton:setEnabled(true) -- 528
+			setLabelText(levelLabel, levelName) -- 529
+			setLabelText( -- 530
+				titleLabel, -- 530
+				resultTitle(result) -- 530
+			) -- 530
+			setLabelColor( -- 531
+				titleLabel, -- 531
+				resultTitleColor(result) -- 531
+			) -- 531
+			setLabelText( -- 532
+				bodyLabel, -- 532
+				resultBody(result) -- 532
+			) -- 532
+			setLabelText( -- 533
+				hintLabel, -- 533
+				resultHint(result) -- 533
+			) -- 533
+			root.visible = true -- 534
+		end, -- 525
+		hide = function() -- 536
+			root.visible = false -- 537
+			retryButton:setEnabled(false) -- 540
+			backButton:setEnabled(false) -- 541
+		end -- 536
+	} -- 536
 end -- 427
 --- 建关卡选择：标题 + 副标题 + 六关竖排按钮 + 底部提示。
 -- 
@@ -383,101 +384,115 @@ end -- 427
 -- 
 -- @param viewW 视图逻辑宽
 -- @param viewH 视图逻辑高
-function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 572
-	local root = createPanel( -- 578
-		parent, -- 578
-		viewW, -- 578
-		viewH, -- 578
-		SelectBackdropHex, -- 578
-		{alpha = 0.9} -- 578
-	) -- 578
-	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 580
-	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 581
-	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 583
-	setLabelCenter(subtitleLabel, viewW / 2, viewH - 168) -- 584
-	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 586
-	setLabelCenter(hintLabel, viewW / 2, 64) -- 587
-	local count = #opts.levels -- 589
-	local btnW = math.max( -- 590
-		MinButtonWidth, -- 590
-		math.min(viewW * 0.8, 820) -- 590
-	) -- 590
-	local gap = 18 -- 591
-	local headerH = 220 -- 592
-	local footerH = 120 -- 593
-	local avail = viewH - headerH - footerH - gap * (count - 1) -- 594
-	local btnH = clampNumber(count > 0 and avail / count or MinButtonHeight, MinButtonHeight, 190) -- 597
-	local topY = viewH - headerH -- 598
-	local buttons = {} -- 600
-	do -- 600
-		local i = 0 -- 601
-		while i < count do -- 601
-			local index = i -- 603
-			local button = createButton( -- 604
-				root, -- 604
-				{ -- 604
-					w = btnW, -- 605
-					h = btnH, -- 606
-					text = opts.levels[index + 1].name, -- 607
-					fontSize = 38, -- 608
-					bgHex = SelectLockedBgHex, -- 609
-					fgHex = SelectLockedFgHex, -- 610
-					borderHex = SelectBorderHex, -- 611
-					onTap = function() return opts:onPick(index) end -- 612
-				} -- 612
-			) -- 612
-			button.root.position = Vec2((viewW - btnW) / 2, topY - (index + 1) * btnH - index * gap) -- 614
-			buttons[#buttons + 1] = button -- 615
-			i = i + 1 -- 601
-		end -- 601
-	end -- 601
-	root.visible = false -- 618
-	do -- 618
-		local i = 0 -- 619
-		while i < count do -- 619
-			buttons[i + 1]:setEnabled(false) -- 619
-			i = i + 1 -- 619
-		end -- 619
-	end -- 619
-	return { -- 621
-		root = root, -- 622
-		show = function(____, unlocked) -- 623
-			local maxUnlocked = clampNumber( -- 624
-				math.floor(unlocked), -- 624
-				0, -- 624
-				count - 1 -- 624
-			) -- 624
-			setLabelText( -- 625
-				subtitleLabel, -- 625
-				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 625
-			) -- 625
-			do -- 625
-				local i = 0 -- 626
-				while i < count do -- 626
-					local button = buttons[i + 1] -- 627
-					local open = i <= maxUnlocked -- 628
-					button:setEnabled(open) -- 629
-					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 630
-					if open then -- 630
-						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 631
-					else -- 631
-						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 632
-					end -- 632
-					i = i + 1 -- 626
-				end -- 626
-			end -- 626
-			root.visible = true -- 634
-		end, -- 623
-		hide = function() -- 636
-			root.visible = false -- 637
-			do -- 637
-				local i = 0 -- 639
-				while i < count do -- 639
-					buttons[i + 1]:setEnabled(false) -- 639
-					i = i + 1 -- 639
-				end -- 639
-			end -- 639
-		end -- 636
-	} -- 636
-end -- 572
-return ____exports -- 572
+function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 579
+	local root = createPanel( -- 585
+		parent, -- 585
+		viewW, -- 585
+		viewH, -- 585
+		SelectBackdropHex, -- 585
+		{alpha = 0.9} -- 585
+	) -- 585
+	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 587
+	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 588
+	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 590
+	setLabelCenter( -- 591
+		subtitleLabel, -- 591
+		viewW / 2, -- 591
+		viewH - clampNumber(viewH * 0.13, 110, 260) -- 591
+	) -- 591
+	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 593
+	setLabelCenter( -- 594
+		hintLabel, -- 594
+		viewW / 2, -- 594
+		clampNumber(viewH * 0.045, 36, 90) -- 594
+	) -- 594
+	local count = #opts.levels -- 596
+	local cols = viewH > viewW and 2 or 1 -- 599
+	local rows = math.max( -- 600
+		1, -- 600
+		math.ceil(count / cols) -- 600
+	) -- 600
+	local gap = 18 -- 601
+	local headerH = clampNumber(viewH * 0.16, 120, 320) -- 602
+	local footerH = clampNumber(viewH * 0.1, 80, 200) -- 603
+	local availW = viewW * 0.84 -- 604
+	local availH = viewH - headerH - footerH - gap * (rows - 1) -- 605
+	local btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820) -- 606
+	local btnH = clampNumber(rows > 0 and availH / rows or MinButtonHeight, MinButtonHeight, 190) -- 607
+	local gridW = cols * btnW + gap * (cols - 1) -- 608
+	local topY = viewH - headerH -- 609
+	local buttons = {} -- 611
+	do -- 611
+		local i = 0 -- 612
+		while i < count do -- 612
+			local index = i -- 614
+			local button = createButton( -- 615
+				root, -- 615
+				{ -- 615
+					w = btnW, -- 616
+					h = btnH, -- 617
+					text = opts.levels[index + 1].name, -- 618
+					fontSize = 38, -- 619
+					bgHex = SelectLockedBgHex, -- 620
+					fgHex = SelectLockedFgHex, -- 621
+					borderHex = SelectBorderHex, -- 622
+					onTap = function() return opts:onPick(index) end -- 623
+				} -- 623
+			) -- 623
+			local col = index % cols -- 625
+			local rowIndex = math.floor(index / cols) -- 626
+			button.root.position = Vec2((viewW - gridW) / 2 + col * (btnW + gap), topY - (rowIndex + 1) * btnH - rowIndex * gap) -- 627
+			buttons[#buttons + 1] = button -- 631
+			i = i + 1 -- 612
+		end -- 612
+	end -- 612
+	root.visible = false -- 634
+	do -- 634
+		local i = 0 -- 635
+		while i < count do -- 635
+			buttons[i + 1]:setEnabled(false) -- 635
+			i = i + 1 -- 635
+		end -- 635
+	end -- 635
+	return { -- 637
+		root = root, -- 638
+		show = function(____, unlocked) -- 639
+			local maxUnlocked = clampNumber( -- 640
+				math.floor(unlocked), -- 640
+				0, -- 640
+				count - 1 -- 640
+			) -- 640
+			setLabelText( -- 641
+				subtitleLabel, -- 641
+				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 641
+			) -- 641
+			do -- 641
+				local i = 0 -- 642
+				while i < count do -- 642
+					local button = buttons[i + 1] -- 643
+					local open = i <= maxUnlocked -- 644
+					button:setEnabled(open) -- 645
+					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 646
+					if open then -- 646
+						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 647
+					else -- 647
+						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 648
+					end -- 648
+					i = i + 1 -- 642
+				end -- 642
+			end -- 642
+			root.visible = true -- 650
+		end, -- 639
+		hide = function() -- 652
+			root.visible = false -- 653
+			do -- 653
+				local i = 0 -- 655
+				while i < count do -- 655
+					buttons[i + 1]:setEnabled(false) -- 655
+					i = i + 1 -- 655
+				end -- 655
+			end -- 655
+		end -- 652
+	} -- 652
+end -- 579
+return ____exports -- 579

@@ -30,8 +30,15 @@ export const FontName = 'sarasa-mono-sc-regular';
  * 竖屏单手可达是硬要求（手册 §5.7），所以按钮不许做小：
  * 高度 130、宽度 560 是**下限**，不是推荐值。
  */
-export const MinButtonHeight = 130;
-export const MinButtonWidth = 560;
+/**
+ * 触屏目标的**绝对下限**（视图逻辑像素）—— 不是“按钮就该这么大”。
+ *
+ * ⚠️ 曾经写成 560/130，结果在竖屏窄屏（实测 View.size = 601×1066）里：
+ * 560 宽的按钮几乎顶满屏宽，六行 130 高的关卡按钮直接从屏幕底部溢出（L6 被裁、底部提示被挤没）。
+ * 真正的尺寸应由布局按**可用空间**算，这里只保一个“不要小到点不中”的地板。
+ */
+export const MinButtonHeight = 72;
+export const MinButtonWidth = 160;
 
 /**
  * 0xRRGGBB + alpha(0–1) → Color。

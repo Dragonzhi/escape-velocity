@@ -432,10 +432,12 @@ export function createResultPanel(
 ): ResultPanel {
 	const root = createPanel(parent, viewW, viewH, ResultBackdropHex, { alpha: 0.78 });
 
-	// 尺寸全部按视图逻辑像素推导，不写死：竖屏 1080×1920 与桌面 2024×1230 都要能看
+	// 尺寸全部按视图逻辑像素推导：竖屏 601×1066 到桌面 2024×1230 都要能看。
+	// ⚠️ 按钮宽度必须**留在卡片内**：早前写成 max(560, …)，竖屏卡片只有 529 宽，
+	// 按钮横向戳出卡片外（真机竖屏实测截图可见）。
 	const cardW = viewW * 0.88;
-	const btnW = Math.max(MinButtonWidth, Math.min(cardW - 80, 900));
-	const btnH = Math.max(MinButtonHeight, 150);
+	const btnW = clampNumber(cardW - 60, MinButtonWidth, 900);
+	let btnH = clampNumber(viewH * 0.13, MinButtonHeight, 150);
 	const padX = (cardW - btnW) / 2;
 	const padY = 44;
 
@@ -451,7 +453,12 @@ export function createResultPanel(
 	const hTitle = fontTitle + 18;
 	const hBody = fontBody * 2 + 12;
 	const hHint = fontHint + 10;
-	const cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22;
+	let cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22;
+	// 卡片不得超出屏幕：超了先压按钮高度（最大项），而不是让内容被裁掉
+	if (cardH > viewH - 24) {
+		btnH = Math.max(MinButtonHeight, btnH - (cardH - (viewH - 24)) / 2);
+		cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22;
+	}
 
 	const card = createPanel(root, cardW, cardH, ResultCardHex, {
 		alpha: 0.97,
@@ -581,20 +588,24 @@ export function createLevelSelect(
 	setLabelCenter(titleLabel, viewW / 2, viewH - 96);
 
 	const subtitleLabel = createLabel(root, '', 34, SelectSubtitleHex);
-	setLabelCenter(subtitleLabel, viewW / 2, viewH - 168);
+	setLabelCenter(subtitleLabel, viewW / 2, viewH - clampNumber(viewH * 0.13, 110, 260));
 
 	const hintLabel = createLabel(root, '完成一关即解锁下一关', 30, SelectHintHex);
-	setLabelCenter(hintLabel, viewW / 2, 64);
+	setLabelCenter(hintLabel, viewW / 2, clampNumber(viewH * 0.045, 36, 90));
 
 	const count = opts.levels.length;
-	const btnW = Math.max(MinButtonWidth, Math.min(viewW * 0.8, 820));
+	// 竖屏两列三行、横屏一列六行：竖屏单列时 6×130 高必然溢出屏幕（真机竖屏实测：
+	// L6 被裁一半、底部提示整条被挤出屏外）。列数随宽高比自适应，尺寸随可用空间算。
+	const cols = viewH > viewW ? 2 : 1;
+	const rows = Math.max(1, Math.ceil(count / cols));
 	const gap = 18;
-	const headerH = 220;
-	const footerH = 120;
-	const avail = viewH - headerH - footerH - gap * (count - 1);
-	// 六关都要塞进一屏，所以按钮高度是“剩下的空间除以关卡数”，
-	// 但绝不低于触屏下限（手册 §5.7）
-	const btnH = clampNumber(count > 0 ? avail / count : MinButtonHeight, MinButtonHeight, 190);
+	const headerH = clampNumber(viewH * 0.16, 120, 320);
+	const footerH = clampNumber(viewH * 0.10, 80, 200);
+	const availW = viewW * 0.84;
+	const availH = viewH - headerH - footerH - gap * (rows - 1);
+	const btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820);
+	const btnH = clampNumber(rows > 0 ? availH / rows : MinButtonHeight, MinButtonHeight, 190);
+	const gridW = cols * btnW + gap * (cols - 1);
 	const topY = viewH - headerH;
 
 	const buttons: UiButton[] = [];
@@ -611,7 +622,12 @@ export function createLevelSelect(
 			borderHex: SelectBorderHex,
 			onTap: (): void => opts.onPick(index),
 		});
-		button.root.position = Vec2((viewW - btnW) / 2, topY - (index + 1) * btnH - index * gap);
+		const col = index % cols;
+		const rowIndex = Math.floor(index / cols);
+		button.root.position = Vec2(
+			(viewW - gridW) / 2 + col * (btnW + gap),
+			topY - (rowIndex + 1) * btnH - rowIndex * gap,
+		);
 		buttons.push(button);
 	}
 
