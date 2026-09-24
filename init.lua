@@ -5,11 +5,9 @@ local ____exports = {} -- 1
 local ____Dora = require("Dora") -- 21
 local App = ____Dora.App -- 21
 local Camera3D = ____Dora.Camera3D -- 21
-local Content = ____Dora.Content -- 21
 local Director = ____Dora.Director -- 21
 local Node = ____Dora.Node -- 21
 local Node3D = ____Dora.Node3D -- 21
-local Path = ____Dora.Path -- 21
 local Size = ____Dora.Size -- 21
 local Vec2 = ____Dora.Vec2 -- 21
 local View = ____Dora.View -- 21
@@ -349,30 +347,13 @@ else -- 51
 		end -- 319
 	end) -- 318
 	buildPanels():show(progress.unlocked) -- 323
-	local shotFrame = 0 -- 325
-	threadLoop(function() -- 328
-		local runtime = activeRuntime() -- 329
-		if runtime ~= nil then -- 329
-			runtime.game:update(App.deltaTime) -- 330
-		end -- 330
-		shotFrame = shotFrame + 1 -- 332
-		if shotFrame == 240 then -- 332
-			local d = Path(Content.searchPaths[1], ".agent/test-results") -- 333
-			App:saveScreenshot(Path(d, "r-pre")) -- 333
-			print("[shot] r-pre") -- 333
-		end -- 333
-		if shotFrame == 600 then -- 333
-			local d2 = Path(Content.searchPaths[1], ".agent/test-results") -- 334
-			App:saveScreenshot(Path(d2, "r-post")) -- 334
-			print("[shot] r-post") -- 334
-		end -- 334
-		if shotFrame == 900 then -- 334
-			local d3 = Path(Content.searchPaths[1], ".agent/test-results") -- 335
-			App:saveScreenshot(Path(d3, "r-aim")) -- 335
-			print("[shot] r-aim") -- 335
-		end -- 335
-		return false -- 337
-	end) -- 328
-	print(((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", level select shown") -- 340
-end -- 340
-return ____exports -- 340
+	threadLoop(function() -- 327
+		local runtime = activeRuntime() -- 328
+		if runtime ~= nil then -- 328
+			runtime.game:update(App.deltaTime) -- 329
+		end -- 329
+		return false -- 331
+	end) -- 327
+	print(((((((((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", view=") .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) .. ", platform=") .. App.platform) .. ", level select shown") -- 335
+end -- 335
+return ____exports -- 335

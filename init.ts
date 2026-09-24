@@ -18,7 +18,7 @@
  *   LevelSelect --选关--> Aiming（拖动矄准）→ 松手发射 → Flying → Result
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
-import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
+import { App, Camera3D, Director, Node, Node3D, Size, Vec2, View, threadLoop } from 'Dora';
 import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
@@ -327,11 +327,6 @@ if (levelTotal <= 0) {
 	threadLoop(() => {
 		const runtime = activeRuntime();
 		if (runtime !== undefined) runtime.game.update(App.deltaTime);
-		// TEMP SHOT：视口重建前后各一张 + 进关后一张
-		shotFrame += 1;
-		if (shotFrame === 240) { const d = Path(Content.searchPaths[0], '.agent/test-results'); App.saveScreenshot(Path(d, 'r-pre')); print('[shot] r-pre'); }
-		if (shotFrame === 600) { const d2 = Path(Content.searchPaths[0], '.agent/test-results'); App.saveScreenshot(Path(d2, 'r-post')); print('[shot] r-post'); }
-		if (shotFrame === 900) { const d3 = Path(Content.searchPaths[0], '.agent/test-results'); App.saveScreenshot(Path(d3, 'r-aim')); print('[shot] r-aim'); }
 
 		return false; // false = 继续
 	});
