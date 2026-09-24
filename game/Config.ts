@@ -1,0 +1,61 @@
+/**
+ * 全局常量与调参表。
+ *
+ * 约定：所有魔法数字集中在这里（见 docs/开发手册.md §6）。
+ * 物理与渲染模块不得自带调参常量。
+ */
+
+/** 设计分辨率（竖屏，1080×1920 = 9:16）。 */
+export const DesignWidth = 1080;
+export const DesignHeight = 1920;
+
+/** 设计宽高比。 */
+export const DesignAspect = DesignWidth / DesignHeight;
+
+// ---------------------------------------------------------------------------
+// 物理平面 → 世界坐标的映射（已实测确定，见开发手册 §5.1 / R3 结论）
+//
+// 竖屏宽高比 0.5625，横向空间只有纵向的 56%。实测：同一相机（dist=30/tilt=45）下
+//   横向展开轨道：maxNdcX = 1.50（被裁）
+//   纵向展开轨道：maxNdcX = 0.72、maxNdcY = 0.65（完整可见）
+// 因此物理平面必须沿屏幕**竖直**方向展开（即世界 Z 进深）。
+//
+// 映射：平面内的横向 u → 世界 X（水平），平面内的纵向 v → 世界 Z（进深）。
+// 平面原点即世界原点，y 恒为 0（黄道面水平）。
+// ---------------------------------------------------------------------------
+
+/** 平面横向坐标 u 映射到世界 X 的系数。 */
+export const PlaneToWorldX = 1;
+/** 平面纵向坐标 v 映射到世界 Z 的系数。 */
+export const PlaneToWorldZ = 1;
+
+/** 固定物理步长（秒）。固定步长是"同一输入结果一致"的前提。 */
+export const PhysicsStep = 1 / 120;
+
+/** 单帧最多推进的物理步数，防止卡顿后跳帧。 */
+export const MaxStepsPerFrame = 8;
+
+/** 全局引力强度倍率，用于统一调整难度。 */
+export const GravityScale = 1;
+
+/** 行星公转速度倍率。必须让公转"肉眼可见"（决策 D1）。 */
+export const OrbitSpeedScale = 1;
+
+/** 预测轨迹的采样步数。 */
+export const PredictSteps = 600;
+
+// ---------------------------------------------------------------------------
+// 相机调参（已实测确定安全区间，见开发手册 §5.1 / R3 结论）
+// ---------------------------------------------------------------------------
+
+/** 相机俯视倾角（度）。安全区间 20–60；超过 70 会贴边。 */
+export const CameraTiltMin = 20;
+export const CameraTiltMax = 60;
+export const CameraTiltDefault = 45;
+
+/** 相机距离的夹紧范围。竖屏下纵向轨道 dist ≥ 25 即可框住整条轨道。 */
+export const CameraMinDistance = 25;
+export const CameraMaxDistance = 100;
+
+/** 相机跟随的平滑系数（0–1，每帧向目标插值的比例）。 */
+export const CameraLerp = 0.1;

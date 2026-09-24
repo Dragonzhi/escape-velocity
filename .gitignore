@@ -1,0 +1,25 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Dora / IDE 本地状态
+.dora/
+*.log
+
+# Agent 运行时产物（视觉捕获、测试标记等）
+.agent/vision/
+.agent/test-results/
+.agent/subagents/
+.agent/main/SESSION.jsonl
+.agent/main/HISTORY.jsonl
+
+# 构建与导出产物
+build/
+result/
+dist/
+
+# 临时目录
+.temp/
+tmp/
