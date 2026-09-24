@@ -28,6 +28,7 @@ import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
 import { TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
+import { GoalSpec, findGoalIndex } from 'game/LevelData';
 import { AimMinSpeed, FlightPlayback, PhysicsStep, PredictSteps } from 'game/Config';
 
 /** 游戏阶段。 */
@@ -37,21 +38,25 @@ export type GamePhase = 'Aiming' | 'Flying' | 'Result';
 export type ResultKind = 'success' | 'missed' | 'crashed';
 
 /**
- * 物理结局 → 结算三态。
+ * 结算三态判定（手册 §5.8）。
  *
- * S1 测试关：飞出边界 = 逃逸成功。
- * S2 接入关卡数据后，按“目标行星到达容差”细化（§5.8）。
+ * 优先级：到达目标 > 逃逸目标达成 > 撞毁 > 错过。
+ * （到达目标优先于撞毁：轨迹在到达点截断，撞毁点根本不会发生。）
+ *
+ * 全部输入在**发射瞬间**即可确定 —— 结算与飞行一样是确定性的。
  */
-export function resolveOutcome(outcome: Outcome): ResultKind {
+export function resolveResult(outcome: Outcome, goalIndex: number, goal: GoalSpec): ResultKind {
+	if (goalIndex >= 0) return 'success';
+	if (goal.kind === 'escape' && outcome === 'escaped') return 'success';
 	if (outcome === 'crashed') return 'crashed';
-	if (outcome === 'escaped') return 'success';
-	return 'missed'; // 步数用尽 = 超时错过
+	return 'missed';
 }
 
-/** 一关的物理定义（S2 会扩展视觉与文案）。 */
+/** 一关的物理定义（由 LevelData 转换而来）。 */
 export interface GameLevel {
 	bodies: Body[];
 	probeStart: P2;
+	goal: GoalSpec;
 	escapeRadius: number;
 	maxSteps: number;
 }
@@ -69,7 +74,9 @@ export interface GameCore {
 	dt: number;
 	/** 飞行已播放的物理时间（秒）。 */
 	flightTime: number;
-	/** 结算三态（Result 态有意义）。 */
+	/** 第一个进入目标容差的采样点索引；-1 = 未到达。 */
+	goalIndex: number;
+	/** 结算三态（发射瞬间即确定；Result 态对外可见）。 */
 	result: ResultKind | undefined;
 }
 
@@ -80,18 +87,28 @@ export function createCore(): GameCore {
 		flight: undefined,
 		dt: PhysicsStep,
 		flightTime: 0,
+		goalIndex: -1,
 		result: undefined,
 	};
 }
 
-/** 发射：预推演整段飞行并进入 Flying。只在 Aiming 态有效。 */
+/**
+ * 发射：预推演整段飞行、判定目标与结算，并进入 Flying。
+ * 只在 Aiming 态有效。
+ *
+ * 结算在**这一刻**就完全确定（确定性设计的直接推论）：
+ * 轨迹、目标到达点、撞毁/逃逸/超时，全部已知。
+ */
 export function coreLaunch(core: GameCore, velocity: P2, level: GameLevel): void {
 	if (core.phase !== 'Aiming') return;
-	core.flight = simulate(
+	const flight = simulate(
 		{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: velocity.x, y: velocity.y } },
 		level.bodies,
 		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius },
 	);
+	core.flight = flight;
+	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt);
+	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
 	core.flightTime = 0;
 	core.phase = 'Flying';
 }
@@ -108,13 +125,19 @@ export function coreProbeIndex(core: GameCore): number {
 
 /**
  * 推进核心状态。返回 true 表示这一帧进入了 Result。
+ *
+ * 飞行终点 = min(自然终点, 目标到达点)：到达目标即刻成功收束。
+ * 收束时把回放时间吸附到终点索引，冻结帧恰好停在到达/终点的位置。
  */
 export function coreUpdate(core: GameCore, dt: number): boolean {
 	if (core.phase !== 'Flying' || core.flight === undefined) return false;
 	core.flightTime += dt * FlightPlayback;
-	if (coreProbeIndex(core) >= core.flight.points.length - 1) {
+	const naturalEnd = core.flight.points.length - 1;
+	const endIdx = core.goalIndex >= 0 && core.goalIndex < naturalEnd ? core.goalIndex : naturalEnd;
+	if (coreProbeIndex(core) >= endIdx) {
+		// 吸附到终点：回放每帧跳多个索引，可能越过终点几个采样点
+		core.flightTime = endIdx * core.dt;
 		core.phase = 'Result';
-		core.result = resolveOutcome(core.flight.outcome);
 		return true;
 	}
 	return false;
@@ -125,6 +148,7 @@ export function coreRetry(core: GameCore): void {
 	core.phase = 'Aiming';
 	core.flight = undefined;
 	core.flightTime = 0;
+	core.goalIndex = -1;
 	core.result = undefined;
 	core.aim = { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
 }

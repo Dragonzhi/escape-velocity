@@ -6,7 +6,8 @@
  */
 import { Body, P2 } from 'game/Gravity';
 import { FlightPlayback, PhysicsStep } from 'game/Config';
-import { GameLevel, coreLaunch, coreProbeIndex, coreRetry, coreUpdate, createCore, resolveOutcome } from 'game/Game';
+import { GoalSpec } from 'game/LevelData';
+import { GameLevel, coreLaunch, coreProbeIndex, coreRetry, coreUpdate, createCore, resolveResult } from 'game/Game';
 
 interface Failure {
 	name: string;
@@ -21,21 +22,38 @@ function check(name: string, ok: boolean, detail: string): void {
 	if (!ok) failures.push({ name, detail });
 }
 
-/** 测试关：一颗静止行星在原点，探测器从 (0,16) 出发。 */
+/** 测试关：一颗静止行星在原点，探测器从 (0,16) 出发，目标 = 逃逸。 */
 function testLevel(): GameLevel {
 	const bodies: Body[] = [{
 		gm: 900, radius: 2.2,
 		orbitCenter: { x: 0, y: 0 }, orbitRadius: 0,
 		orbitPeriod: 0, phase0: 0, orbitDirection: 1,
 	}];
-	return { bodies, probeStart: { x: 0, y: 16 }, escapeRadius: 400, maxSteps: 1500 };
+	return {
+		bodies,
+		probeStart: { x: 0, y: 16 },
+		goal: { kind: 'escape', planetIndex: -1, tolerance: 0 },
+		escapeRadius: 400,
+		maxSteps: 1500,
+	};
 }
 
-/** 1) 结局映射（手册 §5.8 的 S1 简化版）。 */
-function testResolveOutcome(): void {
-	check('resolve-crashed', resolveOutcome('crashed') === 'crashed', '撞毁应映射为 crashed');
-	check('resolve-escaped', resolveOutcome('escaped') === 'success', '逃逸应映射为 success（S1 测试关）');
-	check('resolve-running', resolveOutcome('running') === 'missed', '超时应映射为 missed');
+/** 1) 结算判定（手册 §5.8）。 */
+function testResolveResult(): void {
+	const escapeGoal: GoalSpec = { kind: 'escape', planetIndex: -1, tolerance: 0 };
+	const planetGoal: GoalSpec = { kind: 'planet', planetIndex: 0, tolerance: 3 };
+
+	// 到达目标优先于一切
+	check('resolve-goal-first', resolveResult('crashed', 5, planetGoal) === 'success', '到达目标应优先于撞毁（轨迹在到达点截断）');
+	check('resolve-goal-running', resolveResult('running', 3, planetGoal) === 'success', '到达目标即成功');
+
+	// escape 目标
+	check('resolve-escape-success', resolveResult('escaped', -1, escapeGoal) === 'success', '逃逸目标达成 = 成功');
+	check('resolve-escape-timeout', resolveResult('running', -1, escapeGoal) === 'missed', '超时 = 错过');
+
+	// planet 目标但未到达
+	check('resolve-planet-escaped', resolveResult('escaped', -1, planetGoal) === 'missed', '飞出边界但未到达目标 = 错过');
+	check('resolve-planet-crashed', resolveResult('crashed', -1, planetGoal) === 'crashed', '撞毁 = 撞毁');
 }
 
 /** 2) 发射：预推演、阶段切换、重复发射被拒绝。 */
@@ -77,7 +95,7 @@ function testPlayback(): void {
 
 	check('playback-enters-result', entered && core.phase === 'Result', `phase=${core.phase} frames=${frames}`);
 	check('playback-final-index', coreProbeIndex(core) === total, `idx=${coreProbeIndex(core)} total=${total}`);
-	check('playback-result-kind', core.result === resolveOutcome(flight.outcome), `result=${core.result} outcome=${flight.outcome}`);
+	check('playback-result-kind', core.result === resolveResult(flight.outcome, core.goalIndex, level.goal), `result=${core.result} outcome=${flight.outcome}`);
 
 	// 回放时长应与 FlightPlayback 一致：总物理时间 = total * dt，真实时间 = 物理时间 / FlightPlayback
 	const expectedRealSeconds = (total * PhysicsStep) / FlightPlayback;
@@ -109,6 +127,7 @@ function testRetry(): void {
 	check('retry-phase', core.phase === 'Aiming', `phase=${core.phase}`);
 	check('retry-flight-cleared', core.flight === undefined, '飞行轨迹未清空');
 	check('retry-result-cleared', core.result === undefined, '结算未清空');
+	check('retry-goal-cleared', core.goalIndex === -1, '目标索引未清空');
 	check('retry-time-reset', core.flightTime === 0, `flightTime=${core.flightTime}`);
 
 	// 重试后可再次发射（完整循环）
@@ -148,13 +167,48 @@ function testDeterministicCycle(): void {
 	check('cycle-deterministic', results[0] === results[1], `${results[0]} vs ${results[1]}`);
 }
 
+/** 7) 目标截断：到达目标后飞行提前结束，结算为成功。 */
+function testGoalTruncation(): void {
+	// 目标行星在正前方 (0,-20)，容差 3；直射即可到达
+	const bodies: Body[] = [
+		{ gm: 0, radius: 1.2, orbitCenter: { x: 0, y: -20 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
+	];
+	const level: GameLevel = {
+		bodies,
+		probeStart: { x: 0, y: 16 },
+		goal: { kind: 'planet', planetIndex: 0, tolerance: 3 },
+		escapeRadius: 400,
+		maxSteps: 1500,
+	};
+
+	const core = createCore();
+	coreLaunch(core, { x: 0, y: -10 }, level);
+
+	check('goal-found', core.goalIndex >= 0, `goalIndex=${core.goalIndex}`);
+	check('goal-result-at-launch', core.result === 'success', `result=${core.result}（结算应在发射瞬间确定）`);
+
+	const flight = core.flight;
+	if (flight === undefined || core.goalIndex < 0) { check('goal-flight', false, 'no flight'); return; }
+
+	// 回放应在 goalIndex 处提前收束（早于自然终点）
+	let guard = 0;
+	while (core.phase !== 'Result' && guard < 100000) {
+		coreUpdate(core, 1 / 60);
+		guard += 1;
+	}
+	check('goal-ends-early', core.phase === 'Result' && coreProbeIndex(core) === core.goalIndex,
+		`idx=${coreProbeIndex(core)} goal=${core.goalIndex} natural=${flight.points.length - 1}`);
+	check('goal-still-success', core.result === 'success', `result=${core.result}`);
+}
+
 export function runTests(): string {
-	testResolveOutcome();
+	testResolveResult();
 	testLaunch();
 	testPlayback();
 	testRetry();
 	testIndexClamp();
 	testDeterministicCycle();
+	testGoalTruncation();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

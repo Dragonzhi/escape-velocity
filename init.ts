@@ -1,47 +1,36 @@
 // @preview-file on clear
 /**
- * 《单程》Escape Velocity · 游戏入口（S1.5）。
+ * 《单程》Escape Velocity · 游戏入口（S2.1）。
  *
  * 组装：场景 + 相机机架 + 轨迹层 + 矄准输入 + 状态机，单一主循环。
- * 当前内置一个测试关（两颗行星）；S2 接入 LevelData 后替换。
+ * 关卡数据来自 game/LevelData（当前玩第一关；S2.3 接入关卡选择）。
  *
  * 阶段流转：Aiming（拖动矄准）→ 松手发射 → Flying（飞行观赏）→ Result（点按重试）。
  */
 import { App, Camera3D, Director, Label, Node, Node3D, Size, Vec2, View, threadLoop } from 'Dora';
-import { GravityScale, OrbitSpeedScale } from 'game/Config';
-import { applyScales } from 'game/Gravity';
+import { getLevel, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
 import { createAimInput } from 'game/Hud';
 import { GameLevel, ResultKind, createGame } from 'game/Game';
 
-// ---- 测试关（S2 移入 LevelData）----
-const rawBodies = [
-	{
-		gm: 900, radius: 2.2,
-		orbitCenter: { x: 0, y: 0 }, orbitRadius: 0,
-		orbitPeriod: 0, phase0: 0, orbitDirection: 1 as 1 | -1,
-	},
-	{
-		gm: 300, radius: 1.4,
-		orbitCenter: { x: 0, y: -14 }, orbitRadius: 8,
-		orbitPeriod: 10, phase0: 0, orbitDirection: 1 as 1 | -1,
-	},
-];
-const bodies = applyScales(rawBodies, GravityScale, OrbitSpeedScale);
+// ---- 当前关（S2.3 接入关卡选择后由进度决定；暂玩第一关）----
+const levelDef = getLevel(0);
 
-const visuals = [
-	{ r: 0.55, g: 0.62, b: 0.78, displayRadius: 2.2, ring: false },
-	{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 1.4, ring: true },
-];
+if (levelDef === undefined) {
+	print('[escape-velocity] FATAL: no level data');
+} else {
+	const bodies = scaledPlanets(levelDef);
+	const visuals = levelDef.visuals;
 
-const level: GameLevel = {
-	bodies,
-	probeStart: { x: 0, y: 16 },
-	escapeRadius: 400,
-	maxSteps: 1500,
-};
+	const level: GameLevel = {
+		bodies,
+		probeStart: levelDef.probeStart,
+		goal: levelDef.goal,
+		escapeRadius: levelDef.escapeRadius,
+		maxSteps: levelDef.maxSteps,
+	};
 
 // ---- 场景 ----
 const view = Director.entry;
@@ -135,5 +124,6 @@ if (scene === undefined) {
 		return false; // false = 继续
 	});
 
-	print('[escape-velocity] game started (S1.5)');
+	print(`[escape-velocity] game started: L${levelDef.id} ${levelDef.title}`);
+	}
 }

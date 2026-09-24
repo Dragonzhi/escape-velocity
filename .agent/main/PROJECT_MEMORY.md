@@ -27,6 +27,7 @@
 - `docs/开发手册.md`：架构分层与模块清单、参数表、编码规范、验收标准与证据分级（§5.9/§11/§12/§13 已含离线资产方案与 R8；§8.1 记 lua 忽略规则）。
 - `game/Config.ts`：全局常量与调参表（平面映射、相机安全区）。
 - `game/Gravity.ts`：**零引擎依赖**的物理内核（固定步长、平方反比、`simulate` 预测与真实共用）。
+- `game/LevelData.ts`：六关数据 + 目标判定（`findGoalIndex`/`scaledPlanets`，纯数据不 import 'Dora'）。
 - `game/Projection.ts`：**已标定**的 3D→2D 投影（纯函数）。手性 `right=cross(forward,up)`；`HANDEDNESS=1`、`FLIP_Y=false`；viewPoint 为左上角像素坐标（`[0,W]×[0,H]`，+Y 向下）；用 `toOverlay()` 转成 Dora 2D 坐标。实测最大误差 **1.00 px**（2024×1230）。
 - `game/Scene.ts`：3D 场景搭建（同球体资产逐实例染色/缩放、土星环、探测器朝向）。
 - `game/CameraRig.ts`：单一相机 + 动态跟随（包围盒半对角驱动，已实测单调）。
@@ -44,6 +45,9 @@
 - `Test/TrajectoryProbe.ts`：轨迹运行时探针。
 - `Test/HudTest.ts`：矄准单测（17 断言）。
 - `Test/HudProbe.ts`：矄准→预测线链路运行时探针。
+- `Test/GameTest.ts`：状态机核心单测（30 断言）。
+- `Test/GameProbe.ts`：完整游戏循环运行时探针。
+- `Test/LevelDataTest.ts`：六关数据单测（34 断言，含可玩性硬门）。
 - `Test/ProjectionProbe.ts`：投影标定与回归测试（`getRayDirection` 搜索法取真值，输出 `RESULT=PASS/FAIL`；`maxPxErr=1.00`）。
 - `Test/Vision.ts`：**文本化视觉验证工具库**（TGA→ASCII/统计/区域检测）。
 - `Test/SceneProbe.ts`：场景+相机运行时探针。

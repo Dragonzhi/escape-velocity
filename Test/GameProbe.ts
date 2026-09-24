@@ -41,7 +41,7 @@ const visuals = [
 	{ r: 0.55, g: 0.62, b: 0.78, displayRadius: 2.2, ring: false },
 	{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 1.4, ring: true },
 ];
-const level: GameLevel = { bodies, probeStart: { x: 0, y: 16 }, escapeRadius: 400, maxSteps: 1500 };
+const level: GameLevel = { bodies, probeStart: { x: 0, y: 16 }, goal: { kind: 'escape', planetIndex: -1, tolerance: 0 }, escapeRadius: 400, maxSteps: 1500 };
 
 const view = Director.entry;
 view.setEnvironmentIntensity(0.35, 0.35, 1);

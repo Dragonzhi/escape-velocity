@@ -75,7 +75,13 @@ local visuals = {{ -- 40
 	displayRadius = 1.4, -- 42
 	ring = true -- 42
 }} -- 42
-local level = {bodies = bodies, probeStart = {x = 0, y = 16}, escapeRadius = 400, maxSteps = 1500} -- 44
+local level = { -- 44
+	bodies = bodies, -- 44
+	probeStart = {x = 0, y = 16}, -- 44
+	goal = {kind = "escape", planetIndex = -1, tolerance = 0}, -- 44
+	escapeRadius = 400, -- 44
+	maxSteps = 1500 -- 44
+} -- 44
 local view = Director.entry -- 46
 view:setEnvironmentIntensity(0.35, 0.35, 1) -- 47
 local scene = buildScene({ -- 49

@@ -2,7 +2,7 @@
 
 ### Current Goal
 
-《单程》Escape Velocity：**S1 核心循环已全部完成**（S1.1–S1.5 交付并有证据）；下一步 S2 关卡与结算。
+《单程》Escape Velocity：**S2 关卡与结算进行中**（S2.1 已完成；下一步 S2.2 结算面板、S2.3 关卡选择）。
 
 ### Milestone Ledger (S0)
 
@@ -22,6 +22,7 @@
 - **S1.3 轨迹渲染** — `game/Trajectory.ts`（预测线 + 真实尾迹，共用同一份 `simulate`）；`Test/TrajectoryTest.ts` 10 断言全过；运行时区域检测 40+ 个 → **PASS**
 - **S1.4 拖拽矄准** — `game/Hud.ts`；`Test/HudTest.ts` 17 断言全过；运行时链路验证（拖拽→velocity→simulate→预测线可见）；真触摸坐标系待人工校对 → **PASS（带人工校对项）**
 - **S1.5 状态机与主循环** — `game/Game.ts` + `init.ts`；`Test/GameTest.ts` 22 断言全过；完整循环运行时 `RESULT=PASS`（拖→发射→飞行 6.2s→Result(missed)→重试回 Aiming）→ **PASS**
+- **S2.1 六关数据与目标判定** — `game/LevelData.ts` + Game 接入 `resolveResult`/`findGoalIndex`；`GameTest` 30 断言、`LevelDataTest` 34 断言（含每关可玩性硬门）全过；`init.ts` 加载 L1 → **PASS**
 
 ### Recent Progress
 
@@ -37,7 +38,9 @@
 - **S1.4 完成**：`game/Hud.ts`（矄准纯计算 + 触摸层）。关键修正：统一为投影偏移空间。
 - **S1.5 完成**：`game/Game.ts`（GameCore 纯逻辑 + createGame）+ `init.ts` 真实游戏入口。
   确定性设计：发射时预推演整段飞行，之后逐帧回放。完整循环运行时 `RESULT=PASS`。
-- `build` 全绿（26/26）。
+- **S2.1 完成**：`game/LevelData.ts` 六关数据 + 目标判定接入 Game。
+  调参发现：轴向扫掠漏掉斜向解 → 改角度×力度采样；回放收束吸附到终点。
+- `build` 全绿（28/28）。
 
 ### Open Issues
 
@@ -45,9 +48,10 @@
 - `LICENSE` 需替换为 AGPL-3.0 官方全文。
 - ⚠️ **入口租约**：Web IDE 占用入口时 `stopEntry()` 无效，运行时探针（Smoke/SceneProbe/ProjectionProbe）跑不了，需用户先停游戏。
 - ⚠️ **增量构建** 有时不重新转译：改了 `.ts` 必须重新 `build` 再看探针结果（本次曾因此读到旧标记文件）。
-- S2 未开始（关卡数据、结算三态面板、关卡选择与解锁进度）。
+- S2.2/S2.3 未开始（结算三态面板、关卡选择与解锁进度）。
 - ⚠️ 真实触摸坐标系需一次人工校对（`localToOffset` 是唯一校准点）。
 - ⚠️ 结算 UI 是最小版（Label）；正式面板在 S2.2。
+- ⚠️ 关卡手感（难度曲线）需真人试玩校准。
 
 ### Visual Verification
 
@@ -56,9 +60,9 @@
 
 ### Active Checkpoint
 
-- **当前目标**：S1 已完成；开始 S2（关卡与结算）。
-- **已完成**：S0 全部（R1/R2/R3/R4 关闭，R6 DEFERRED）；S1.1–S1.5 全部交付并有证据。
-- **最新验证结果**：`build` 26/26 全绿；`GameTest` = `passed checks=22`；`GameProbe` 完整循环 `RESULT=PASS`（拖→发射→飞行 6.2s→Result(missed)→重试回 Aiming）；`init.ts` 运行 3 秒干净退出。
+- **当前目标**：S2.2 结算三态面板 → S2.3 关卡选择与解锁进度。
+- **已完成**：S0 全部；S1.1–S1.5 全部；S2.1 六关数据与目标判定。
+- **最新验证结果**：`build` 28/28 全绿；`GameTest` = `passed checks=30`；`LevelDataTest` = `passed checks=34`（含每关可玩性硬门）；`init.ts` 加载 L1 运行 3 秒干净退出。
 - **关键约束**：竖屏 1080×1920（运行时桌面窗口实测 2024×1230）；物理平面沿世界 Z 展开；Web 导出用 Web IDE 的「导出 HTML/打包」；命令模式 Content 只读（无 `remove`），写文件须走入口；入口被 Web IDE 占用时无法跑运行时探针；TS 产物与源同目录，`.gitignore` 不可笼统忽略 `*.lua`。
 - **已读/已改文件**：`game/Config.ts`、`game/Projection.ts`、`game/Gravity.ts`、`game/Scene.ts`、`game/CameraRig.ts`、`game/Trajectory.ts`、`init.ts`、`Test/{Smoke,GravityTest,CameraRigTest,TrajectoryTest,TrajectoryProbe,ProjectionProbe,SceneProbe,Vision}.ts`、`Test/gen_shapes.lua`、`docs/开发手册.md`、`.agent/plan/{PLAN,PROGRESS}.md`。
 - **下一步**：S2.1 `game/LevelData.ts`（六关数据）→ S2.2 结算三态面板 → S2.3 关卡选择与解锁。
