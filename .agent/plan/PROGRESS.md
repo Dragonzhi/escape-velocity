@@ -5,9 +5,50 @@
 
 ## 当前阶段
 
-**S1 核心循环进行中**。S0 已完成（R1/R2/R3/R4 关闭，仅剩 R6 包体积暂不处理）；S1.1 物理内核已交付并有证据。
+**S1 核心循环进行中**。S0 已完成；S1.1 物理内核、S1.2 场景与相机均已交付并有证据。
 
 ## 变更日志
+
+### 会话 7 · S1.2 场景与相机跟随
+
+**已实现（源码）**
+
+- `game/Scene.ts`（180 行）— 3D 场景搭建：
+  - `planeToWorld(p, y)` — 平面坐标 → 世界坐标（y=0）
+  - `buildScene(options)` — 方向光 + 行星（同资产染色/缩放）+ 土星环 + 探测器
+  - 行星靠 `Model3D(path).getMaterial(0).baseColor` **逐实例染色**，靠 `scale` 区分大小
+  - 返回 `GameScene`（`syncBodies` / `syncProbe` / `faceVelocity` / `probe` / `planets`）
+- `game/CameraRig.ts`（174 行）— 单一相机 + 动态跟随（D3）：
+  - `computeFit(points)` — 关键点包围盒中心 + 半对角
+  - `computeRigStep(state, points, opts)` — 纯计算，不碰引擎对象
+  - `createCameraRig` / `defaultRigOptions`（tilt=45, dist 25–100, lerp=0.1, fitFactor=1.6）
+
+**已验证的证据**
+
+- **编译**：全量 `build` 17/17 通过。
+- **单测（纯逻辑）**：`Test/CameraRigTest.ts` → `passed checks=11 failures=0`
+  （fit 计算、距离单调性、夹紧、倾角、平滑）。
+- **运行时（`Test/SceneProbe.ts`）**：
+  - `stats: draws=4 visible=4 triangles=260`（2 球 + 1 环 + 1 探测器）
+  - 相机跟随：`rig distance range over flight: min=53.95 max=82.55`，`camera pulled back=true`
+  - 视觉：Agent 用 `Test/Vision.ts` 自检初始帧与后期帧，两帧均检出物体
+- **设计修正（有实测依据）**：初版相机用“探测器到目标的距离”作依据，
+  但探测器会**飞过**目标，该距离非单调 → 实测 `first=50.41 last=48.31`（相机反而拉近）。
+  改为“**关键点包围盒半对角**”后单调（`min=53.95 max=82.55`）。
+
+**已踩并记录到手册 §7.2.1 的三个坑**
+
+1. **对象成员函数默认带 self**：interface 成员函数生成 `obj:method(arg)` 冒号调用，
+   把 `obj` 当第一个参数 → 运行时报 “field 'x' is nil”。**编译期不报错**。
+   解法：`/** @noSelf **/`（用属性式函数类型**无效**）。
+2. **`threadLoop` 返回值易搞反**：返回 `false` 继续、`true` 停止。
+   写了 `return frame < 600` → 第 1 帧就停，看起来像“卡住”。
+3. **工厂命名空间不能当类型**：用 `Vec3.Type` / `Node3D.Type`，不能写 `Vec3` / `Node3D`。
+
+**未验证 / 待办**
+
+- `Scene` / `CameraRig` 尚未接入完整主循环（S1.5）。
+- 轨迹绘制未开始（S1.3）。
 
 ### 会话 6 · S1.1 物理内核（确定性）
 

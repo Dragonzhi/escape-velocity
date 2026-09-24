@@ -34,7 +34,7 @@
 依赖：S0。
 
 - [x] S1.1 `game/Gravity.ts`：固定步长积分 + 纯函数可测。已交付 `Test/GravityTest.ts`（25 断言全过，跨运行逐位一致，且已验证测试判别力）。
-- [ ] S1.2 `game/Scene.ts` / `CameraRig.ts`：行星、探测器、跟随相机
+- [x] S1.2 `game/Scene.ts` / `CameraRig.ts`：行星、探测器、跟随相机。已交付 `Test/SceneProbe.ts`（运行时：`draws=4 triangles=260`）与 `Test/CameraRigTest.ts`（11 断言）；跟随拉远实测 `min=53.95 max=82.55`。
 - [ ] S1.3 `game/Trajectory.ts`：预测线（拖动实时重画）+ 真实尾迹
 - [ ] S1.4 `game/Hud.ts`：单指拖拽瞄准、松手发射
 - [ ] S1.5 `game/Game.ts` + `init.ts`：`Aiming → Flying → Result` 状态机与单一主循环
