@@ -46,10 +46,16 @@
 依赖：S1。
 
 - [x] S2.1 `game/LevelData.ts`：六关数据。已交付 `Test/LevelDataTest.ts`（34 断言，含每关角度×力度扫掠的可玩性硬门）；目标判定接入 Game（到达即截断收束）。
-- [ ] S2.2 结算三态（成功 / 错过 / 撞毁）+ "重试本关 / 返回关卡选择"
-- [ ] S2.3 关卡选择与解锁进度
+- [x] S2.2 结算三态（成功 / 错过 / 撞毁）+ "重试本关 / 返回关卡选择"。已交付 `game/Ui.ts`（2D 原语）
+  与 `game/Hud.ts` 的 `createResultPanel`；运行时探针 `Test/UiProbe.ts` 三态各一张截图 + 文本化视觉判定，
+  `RESULT=PASS`（证据见 `PROGRESS.md` 会话 14）。
+- [x] S2.3 关卡选择与解锁进度。已交付 `game/Progress.ts`（解锁夹紧/推进 + `writablePath` 存档）与
+  `createLevelSelect`；`Game` 增加 `LevelSelect` 相态与 `coreBackToSelect`；`init.ts` 启动即选关、
+  按需惰性建每关运行时。`Test/ProgressTest.ts`（36 断言）已并入 `UnitRunner`（`SUMMARY passed=7 failed=0`）。
 
-验收判据：六关数据齐备；三态判定正确；进度可持久化。
+验收判据：六关数据齐备 ✅；三态判定正确 ✅（单测 + 探针截图）；
+进度可持久化 ✅（存档往返单测 + 真实文件 `%APPDATA%\IppClub\DoraSSR\escape-velocity.progress`）。
+⚠️ 仍差**真机触屏验收**：按钮点击/拖拽的真实 `touch.location` 无法无头验证（见手册 §12）。
 
 ### S3 · 视觉
 

@@ -5,9 +5,100 @@
 
 ## 当前阶段
 
-**S2 关卡与结算进行中**。S0、S1 全部完成；S2.1 关卡数据已交付；**预测线镜像 bug 已修复（用户反馈问题）**；下一步 S2.2 结算面板、S2.3 关卡选择。
+**S2 关卡与结算已交付（S2.1 / S2.2 / S2.3 全部完成）**。S0、S1 全部完成；启动即进关卡选择，
+结算三态面板 + 解锁制进度已落地并有运行时证据；**只差真机触屏验收**（Agent 无法注入 Touch）。
+下一步 S3 视觉。
 
 ## 变更日志
+
+### 会话 14 · S2.2 结算面板 + S2.3 关卡选择与解锁进度
+
+**已实现（源码）**
+
+- `game/Ui.ts`（新）— 视图空间 2D 原语：`createPanel` / `createLabel` / `createButton`
+  （自身即可点节点：底色 + 居中 Label + `touchEnabled`/`swallowTouches`/`onTapEnded` + 按下换底色）。
+  配色、字体名、触屏下限（高 ≥ 130 / 宽 ≥ 560）集中在这个文件；颜色通道用除法而非位移运算。
+  节点统一 `anchor = (0,0)`、局部绘制 `[0,w]×[0,h]` —— d.ts 没写明 anchor 与命中矩形的关系，
+  `anchor = 0` 时两种解释重合，画出来的矩形与命中矩形必然一致。
+- `game/Progress.ts`（新）— 解锁进度：`clampUnlocked` / `advanceUnlocked`（纯函数；只有 success 解锁，
+  重玩旧关不回退）+ `loadProgress` / `saveProgress`（一行 `unlocked=N`，损坏即 0，**不抛错**）。
+  ⚠️ 任务简报写的是 `App.writablePath`，但 v1.9.3 的 d.ts 里**只有** `Content.writablePath`，已按引擎声明改。
+- `game/Hud.ts`（扩展，277 → 586 行）— `createResultPanel`（半透明全屏底 + 0.88 视宽卡片 +
+  4 行内容 + `重试本关` / `返回关卡选择`）与 `createLevelSelect`（`选择任务` / `已解锁 N / 6` /
+  六关竖排 / `完成一关即解锁下一关`；未解锁整块不可点）。
+  **顺带修掉一个多关并存的真坑**：`AimInput.setEnabled` 现在同步 `touchLayer.touchEnabled` ——
+  `swallowTouches` 的全屏层会独占触摸，未激活关卡的层会把整个屏幕的点击吞掉。
+  （另注意 `onTap*` 注册时会把 `touchEnabled` 置回 true，初始关闭必须写在注册之后。）
+- `game/Game.ts`（改）— `GamePhase` 增加 `'LevelSelect'`；新增 `coreBackToSelect`（**仅 Result 态**）
+  与 `Game.backToSelect` / `Game.startLevel`。`coreLaunch`/`coreUpdate`/`coreRetry` 的语义未改。
+- `init.ts`（改，129 → 266 行）— 启动即 LevelSelect；`ensureLevel(i)` **惰性**建每关运行时
+  （`Node3D()` 容器 → `buildScene` → 相机/机架/轨迹/矄准 → `createGame`），切关只切 `visible`
+  + `Director.pushCamera` + `startLevel`，**不销毁节点**；每关 2D 层先建、UI 叠层最后建
+  （后建的画在上面 ⇒ 面板永远盖住轨迹线）；仍然只有一个 `threadLoop`，只驱动当前激活关。
+- `Test/ProgressTest.ts`（新，36 断言）已加进 `Test/UnitRunner.lua` 的 modules；
+  `Test/UiProbe.ts`（新运行时探针，5 张截图 + 文本化视觉判定）。
+
+**已验证的证据**
+
+- **编译（引擎）**：`Dora.exe cli build -p <proj>` → 69 个文件全部 `Compilation complete`；
+  `[error]` **69 条全部**是 `Duplicate compiler file: lualib_bundle.lua`（已知噪音），
+  TS 诊断 0 条（`nonLualibErrors=0`、`tsDiagnostics=0`）。本地 tstl 全量 36/36 通过。
+- **单测**：`Test/UnitRunner.lua`（`POST /run`）标记文件 `.agent/test-results/unit-summary.txt`：
+  `Test.ProgressTest :: passed | checks=36 failures=0`，`SUMMARY passed=7 failed=0 total=7`。
+  覆盖：clamp 非法输入（NaN / ±Infinity / 负数 / 关卡数 0 / 非整数）、advanceUnlocked（success 解锁 /
+  missed、crashed 不解锁 / 最后一关不越界 / 不回退）、存档往返（含垃圾内容、多行、越界夹紧，跑完还原）、
+  `coreBackToSelect` 的 Aiming / Flying / Result / 重复调用四种相态。
+- **运行时探针**（`Test/UiProbe.lua`，标记 `.agent/test-results/s22-ui.txt`）：`RESULT=PASS`，failures=0，
+  5 张截图落盘（均为 2024×1230×4 = 9,958,098 字节）：
+  `s22-result-success.tga` / `s22-result-missed.tga` / `s22-result-crashed.tga` /
+  `s22-levelselect.tga`（任务要求的四张）+ `s22-nopanel.tga`（同机位对照帧），全部在
+  `.agent/test-results/`。
+  自动判定三条：截图可 TGA 解析；面板帧区域检测非 NONE（文字真的渲染了）；
+  面板/选关帧平均亮度低于同机位无面板基线（24.3 / 21.1 < 26.2 ⇒ **面板确实画在场景与轨迹之上**）。
+  报告里可直接读到卡片 bbox =(120,228)-(1908,996)、900×156 的主按钮亮块、
+  6 个 828×~136 的关卡按钮、以及标题/副标题/说明行的连通域位置 —— 与布局计算逐项吻合。
+- **关卡切换**（同一探针内）：照 `init.ts` 的调用序列再建第二关并 L1 → L2 → L1 切回，
+  `switchProblems=0`，两关都回到 `Aiming`（覆盖“惰性建关 + visible / pushCamera / startLevel”这条真风险路径）。
+- **整体入口**：`POST /run {file: init.lua, asProj: true, projectRoot: <proj>}` 运行约 7 秒无崩溃，
+  日志三行：`progress file: %APPDATA%\IppClub\DoraSSR\escape-velocity.progress` /
+  `progress loaded: unlocked=0` / `started: 6 levels, unlocked=0, level select shown`；
+  `POST /stop` 后 `running=false`。
+- **存档落盘**：`%APPDATA%\IppClub\DoraSSR\escape-velocity.progress`，10 字节，内容 `unlocked=0`
+  （**在项目之外**，不污染仓库）。
+
+**未验证**
+
+- **真机触摸**：按钮点击与拖拽矄准的真实 `touch.location` 仍无实机标定（`Touch` 是私有构造，
+  无头注入不可能）。探针走的是程序化调用路径，触摸坐标系仍需人工点一次（手册 §12 已记为待办）。
+- **一次完整真人对局**（选关 → 拖 → 松手 → 飞行 → 结算 → 解锁 → 返回选关）未人工跑过；
+  “success 解锁并写盘”目前由 `ProgressTest` 的纯函数断言 + `saveProgress`/`loadProgress` 往返守着，
+  尚未在真实对局里贯穿。
+- **视觉美观**：Agent 只能做几何/亮度层面的自检；卡片留白、字号、按钮配色需人工看图
+  （`.agent/test-results/s22-*.tga` 需转 PNG）。
+
+**下一步**：人工验收（转 PNG 看四张截图 + 真机点一次按钮）→ 关掉 S2 → 进 S3 视觉。
+
+### 会话 13 · 工具链与通路（改用 DSH 接管开发）
+
+**背景**：内置 Agent 的会话上下文已涨到 **40–52 万 tokens/请求**，其自动压缩（`[Memory] compression tool-calling attempt 1/5…3/5`）连续被服务端 524 掉（证据：引擎 `log.txt`）。开发方式改为**外部 Coding Agent（DSH）+ 引擎本体**：DSH 负责读写代码、编译、驱动引擎与验证，引擎只当运行时。
+
+**已实现（工具链，均已实测）**
+
+- **引擎 API 通路**：关掉引擎窗口设置里的「访问验证 / Auth Required」（`Script/Dev/Entry.lua:1026` 的 `HttpServer.authRequired`）后，8866 端口 API 无鉴权可用。实测：`POST /status` → 200；`POST /run`（项目入口）→ `running:true runId:3` 且日志出现 `game started: L1 直飞`；`POST /stop` 后 `run/status` → `running:false`；`POST /log` 可取引擎日志。
+- **构建两条路**：① 引擎侧 `Dora.exe cli build -p .` → 全量 `Compiling … Compilation complete`，0 诊断（`[error] Duplicate compiler file: lualib_bundle.lua` 为已知噪音）；② 本地 tstl 工具（`build.mjs`，不依赖引擎与浏览器）。
+- **本地构建标定**：**32/32 个文件与仓库已提交的 `.lua` 逐字节一致**（含 16 KB 的 `Test/Vision.lua`）。关键参数：`typescript-to-lua@1.37.1` + `typescript@5.9.3`（**必须 `npm i --legacy-peer-deps`；TS 6.0.2 会静默产出 `Math:sqrt(...)` 错码**）、`luaTarget=Lua55`、`luaLibImport=Require`、TAB 缩进、`luaExternalModules:['Dora']`；`-- [ts]: file` 与行尾 `-- <行号>` 标记属 IDE 后处理（已复刻）。
+- **单测回归入口**：新增 `Test/UnitRunner.lua`（独立入口需显式 `require("Dora")`），批跑 6 个单测模块 → `.agent/test-results/unit-summary.txt`。**基线：6 模块 127 断言 0 失败**。
+- **视觉验证**：引擎截图是未压缩 TGA（不支持直接读），改用 Python PIL 转 PNG 后由 DSH 原生看图；已实际查看 `s21-steady.tga`。
+- **许可补齐（S4.4 提前完成）**：`LICENSE` 换为 gnu.org 官方全文（**34,523 B / 661 行，SHA256 双侧一致**）；版权通知移入 `README.md`，补作者 **Dragonzhi**、引擎版本、活动链接；已测设备填 **Web 浏览器**。
+- **内置 Agent 提示词存档**：`.agent/dora-agent-prompts.md`（摘录 `DEFAULT_AGENT_PROMPT_PACK` 全文 + 工具与其余提示词位置索引）。附带发现：内置 Agent **其实支持 `/compact` 与 `/clear`**（`DoraAgent.ts:688`），只是界面没暴露。
+
+**未验证 / 风险**
+
+- 关闭「访问验证」后，同一局域网内其他设备也可无鉴权访问引擎 API（本机开发可接受，勿在不安全网络下长期关闭）。
+- 本地构建工具目前在 `.temp/dora-build/`（gitignore 内），**尚未纳入仓库**；是否提升为 `tools/dora-build/` 待定。
+- 引擎内置 tstl fork 的具体版本号无据可查，等价性由 32 个文件逐字节验证支撑。
+
+**下一步**：S2.2 结算面板 + S2.3 关卡选择与解锁（进行中）。
 
 ### 会话 12 · 修复预测线垂直镜像（用户反馈）
 

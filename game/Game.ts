@@ -3,7 +3,9 @@
  *
  * 阶段流转（手册 §4.3）：
  *
- *     Aiming --松手--> Flying --结局确定--> Result --重试--> Aiming
+ *     LevelSelect --选关--> Aiming --松手--> Flying --结局确定--> Result
+ *        ^                                                            |
+ *        +---------------- 返回关卡选择 ---------------+--重试--> Aiming
  *
  * - **Aiming**：全局冻结（D2）。行星停在相位 0，探测器在起点；
  *   拖动实时重画预测线；松手即发射（不可撤销）。
@@ -31,8 +33,13 @@ import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 
 import { GoalSpec, findGoalIndex } from 'game/LevelData';
 import { AimMinSpeed, FlightPlayback, PhysicsStep, PredictSteps } from 'game/Config';
 
-/** 游戏阶段。 */
-export type GamePhase = 'Aiming' | 'Flying' | 'Result';
+/**
+ * 游戏阶段。
+ *
+ * `LevelSelect`（S2.3）：关卡选择界面。核心状态机在这个阶段**什么也不推进**
+ * （不跑物理、不画预测线），驱动它的只有 init.ts 的 UI 回调。
+ */
+export type GamePhase = 'Aiming' | 'Flying' | 'Result' | 'LevelSelect';
 
 /** 结算三态（手册 §5.8）。 */
 export type ResultKind = 'success' | 'missed' | 'crashed';
@@ -153,6 +160,27 @@ export function coreRetry(core: GameCore): void {
 	core.aim = { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
 }
 
+/**
+ * 返回关卡选择（S2.3，决策 D5）。
+ *
+ * **只在 Result 态可用**：飞行途中或矄准途中“返回”会让玩家丢掉一次未结算的发射，
+ * 与“松手后不可修正”（愿景 §3）冲突 —— 不可撤销就该走完结算再看结果。
+ *
+ * 顺带清掉飞行与结算数据：离开这一关后它们不再有意义，留着会让“再次进入本关”
+ * 时短暂读到上一局的终态。
+ *
+ * @returns 是否真的切过去了（非 Result 态返回 false，不做任何事）。
+ */
+export function coreBackToSelect(core: GameCore): boolean {
+	if (core.phase !== 'Result') return false;
+	core.phase = 'LevelSelect';
+	core.flight = undefined;
+	core.flightTime = 0;
+	core.goalIndex = -1;
+	core.result = undefined;
+	return true;
+}
+
 /** 引擎侧依赖（由 init.ts 组装）。 */
 export interface GameDeps {
 	scene: GameScene;
@@ -178,8 +206,21 @@ export interface Game {
 	onAimDrag: (a: AimResult) => void;
 	/** 发射（接到 aim.onRelease）。 */
 	launch: (v: P2) => void;
-	/** 重试本关。 */
+	/** 重试本关（仅 Result 态有效）。 */
 	retry: () => void;
+	/**
+	 * 返回关卡选择（仅 Result 态有效；非 Result 态什么都不做）。
+	 *
+	 * @returns 是否切换成功。
+	 */
+	backToSelect: () => boolean;
+	/**
+	 * 从关卡选择**进入本关**：把核心重置回 Aiming（S2.3）。
+	 *
+	 * 与 `retry` 的区别：`retry` 只允许从 Result 出（“再来一次刚才那局”），
+	 * 而选关是“开始一局新的”，必须能从 LevelSelect 进。
+	 */
+	startLevel: () => void;
 	/** 每帧调用一次。 */
 	update: (dt: number) => void;
 }
@@ -291,6 +332,23 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		retry: (): void => {
 			if (core.phase !== 'Result') return;
+			coreRetry(core);
+			deps.trajectory.clearTrail();
+			deps.trajectory.clearPrediction();
+			deps.onPhase('Aiming');
+		},
+		backToSelect: (): boolean => {
+			if (!coreBackToSelect(core)) return false;
+			// 离开本关：线不能留在屏幕上（下一关会画自己的）
+			deps.aim.setEnabled(false);
+			deps.trajectory.clearTrail();
+			deps.trajectory.clearPrediction();
+			deps.onPhase('LevelSelect');
+			return true;
+		},
+		startLevel: (): void => {
+			// 复用 coreRetry 的“清空一切回到 Aiming”：它对相态没有守卫，
+			// 正好当作“重置本关”用（coreRetry 本身不改）。
 			coreRetry(core);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
