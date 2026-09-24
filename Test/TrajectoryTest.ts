@@ -13,6 +13,7 @@
  * 否则会出现 ~1e-8 相对误差（那是精度差异，不是公式错误）。
  */
 import { Vec2 } from 'Dora';
+import { View } from 'Dora';
 import { prepareCamera, project, HANDEDNESS, FLIP_Y, toOverlay } from 'game/Projection';
 import { P2 } from 'game/Gravity';
 import { decimate, defaultOptions, projectPolyline } from 'game/Trajectory';
@@ -87,7 +88,8 @@ function testBasisConsistency(): void {
 		{ x: -7, y: -4 },
 	];
 
-	const viaPolyline = projectPolyline(pts, 0, basis);
+	// 显式传 0,0：这里只验证"预计算基 == 直接 project()"，不含层空间偏移
+	const viaPolyline = projectPolyline(pts, 0, basis, 0, 0);
 
 	// 注意：projectPolyline 返回 Vec2（float32），而 toOverlay 返回 float64。
 	// 把期望值也包成 Vec2 再逐位比较，以精确判定“公式是否一致”，
@@ -105,6 +107,17 @@ function testBasisConsistency(): void {
 		}
 	}
 	check('basis-matches-project', allExact, '预计算基与 project() 的结果不一致（降为 float32 后仍不同）');
+
+	// 回归：绘制层是"左下原点绝对像素"，所以默认层原点必须是半个视图。
+	// 漏掉这个偏移的表现是"预测线整体平移半个屏幕、不从探测器出发"（S2.2 真机踩过）。
+	const opts = defaultOptions();
+	const halfW = View.size.width / 2;
+	const halfH = View.size.height / 2;
+	check(
+		'layer-origin-is-half-view',
+		opts.layerOriginX === halfW && opts.layerOriginY === halfH,
+		`layerOrigin=${opts.layerOriginX},${opts.layerOriginY} expect=${halfW},${halfH}`,
+	);
 }
 
 /** 3) 核心约束：预测线与尾迹走同一套投影（同一批点 → 同一结果）。 */
@@ -124,10 +137,10 @@ function testPredictEqualsTrail(): void {
 
 	// 预测线用的路径（抽稀后投影）
 	const predictPts = decimate(pts, opts.maxPoints);
-	const predictProj = projectPolyline(predictPts, opts.y, basis);
+	const predictProj = projectPolyline(predictPts, opts.y, basis, 0, 0);
 
 	// 尾迹用的路径（同一套函数）
-	const trailProj = projectPolyline(decimate(pts, opts.maxPoints), opts.y, basis);
+	const trailProj = projectPolyline(decimate(pts, opts.maxPoints), opts.y, basis, 0, 0);
 
 	let same = predictProj.length === trailProj.length;
 	if (same) {
@@ -153,7 +166,7 @@ function testVerticalSpread(): void {
 
 	// 沿世界 Z（= 平面 y）的一条直线
 	const pts: P2[] = [{ x: 0, y: 10 }, { x: 0, y: 0 }, { x: 0, y: -10 }];
-	const proj = projectPolyline(pts, 0, basis);
+	const proj = projectPolyline(pts, 0, basis, 0, 0);
 
 	check('spread-count', proj.length === 3, `count=${proj.length}`);
 	// x 应基本居中（对称），y 应单调变化
@@ -177,7 +190,7 @@ function testBehindCamera(): void {
 
 	// 一个在相机前、一个在相机后（z=20 在 eye 之后）
 	const pts: P2[] = [{ x: 0, y: 0 }, { x: 0, y: 20 }];
-	const proj = projectPolyline(pts, 0, basis);
+	const proj = projectPolyline(pts, 0, basis, 0, 0);
 
 	check('behind-camera-dropped', proj.length === 1, `count=${proj.length}（相机后方的点应被丢弃）`);
 }

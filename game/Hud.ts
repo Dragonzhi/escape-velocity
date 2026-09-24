@@ -178,6 +178,11 @@ export interface AimInput {
 	 * 因此不能 `emit` 真触摸事件）。这是为“输入源可替换”保留的缝隙。
 	 */
 	handleLocal: (local: ScreenOffset) => void;
+	/**
+	 * 读取瞄准数学使用的探测器屏幕偏移（**投影偏移空间**，中心原点 +Y 向上）。
+	 * 仅供诊断与回归脚本使用（例如与截图里探测器的实际像素位置比对）。
+	 */
+	debugProbeOffset: () => ScreenOffset;
 	/** 直接以“投影偏移空间坐标”驱动一次拖动（测试用，跳过坐标转换）。 */
 	handleOffset: (offset: ScreenOffset) => void;
 	/** 根节点：调用方自行 addChild 到想要的层级。 */
@@ -283,6 +288,7 @@ export function createAimInput(
 		},
 		// 包一层箭头函数：简写属性会让 TSTL 为对象成员函数引入 self
 		handleOffset: (offset: ScreenOffset): void => handleOffset(offset),
+		debugProbeOffset: (): ScreenOffset => probeOffset,
 		root,
 	};
 }

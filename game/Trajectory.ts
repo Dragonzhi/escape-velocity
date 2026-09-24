@@ -17,13 +17,22 @@
  * 坐标系：投影输出是“中心原点、+Y 向下”；2D 覆盖层节点挂在 Director.ui
  * 下，也是中心原点但 +Y 向上，所以统一用 `-proj.y` 翻转。
  */
-import { BlendFunc, BlendOp, Color, DrawNode, Node, Vec2 } from 'Dora';
+import { BlendFunc, BlendOp, Color, DrawNode, Node, Vec2, View } from 'Dora';
 import { CameraBasis, projectPrepared } from 'game/Projection';
 import { P2 } from 'game/Gravity';
 import { PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
 
-/** 把平面采样点批量投影成覆盖层坐标。 */
-export function projectPolyline(points: P2[], y: number, basis: CameraBasis): Vec2.Type[] {
+/**
+ * 把平面采样点批量投影成**绘制层坐标**。
+ *
+ * @param originX 绘制层坐标原点相对"投影输出（中心原点）"的 x 偏移
+ * @param originY 同上，y 偏移
+ *
+ * 为什么必须显式传：投影输出是中心原点偏移，而**绘制层自己的空间不一定是中心原点**
+ * （取决于这个节点挂在谁下面）。把空间当成隐式全局（例如直接读 View.size）会让
+ * 调用方与测试都无法表达"这一层到底是什么空间"，S2.2 的坐标错位正是这么来的。
+ */
+export function projectPolyline(points: P2[], y: number, basis: CameraBasis, originX: number, originY: number): Vec2.Type[] {
 	const out: Vec2.Type[] = [];
 	for (const p of points) {
 		const world = {
@@ -33,8 +42,7 @@ export function projectPolyline(points: P2[], y: number, basis: CameraBasis): Ve
 		};
 		const proj = projectPrepared(world, basis);
 		if (proj === undefined) continue;
-		// project() 输出已是中心原点 +Y 向上，与覆盖层空间一致（见 Projection.ts 约定 5）
-		out.push(Vec2(proj.x, proj.y));
+		out.push(Vec2(proj.x + originX, proj.y + originY));
 	}
 	return out;
 }
@@ -61,6 +69,16 @@ export interface TrajectoryView {
 export interface TrajectoryOptions {
 	/** 轨迹的**高度偏移**（世界 y）。通常略高于黄道面，避免被行星挡住。 */
 	y: number;
+	/**
+	 * 绘制层坐标原点相对投影输出（中心原点）的偏移。
+	 *
+	 * ⚠️ 实测（标记点法）：本项目的轨迹画在 `levelLayers[i]` 上，该层的真实空间是
+	 * **左下原点绝对像素** `[0,W]×[0,H]`，所以偏移 = 半个视图。
+	 * 依据：在该层画 (0,0)/(W/2,H/2)，前者落在屏幕左下角、后者落在正中心；
+	 * 探测器投影值 (0,-530) 加半个视图后正好落在探测器模型上。
+	 */
+	layerOriginX: number;
+	layerOriginY: number;
 	/** 最多绘制多少个点（抽稀上限，防止移动端性能问题）。 */
 	maxPoints: number;
 	/** 预测线的粗细（像素）。 */
@@ -76,6 +94,9 @@ export interface TrajectoryOptions {
 export function defaultOptions(): TrajectoryOptions {
 	return {
 		y: 0.02,
+		// 绘制层是左下原点绝对像素（见 TrajectoryOptions.layerOriginX 的实测说明）
+		layerOriginX: View.size.width / 2,
+		layerOriginY: View.size.height / 2,
 		maxPoints: 240,
 		predictRadius: 2.5,
 		trailRadius: 3.5,
@@ -144,7 +165,7 @@ export function createTrajectoryView(
 
 	return {
 		setPrediction(points: P2[], basis: CameraBasis): void {
-			const verts = projectPolyline(decimate(points, options.maxPoints), options.y, basis);
+			const verts = projectPolyline(decimate(points, options.maxPoints), options.y, basis, options.layerOriginX, options.layerOriginY);
 			drawPolyline(predictDraw, verts, options.predictRadius, options.predictColor);
 		},
 		clearPrediction(): void {
@@ -159,7 +180,7 @@ export function createTrajectoryView(
 			// 尾迹只在新增点时才重画，减少开销
 			if (points.length === trailCount) return;
 			trailCount = points.length;
-			const verts = projectPolyline(decimate(points, options.maxPoints), options.y, basis);
+			const verts = projectPolyline(decimate(points, options.maxPoints), options.y, basis, options.layerOriginX, options.layerOriginY);
 			drawPolyline(trailDraw, verts, options.trailRadius, options.trailColor);
 		},
 		clearTrail(): void {
