@@ -21,7 +21,7 @@ function ____exports.projectPolyline(points, y, basis) -- 26
 			if proj == nil then -- 34
 				goto __continue3 -- 35
 			end -- 35
-			out[#out + 1] = Vec2(proj.x, -proj.y) -- 37
+			out[#out + 1] = Vec2(proj.x, proj.y) -- 37
 		end -- 37
 		::__continue3:: -- 37
 	end -- 37
@@ -31,9 +31,9 @@ function ____exports.defaultOptions() -- 76
 	return { -- 77
 		y = 0.02, -- 78
 		maxPoints = 240, -- 79
-		predictRadius = 2, -- 80
+		predictRadius = 2.5, -- 80
 		trailRadius = 3.5, -- 81
-		predictColor = Color(120, 200, 255, 110), -- 83
+		predictColor = Color(120, 200, 255, 180), -- 83
 		trailColor = Color(255, 236, 170, 235) -- 85
 	} -- 85
 end -- 76

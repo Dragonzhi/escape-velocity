@@ -33,8 +33,8 @@ export function projectPolyline(points: P2[], y: number, basis: CameraBasis): Ve
 		};
 		const proj = projectPrepared(world, basis);
 		if (proj === undefined) continue;
-		// 图像坐标（+Y 向下）→ 覆盖层坐标（+Y 向上）
-		out.push(Vec2(proj.x, -proj.y));
+		// project() 输出已是中心原点 +Y 向上，与覆盖层空间一致（见 Projection.ts 约定 5）
+		out.push(Vec2(proj.x, proj.y));
 	}
 	return out;
 }
@@ -77,10 +77,10 @@ export function defaultOptions(): TrajectoryOptions {
 	return {
 		y: 0.02,
 		maxPoints: 240,
-		predictRadius: 2.0,
+		predictRadius: 2.5,
 		trailRadius: 3.5,
-		// 预测线偏冷色且半透明（“可能的未来”）
-		predictColor: Color(120, 200, 255, 110),
+		// 预测线偏冷色；alpha 不能太低 —— 加法混合下行星亮面上会被洗掉（实测）
+		predictColor: Color(120, 200, 255, 180),
 		// 尾迹偏暖色且更实（已发生的路径）
 		trailColor: Color(255, 236, 170, 235),
 	};

@@ -61,19 +61,24 @@ export function computeAim(
 	touchOffset: ScreenOffset,
 	maxDragPx: number,
 ): AimResult {
-	// 屏幕方向：从探测器指向触摸点（+Y 向下）
+	// 方向：从探测器指向触摸点（手册 §5.7）。
+	// 屏幕偏移空间是中心原点 +Y 向上（与 project() 一致，见 Projection.ts 约定 5）。
+	// 修正后的渲染方向：世界 -z（远离相机 = 平面 -y = 朝目标）在屏幕**上方**。
+	// 所以触摸在探测器上方（dy < 0）= 朝目标发射（平面 -y，uy < 0）。
 	const dx = touchOffset.x - probeOffset.x;
 	const dy = touchOffset.y - probeOffset.y;
 
 	const len = Math.sqrt(dx * dx + dy * dy);
 	if (len < 1e-6) {
-		// 没有拖动：方向取“平面向前”（-y），速度取最小值
+		// 没有拖动：方向取“平面向前”（-y，朝目标），速度取最小值
 		return { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
 	}
 
-	// 屏幕 +Y 向下；平面 +y 对应世界 +z（靠近相机），在屏幕上表现为**向上**。
-	// 所以平面方向的 y 分量取屏幕 dy 的**相反数**。
 	const ux = dx / len;
+	// ⚠️ 保留负号（修正后的推导）：偏移空间 +Y 向上，而修正后的渲染是
+	 // 平面 -y（朝目标）在屏幕上方 = 偏移 +y。即平面 y 轴与偏移 y 轴**反向**。
+	 // 所以“拖向目标”（dy > 0）→ 平面 -y（uy < 0）需要取相反数。
+	 // （S2 修投影镜像时曾误删此负号，被 HudTest 当场抓回。）
 	const uy = -dy / len;
 
 	const safeMax = maxDragPx > 1 ? maxDragPx : 1;
@@ -123,24 +128,24 @@ export interface TouchSpace {
 }
 
 /**
- * 全屏输入节点的局部坐标 → 投影偏移空间。
+ * 全屏输入节点的局部坐标 → 投影偏移空间（中心原点、+Y 向上）。
  *
- * 两个空间的差异（已核对 `Projection.ts` 的 R4 标定结论）：
+ * 两个空间的差异（已核对 `Projection.ts` 的修正后约定）：
  *
  * | | 原点 | 范围 | Y 方向 |
  * |---|---|---|---|
  * | 全屏节点局部坐标 | **左下角** | [0,W]×[0,H] | **+Y 向上** |
- * | 投影偏移空间 | **屏幕中心** | ±W/2, ±H/2 | **+Y 向下** |
+ * | 投影偏移空间 | **屏幕中心** | ±W/2, ±H/2 | **+Y 向上** |
  *
- * 换算：`offset.x = local.x - W/2`，`offset.y = H/2 - local.y`。
+ * 换算：`offset.x = local.x - W/2`，`offset.y = local.y - H/2`。
  */
 export function localToOffset(local: ScreenOffset, space: TouchSpace): ScreenOffset {
-	return { x: local.x - space.viewW / 2, y: space.viewH / 2 - local.y };
+	return { x: local.x - space.viewW / 2, y: local.y - space.viewH / 2 };
 }
 
 /** 反向换算（投影偏移空间 → 全屏节点局部坐标）。 */
 export function offsetToLocal(offset: ScreenOffset, space: TouchSpace): ScreenOffset {
-	return { x: offset.x + space.viewW / 2, y: space.viewH / 2 - offset.y };
+	return { x: offset.x + space.viewW / 2, y: offset.y + space.viewH / 2 };
 }
 
 /**

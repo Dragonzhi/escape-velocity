@@ -7,19 +7,23 @@
  *
  * ===== 已实测标定的约定（Test/ProjectionProbe.ts，R4 已关闭）=====
  *
- * 1) `View3D.getRayDirection/getRayOrigin/getRayOrigin.pick` 的 viewPoint
- *    使用 **像素坐标、原点在屏幕左上角**：`x ∈ [0, W]`、`y ∈ [0, H]`（Y 向下）。
- *    实测：世界原点投影到 (W/2, H/2)。
+ * 1) `View3D.getRayDirection/getRayOrigin/pick` 的 viewPoint
+ *    使用 **像素坐标、原点在屏幕左下角**：`x ∈ [0, W]`、`y ∈ [0, H]`、**+Y 向上**。
+ *    ⚠️ 修正（S2 阶段）：早期标定误判为“左上原点 +Y 向下”——中心点检验对
+ *    Y 翻转不敏感所以未发现；后来用颜色标记球对照渲染位置才定位。
+ *    证据：viewPoint (W/2, 100)（按旧约定应靠近屏顶）返回的射线比中心射线
+ *    更向下 → 该点实际对应屏底。
  * 2) 相机手性为 **right = cross(forward, up)**（即本文件的 `HANDEDNESS = 1`）。
  * 3) `project()` 输出与 viewPoint **同一坐标空间的偏移量**，即：
  *      viewPoint.x = viewW / 2 + project().x
  *      viewPoint.y = viewH / 2 + project().y
- *    （`FLIP_Y = false`）。实测最大像素误差 1.56 px（2024×1230）。
+ *    （`FLIP_Y = false`）。实测最大像素误差 1 px。
+ *    ⇒ 因此 project() 的输出就是**中心原点 +Y 向上** —— 与 Dora UI 空间一致，
+ *    `toOverlay()` 是恒等变换（旧版在此多翻了一次，已修正）。
  * 4) 渲染器会自动处理相机后方的点。
- *
- * ⚠️ 重要：本输出 **+Y 向下**（图像坐标），而 Dora 2D 节点（Director.ui 等）
- * 是 **中心原点、+Y 向上**。把投影结果画到覆盖层时，用 `toOverlay()` 转换，
- * 不要直接写下 `p.y`。
+ * 5) **屏幕方向语义（修正后）**：世界 +z（靠近相机一侧）渲染在屏幕**下方**，
+ *    远离相机（-z）在**上方** —— 与真实相机一致（近景在画面下方）。
+ *    游戏里探测器在屏幕下方、目标在上方，向上发射。
  */
 
 /** 已实测确认的默认约定，业务代码直接用这两个常量。 */
@@ -69,11 +73,14 @@ export function screenToPlaneY(
 /**
  * 把 project() 的输出转成 Dora 2D 覆盖层坐标（中心原点、+Y 向上）。
  *
- * project() 输出 +Y 向下（图像坐标），而 Director.ui 等 2D 节点是
- * 中心原点 +Y 向上，所以这里只需翻转 y。
+ * ⚠️ 修正（S2 阶段实测）：project() 的输出**已经是**中心原点 +Y 向上 ——
+ * 与 Dora UI 空间一致，**无需翻转**（恒等变换）。
+ * 旧版在这里多翻了一次，导致所有 2D 覆盖层（预测线）垂直镜像于真实渲染。
+ * 修正依据：颜色标记球对照（绿=探测器、红=火星、白=注视点标记），
+ * 渲染位置与旧 project() 输出恰好关于屏幕中心镜像。
  */
 export function toOverlay(p: Projected): { x: number; y: number } {
-	return { x: p.x, y: -p.y };
+	return { x: p.x, y: p.y };
 }
 
 /**

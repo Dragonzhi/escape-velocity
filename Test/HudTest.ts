@@ -35,25 +35,26 @@ function testNoDrag(): void {
 }
 
 /** 2) 方向：由“探测器 → 触摸点”决定。
- * 投影偏移空间 +Y 向下，平面 +y 在屏幕上表现为向上，所以：
- *   触摸在探测器**上方**（offset.y 更小）→ 平面 +y（靠近相机的一侧）
- *   触摸在探测器**下方**（offset.y 更大）→ 平面 -y（远离相机）
+ * 投影偏移空间 +Y 向上（修正后），且修正后的渲染方向是：
+ * 平面 -y（朝目标）在屏幕**上方**。所以：
+ *   触摸在探测器**上方**（offset.y 更大 → dy > 0）→ 平面 -y（朝目标）
+ *   触摸在探测器**下方**（dy < 0）→ 平面 +y（背离目标）
  */
 function testDirection(): void {
-	// 向下拖 → 平面 -y
-	const down = computeAim(PROBE, { x: PROBE.x, y: PROBE.y + 200 }, 300);
-	check('dir-down', down.velocity.y < -1, `vy=${down.velocity.y.toFixed(2)}（应为负）`);
+	// 向上拖（dy > 0）→ 平面 -y（朝目标）
+	const up = computeAim(PROBE, { x: PROBE.x, y: PROBE.y + 200 }, 300);
+	check('dir-up-toward-goal', up.velocity.y < -1, `vy=${up.velocity.y.toFixed(2)}（应为负 = 朝目标）`);
 
-	// 向上拖 → 平面 +y
-	const up = computeAim(PROBE, { x: PROBE.x, y: PROBE.y - 200 }, 300);
-	check('dir-up', up.velocity.y > 1, `vy=${up.velocity.y.toFixed(2)}（应为正）`);
+	// 向下拖（dy < 0）→ 平面 +y
+	const down = computeAim(PROBE, { x: PROBE.x, y: PROBE.y - 200 }, 300);
+	check('dir-down', down.velocity.y > 1, `vy=${down.velocity.y.toFixed(2)}（应为正）`);
 
 	// 向右拖 → 平面 +x
 	const right = computeAim(PROBE, { x: PROBE.x + 200, y: PROBE.y }, 300);
 	check('dir-right', right.velocity.x > 1 && Math.abs(right.velocity.y) < 1e-9, `v=(${right.velocity.x.toFixed(2)}, ${right.velocity.y.toFixed(2)})`);
 
 	// 单位向量长度为 1
-	const u = Math.sqrt(down.unit.x * down.unit.x + down.unit.y * down.unit.y);
+	const u = Math.sqrt(up.unit.x * up.unit.x + up.unit.y * up.unit.y);
 	check('unit-length', Math.abs(u - 1) < 1e-9, `|unit|=${u}`);
 }
 
@@ -131,13 +132,13 @@ function testSpaceConversion(): void {
 	const center = localToOffset({ x: 540, y: 960 }, space);
 	check('space-center', Math.abs(center.x) < 1e-9 && Math.abs(center.y) < 1e-9, `offset=(${center.x}, ${center.y})`);
 
-	// 左下角（局部 0,0）→ 偏移 (-W/2, +H/2)（因为局部 +Y 向上，偏移 +Y 向下）
+	// 左下角（局部 0,0）→ 偏移 (-W/2, -H/2)（两个空间都是 +Y 向上，屏底为负）
 	const bl = localToOffset({ x: 0, y: 0 }, space);
-	check('space-bottom-left', Math.abs(bl.x + 540) < 1e-9 && Math.abs(bl.y - 960) < 1e-9, `offset=(${bl.x}, ${bl.y})`);
+	check('space-bottom-left', Math.abs(bl.x + 540) < 1e-9 && Math.abs(bl.y + 960) < 1e-9, `offset=(${bl.x}, ${bl.y})`);
 
-	// 左上角（局部 0,H）→ 偏移 (-W/2, -H/2)
+	// 左上角（局部 0,H）→ 偏移 (-W/2, +H/2)
 	const tl = localToOffset({ x: 0, y: 1920 }, space);
-	check('space-top-left', Math.abs(tl.x + 540) < 1e-9 && Math.abs(tl.y + 960) < 1e-9, `offset=(${tl.x}, ${tl.y})`);
+	check('space-top-left', Math.abs(tl.x + 540) < 1e-9 && Math.abs(tl.y - 960) < 1e-9, `offset=(${tl.x}, ${tl.y})`);
 
 	// 互逆
 	let allExact = true;

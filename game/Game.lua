@@ -108,99 +108,94 @@ end -- 147
 --- 组装游戏（状态机 + 引擎驱动）。
 function ____exports.createGame(level, deps) -- 188
 	local core = ____exports.createCore() -- 189
-	local aimDirty = true -- 190
-	local function makeBasis(frame) -- 192
-		return prepareCamera({ -- 193
-			eye = {x = frame.eye.x, y = frame.eye.y, z = frame.eye.z}, -- 195
-			target = {x = frame.target.x, y = frame.target.y, z = frame.target.z}, -- 196
-			up = {x = 0, y = 1, z = 0}, -- 197
-			fovYDeg = deps.fovYDeg, -- 198
-			aspect = deps.aspect, -- 199
-			viewW = deps.viewW, -- 200
-			viewH = deps.viewH -- 201
-		}, HANDEDNESS, FLIP_Y) -- 201
-	end -- 192
-	local function updateAiming() -- 208
-		deps.aim:setEnabled(true) -- 209
-		deps.scene.syncBodies(0) -- 210
-		deps.scene.syncProbe(level.probeStart) -- 211
-		local planetPts = {} -- 213
-		for ____, p in ipairs(deps.scene.planets) do -- 214
-			planetPts[#planetPts + 1] = bodyPositionAt(p.def, 0) -- 214
-		end -- 214
-		local frame = deps.rig.step({ -- 216
-			level.probeStart, -- 216
-			table.unpack(planetPts) -- 216
-		}) -- 216
-		deps.rig.apply(deps.camera, frame) -- 217
-		local basis = makeBasis(frame) -- 218
-		local pp = projectPrepared( -- 221
-			planeToWorld(level.probeStart, 0), -- 221
-			basis -- 221
-		) -- 221
-		if pp ~= nil then -- 221
-			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 222
-		end -- 222
-		if aimDirty then -- 222
-			local pred = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = core.aim.velocity.x, y = core.aim.velocity.y}}, level.bodies, {steps = PredictSteps, dt = core.dt, sampleEvery = 4, escapeRadius = level.escapeRadius}) -- 225
-			deps.trajectory:setPrediction(pred.points, basis) -- 230
-			deps.trajectory:clearTrail() -- 231
-			aimDirty = false -- 232
-		end -- 232
-	end -- 208
-	local function updateFlying(dt) -- 236
-		deps.aim:setEnabled(false) -- 237
-		local entered = ____exports.coreUpdate(core, dt) -- 238
-		if core.flight == nil then -- 238
-			return entered -- 239
-		end -- 239
-		local idx = ____exports.coreProbeIndex(core) -- 241
-		local pos = core.flight.points[idx + 1] -- 242
-		local t = core.flightTime -- 243
-		deps.scene.syncBodies(t) -- 245
-		deps.scene.syncProbe(pos) -- 246
-		if idx > 0 then -- 246
-			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 248
-		end -- 248
-		local planetPts = {} -- 251
-		for ____, p in ipairs(deps.scene.planets) do -- 252
-			planetPts[#planetPts + 1] = bodyPositionAt(p.def, t) -- 252
-		end -- 252
-		local frame = deps.rig.step({ -- 254
-			pos, -- 254
-			table.unpack(planetPts) -- 254
-		}) -- 254
-		deps.rig.apply(deps.camera, frame) -- 255
-		local basis = makeBasis(frame) -- 256
-		local trail = {} -- 259
-		do -- 259
-			local i = 0 -- 260
-			while i <= idx do -- 260
-				trail[#trail + 1] = core.flight.points[i + 1] -- 260
-				i = i + 1 -- 260
-			end -- 260
-		end -- 260
-		deps.trajectory:setTrail(trail, basis) -- 261
-		return entered -- 263
-	end -- 236
-	local function update(dt) -- 266
-		if core.phase == "Aiming" then -- 266
-			updateAiming() -- 268
-		elseif core.phase == "Flying" then -- 268
-			local entered = updateFlying(dt) -- 270
-			if entered and core.result ~= nil then -- 270
-				deps:onResult(core.result) -- 272
-				deps:onPhase("Result") -- 273
-			end -- 273
-		end -- 273
-	end -- 266
-	return { -- 279
-		phase = function() return core.phase end, -- 280
-		result = function() return core.result end, -- 281
-		onAimDrag = function(____, a) -- 282
-			core.aim = a -- 283
-			aimDirty = true -- 284
-		end, -- 282
+	local function makeBasis(frame) -- 191
+		return prepareCamera({ -- 192
+			eye = {x = frame.eye.x, y = frame.eye.y, z = frame.eye.z}, -- 194
+			target = {x = frame.target.x, y = frame.target.y, z = frame.target.z}, -- 195
+			up = {x = 0, y = 1, z = 0}, -- 196
+			fovYDeg = deps.fovYDeg, -- 197
+			aspect = deps.aspect, -- 198
+			viewW = deps.viewW, -- 199
+			viewH = deps.viewH -- 200
+		}, HANDEDNESS, FLIP_Y) -- 200
+	end -- 191
+	local function updateAiming() -- 207
+		deps.aim:setEnabled(true) -- 208
+		deps.scene.syncBodies(0) -- 209
+		deps.scene.syncProbe(level.probeStart) -- 210
+		local planetPts = {} -- 212
+		for ____, p in ipairs(deps.scene.planets) do -- 213
+			planetPts[#planetPts + 1] = bodyPositionAt(p.def, 0) -- 213
+		end -- 213
+		local frame = deps.rig.step({ -- 215
+			level.probeStart, -- 215
+			table.unpack(planetPts) -- 215
+		}) -- 215
+		deps.rig.apply(deps.camera, frame) -- 216
+		local basis = makeBasis(frame) -- 217
+		local pp = projectPrepared( -- 220
+			planeToWorld(level.probeStart, 0), -- 220
+			basis -- 220
+		) -- 220
+		if pp ~= nil then -- 220
+			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 221
+		end -- 221
+		local pred = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = core.aim.velocity.x, y = core.aim.velocity.y}}, level.bodies, {steps = PredictSteps, dt = core.dt, sampleEvery = 4, escapeRadius = level.escapeRadius}) -- 228
+		deps.trajectory:setPrediction(pred.points, basis) -- 233
+		deps.trajectory:clearTrail() -- 234
+	end -- 207
+	local function updateFlying(dt) -- 237
+		deps.aim:setEnabled(false) -- 238
+		local entered = ____exports.coreUpdate(core, dt) -- 239
+		if core.flight == nil then -- 239
+			return entered -- 240
+		end -- 240
+		local idx = ____exports.coreProbeIndex(core) -- 242
+		local pos = core.flight.points[idx + 1] -- 243
+		local t = core.flightTime -- 244
+		deps.scene.syncBodies(t) -- 246
+		deps.scene.syncProbe(pos) -- 247
+		if idx > 0 then -- 247
+			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 249
+		end -- 249
+		local planetPts = {} -- 252
+		for ____, p in ipairs(deps.scene.planets) do -- 253
+			planetPts[#planetPts + 1] = bodyPositionAt(p.def, t) -- 253
+		end -- 253
+		local frame = deps.rig.step({ -- 255
+			pos, -- 255
+			table.unpack(planetPts) -- 255
+		}) -- 255
+		deps.rig.apply(deps.camera, frame) -- 256
+		local basis = makeBasis(frame) -- 257
+		local trail = {} -- 260
+		do -- 260
+			local i = 0 -- 261
+			while i <= idx do -- 261
+				trail[#trail + 1] = core.flight.points[i + 1] -- 261
+				i = i + 1 -- 261
+			end -- 261
+		end -- 261
+		deps.trajectory:setTrail(trail, basis) -- 262
+		return entered -- 264
+	end -- 237
+	local function update(dt) -- 267
+		if core.phase == "Aiming" then -- 267
+			updateAiming() -- 269
+		elseif core.phase == "Flying" then -- 269
+			local entered = updateFlying(dt) -- 271
+			if entered and core.result ~= nil then -- 271
+				deps:onResult(core.result) -- 273
+				deps:onPhase("Result") -- 274
+			end -- 274
+		end -- 274
+	end -- 267
+	return { -- 280
+		phase = function() return core.phase end, -- 281
+		result = function() return core.result end, -- 282
+		onAimDrag = function(____, a) -- 283
+			core.aim = a -- 284
+		end, -- 283
 		launch = function(____, v) -- 286
 			if core.phase ~= "Aiming" then -- 286
 				return -- 287
@@ -216,10 +211,9 @@ function ____exports.createGame(level, deps) -- 188
 			____exports.coreRetry(core) -- 294
 			deps.trajectory:clearTrail() -- 295
 			deps.trajectory:clearPrediction() -- 296
-			aimDirty = true -- 297
-			deps:onPhase("Aiming") -- 298
+			deps:onPhase("Aiming") -- 297
 		end, -- 292
-		update = function(____, frameDt) return update(frameDt) end -- 301
-	} -- 301
+		update = function(____, frameDt) return update(frameDt) end -- 300
+	} -- 300
 end -- 188
 return ____exports -- 188

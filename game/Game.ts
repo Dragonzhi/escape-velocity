@@ -187,7 +187,6 @@ export interface Game {
 /** 组装游戏（状态机 + 引擎驱动）。 */
 export function createGame(level: GameLevel, deps: GameDeps): Game {
 	const core = createCore();
-	let aimDirty = true;
 
 	const makeBasis = (frame: { eye: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } }): CameraBasis => {
 		return prepareCamera(
@@ -221,16 +220,18 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const pp = projectPrepared(planeToWorld(level.probeStart, 0), basis);
 		if (pp !== undefined) deps.aim.setProbeOffset({ x: pp.x, y: pp.y });
 
-		if (aimDirty) {
-			const pred = simulate(
-				{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: core.aim.velocity.x, y: core.aim.velocity.y } },
-				level.bodies,
-				{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius },
-			);
-			deps.trajectory.setPrediction(pred.points, basis);
-			deps.trajectory.clearTrail();
-			aimDirty = false;
-		}
+		// ⚠️ 预测线必须**每帧**重画，不能只在拖动时重画：
+		// 重试后相机会用 lerp 从飞行终点视图滑回矄准视图（约 20-30 帧），
+		// 若只在 aimDirty 时画一次，线会冻结在过渡中途的投影上，
+		// 看起来“不是从探测器出发”（实测踩过）。
+		// 代价：每帧 600 步 simulate + ~150 点投影，可忽略。
+		const pred = simulate(
+			{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: core.aim.velocity.x, y: core.aim.velocity.y } },
+			level.bodies,
+			{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius },
+		);
+		deps.trajectory.setPrediction(pred.points, basis);
+		deps.trajectory.clearTrail();
 	};
 
 	const updateFlying = (dt: number): boolean => {
@@ -281,7 +282,6 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		result: (): ResultKind | undefined => core.result,
 		onAimDrag: (a: AimResult): void => {
 			core.aim = a;
-			aimDirty = true;
 		},
 		launch: (v: P2): void => {
 			if (core.phase !== 'Aiming') return;
@@ -294,7 +294,6 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			coreRetry(core);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
-			aimDirty = true;
 			deps.onPhase('Aiming');
 		},
 		// 包一层箭头函数：简写属性会触发 TS100016（见 Hud.ts 同名注释）
