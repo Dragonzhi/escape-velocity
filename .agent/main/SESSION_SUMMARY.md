@@ -51,7 +51,7 @@
 
 - **会话 14 · S2.2 + S2.3 交付**：`game/Ui.ts`（2D 原语）+ `game/Hud.ts` 的 `createResultPanel`/`createLevelSelect` + `game/Progress.ts`（解锁推进纯函数 + `Content.writablePath` 存档）+ `Game` 的 `LevelSelect` 相态与 `coreBackToSelect`/`startLevel` + `init.ts` 启动即选关。证据：cli build 69/69 无诊断；单测 `SUMMARY passed=7 failed=0 total=7`（新增 ProgressTest 36 断言）；探针 `Test/UiProbe.ts` = `RESULT=PASS` 且 `switchProblems=0`；整项目入口启动约 7s 无崩；**结算三态与选关截图已转 PNG 人工逐张查看**（布局/配色/文案一致）。实测踩坑并修复：`swallowTouches` 全屏触摸层独占触摸 → `AimInput.setEnabled` 同步 `touchLayer.touchEnabled`。已提交 `4033e09`。
 
-- **会话 13 工具链**：发动机 HTTP API 打通（关掉「访问验证」后无鉴权）；两条构建路（`Dora.exe cli build` + 本地 tstl `.temp/dora-build/`，产物逐字节一致）；`Test/UnitRunner.lua` 批跑单测；TGA→PIL→PNG 原生看图；`LICENSE` 补官方全文；作者/已测设备/引擎版本写入 README。
+- **会话 13 工具链**：发动机 HTTP API 打通（关掉「访问验证」后无鉴权）；两条构建路（`Dora.exe cli build` + 本地 tstl `tools/dora-build/`，产物逐字节一致）；`Test/UnitRunner.lua` 批跑单测；TGA→PIL→PNG 原生看图；`LICENSE` 补官方全文；作者/已测设备/引擎版本写入 README。
 - **S1.3 踩坑**：`Line` 线宽不可控 → `DrawNode.drawSegment` + 顶点 `drawDot`；`Director.entry` 是 `View3D`，2D 节点须挂 `Director.ui`。
 - **S1.4 自查发现真 bug**：`project()` 输出（相对屏幕中心偏移）与触摸换算（绝对像素）混用 → 统一为"投影偏移空间"（编译不报错、单测也测不出，只有跑通真实数据链路才暴露）。
 - **S1.5 踩坑**：`threadLoop` 回调无参数（用 `App.deltaTime`）；增量构建**第二次**未转译 `Config.lua` → 全量重建解决；`App.elapsedTime` 在此环境恒为 0（用帧号）。
@@ -65,12 +65,12 @@
 
 - ✅ LICENSE 官方全文已补齐；作者 / 已测设备已填 README。
 - ⚠️ 引擎「访问验证」当前关闭（本机开发所需）：同局域网其他设备也能无鉴权访问 8866 API，勿在不安全网络下长期关闭。
-- ⚠️ 本地构建工具仍在 `.temp/dora-build/`（未纳入仓库），是否提升为 `tools/dora-build/` 待定。
+- ✅ 本地构建工具已迁入 `tools/dora-build/` 并纳入版本控制（提交 `029bdad`，门禁 `npm run verify`）。
 - 🚨 **R6 包体积**：导出实测 **17 MB**，超 8 MB 目标；用户已决定**暂不处理**。
 - ⚠️ **入口租约**：Web IDE 占用入口时 `stopEntry()` 无效，需用户先停游戏。
 - ⚠️ **增量构建** 有时不重新转译（本会话在 `Config.lua`、`Projection.lua` 各踩一次）。
 - ⚠️ **真实触摸坐标系需一次人工校对**（`localToOffset` 是唯一校准点；`Touch` 私有构造无法注入）。
-- ⚠️ 结算 UI 是最小版（Label）；正式面板在 S2.2。
+
 - ⚠️ 关卡手感（难度曲线）需真人试玩校准（用户反馈"手感还可以，大致有简单玩法"）。
 - ⚠️ 区域检测（cell=12 中心采样）会漏掉 ~5px 宽的细竖线 → 诊断细线改用 ASCII 图。
 
