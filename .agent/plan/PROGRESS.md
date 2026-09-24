@@ -5,9 +5,42 @@
 
 ## 当前阶段
 
-**S1 核心循环进行中**。S0 已完成；S1.1 物理内核、S1.2 场景与相机均已交付并有证据。
+**S1 核心循环进行中**。S0 已完成；S1.1 物理内核、S1.2 场景与相机、S1.3 轨迹均已交付并有证据。
 
 ## 变更日志
+
+### 会话 8 · S1.3 轨迹渲染（预测线 + 真实尾迹）
+
+**已实现（源码）**
+
+- `game/Trajectory.ts`（172 行）— 轨迹渲染：
+  - `projectPolyline(points, y, basis)` — 批量把平面采样点投影到 2D 覆盖层坐标
+  - `decimate(points, maxPoints)` — 均匀抽稀（保留首尾），控制移动端开销
+  - `createTrajectoryView(parent, opts)` — 返回 `setPrediction` / `clearPrediction` / `setTrail` / `clearTrail`
+  - 用 `DrawNode.drawSegment` + `drawDot`（圆头）而非 `Line`，因为 `Line` 线宽不可控
+- `game/Projection.ts` — 新增 `prepareCamera` / `projectPrepared`（预计算相机基，避免每帧重算数百次）
+- `Test/TrajectoryTest.ts`（10 断言）、`Test/TrajectoryProbe.ts`（运行时探针）
+
+**已验证的证据**
+
+- **编译**：全量 `build` 19/19 通过。
+- **单测**：`Test/TrajectoryTest.ts` → `passed checks=10 failures=0`，
+  含“预测线与尾迹逐点相同”（核心约束）、“预计算基与 project() 降为 float32 后逐位一致”。
+- **运行时（`Test/TrajectoryProbe.ts`）**：轨迹在画面中清晰可见：
+  - 区域检测从 **11 个 → 40+ 个**（改用 DrawNode 后）
+  - 亮像素占比 **0.07% → 0.30%**
+  - ASCII 图呈现“从上方下行、随引力向左弯曲”的曲线，符合物理推演
+
+**踩到的坑**
+
+- **`Director.entry` 是 `View3D`，不能挂 2D 绘制节点** → 轨迹必须挂在 `Director.ui`。
+- **`Line` 线宽不可控**（约 1px），在 1080p 下几乎不可见 → 改用 `DrawNode.drawSegment`。
+- **`Vec2` 是 float32**（引擎 C++ 类型），与 float64 普通对象比较会有 ~1e-8 相对误差。
+- **增量构建有时不重新转译**：全量 `build` 报告成功但 `.lua` 未更新。需改一次 `.ts` 强制重编。
+
+**未验证 / 待办**
+
+- 轨迹尚未接入拖拽瞄准（S1.4）与主循环（S1.5）。
 
 ### 会话 7 · S1.2 场景与相机跟随
 

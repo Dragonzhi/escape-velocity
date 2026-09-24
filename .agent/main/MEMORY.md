@@ -4,6 +4,7 @@
 
 - 回复用简体中文；希望 Agent 少长篇思考、多动手。
 - 对不确定的问题，必须先问再动手。
+- 可启用互联网工具，但本环境实际取物不可用（见 Known Issues · R8）。
 
 ### Stable Facts
 
@@ -14,12 +15,15 @@
 ### Known Decisions
 
 - 七项产品/技术决策 D1–D7 已冻结，记录于 `docs/开发手册.md` §2。
-- 3D 资产采用**代码生成自包含 glTF**（`Test/gen_shapes.lua`），不依赖外部下载。
+- 3D 资产采用**代码生成自包含 glTF**（`Test/gen_shapes.lua`：纯 Lua `string.pack` 顶点打包 + 手写 base64 → 写 `Assets/Model/*.gltf`），不依赖外部下载。
 
 ### Known Issues
 
 - LICENSE 缺 AGPL-3.0 官方全文（提交前补）。
-- **环境限制**：`fetch_url` 落盘为 0 字节、`git clone` 到 github 超时 → 网络取物不可用。
+- **R8 网络取物不可用（已实测）**：`fetch_url` 对 raw.githubusercontent.com / cdn.jsdelivr.net / www.gnu.org 均报 `failed to move downloaded file into target path`（引擎日志：`being used by another process`），落盘文件经 `Content:load` 验证全为 **0 字节**；`git clone https://github.com/octocat/Hello-World.git` 报 `wsarecv ... connected host has failed to respond`（超时）。→ 改走代码生成资产，不再阻塞。
+- **命令模式 Content 只读且被沙箱限制**：仅允许项目目录内路径（越界报 `Content path must stay inside projectDir`）；无 `save`/`searchPaths`/`writablePath`；**写文件必须通过入口**（`enterEntryAsync`）。
+- **入口租约（entry lease）**：Web IDE 正运行游戏占用入口时，`stopEntry()` 不释放（`getEntryStatus().running` 仍为 `true`），`enterEntryAsync`/`previewGame` 均被拒（`Dora entry runtime is in use; stop the current game before previewing`）。需用户先停游戏才能跑运行时探针。
+- **手工转录 base64 不可靠**：长 base64 手抄多次丢字符（Ring 曾少 27、36 字节）。正解：让生成器直接写文件，或写完后用「重算 → 逐字符比对 MATCH」校验。
 - **Agent 无图像分析工具**：`read_file` 拒读二进制。**已用 `Test/Vision.ts` 文本化视觉验证绕过**（见下）。
 - 🚨 **R6 包体积缺口**：Web 导出实测 **17 MB**，超 8 MB 目标（用户已决定暂不处理）。
 

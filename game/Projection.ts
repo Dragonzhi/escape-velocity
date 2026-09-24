@@ -26,9 +26,80 @@
 export const HANDEDNESS: Handedness = 1;
 export const FLIP_Y = false;
 
-/** 把 project() 的输出转成 Dora 2D 覆盖层坐标（中心原点、+Y 向上）。 */
+/**
+ * 把 project() 的输出转成 Dora 2D 覆盖层坐标（中心原点、+Y 向上）。
+ *
+ * project() 输出 +Y 向下（图像坐标），而 Director.ui 等 2D 节点是
+ * 中心原点 +Y 向上，所以这里只需翻转 y。
+ */
 export function toOverlay(p: Projected): { x: number; y: number } {
 	return { x: p.x, y: -p.y };
+}
+
+/**
+ * 预计算的相机基。
+ *
+ * 轨迹每帧要投影数百个点。`project()` 每次都重算
+ * f / r / u / focal，变成大量重复运算。
+ * 这里把相机的基向量算一次，然后用 `projectPrepared` 逐个投影。
+ * 两者必须给出**完全一致**的结果（由回归测试守着）。
+ */
+export interface CameraBasis {
+	eye: V3;
+	forward: V3;
+	right: V3;
+	up: V3;
+	focal: number;
+	aspect: number;
+	viewW: number;
+	viewH: number;
+	flipY: boolean;
+}
+
+/** 预计算相机基（每帧调一次）。 */
+export function prepareCamera(
+	cam: CameraView,
+	handedness: Handedness,
+	flipY: boolean,
+): CameraBasis {
+	const f = normalize(sub(cam.target, cam.eye));
+	const up = normalize(cam.up);
+	const r = handedness === 0 ? normalize(cross(up, f)) : normalize(cross(f, up));
+	const u = handedness === 0 ? cross(f, r) : cross(r, f);
+
+	return {
+		eye: { x: cam.eye.x, y: cam.eye.y, z: cam.eye.z },
+		forward: f,
+		right: r,
+		up: u,
+		focal: 1 / Math.tan((cam.fovYDeg * Math.PI / 180) / 2),
+		aspect: cam.aspect,
+		viewW: cam.viewW,
+		viewH: cam.viewH,
+		flipY,
+	};
+}
+
+/** 用预计算的基投影一个点。语义与 `project()` 一致。 */
+export function projectPrepared(p: V3, b: CameraBasis): Projected | undefined {
+	const dx = p.x - b.eye.x;
+	const dy = p.y - b.eye.y;
+	const dz = p.z - b.eye.z;
+
+	const vz = dx * b.forward.x + dy * b.forward.y + dz * b.forward.z;
+	if (vz <= 1e-6) return undefined;
+
+	const vx = dx * b.right.x + dy * b.right.y + dz * b.right.z;
+	const vy = dx * b.up.x + dy * b.up.y + dz * b.up.z;
+
+	const ndcX = (vx / vz) * b.focal / b.aspect;
+	const ndcY = (vy / vz) * b.focal;
+
+	return {
+		x: (ndcX * b.viewW) / 2,
+		y: ((b.flipY ? -ndcY : ndcY) * b.viewH) / 2,
+		vz,
+	};
 }
 
 export interface V3 {
