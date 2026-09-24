@@ -2,9 +2,13 @@
 
 ### Current Goal
 
-《单程》Escape Velocity：**S2 关卡与结算已全部交付**（S2.1 六关数据 / S2.2 结算三态面板 / S2.3 关卡选择与解锁进度）。
-只差**真机触屏验收**（Touch 私有构造，无头不可注入）；下一步 S3 视觉（星球造型、轨迹发光、星空、金唱片开场）。
-开发方式：DSH（外部 Coding Agent）接管读写/编译/驱动/验证，引擎只当运行时；工具链见 `PROGRESS.md` 会话 13/14。
+《单程》Escape Velocity：**S2 已交付，并修完两轮真机问题**（会话 15–20）——
+S2.1 六关数据 / S2.2 结算三态面板 / S2.3 关卡选择与解锁进度；随后真机反馈的三件事全部修好并有证据：
+① 瞄准层没接到状态机（“进关卡拖不动”的真根因）、② 交互改为**相对拖动**且修掉触摸命中框只剩左下象限、
+③ **视口尺寸变化整体重建**（手机浏览器“预测线跑偏 / 竖屏没适配”的根因）。
+**下一步 S3 视觉**（星球与土星环造型、轨迹发光与星空、金唱片开场与关间简报、可选粒子/后处理）。
+**唯一开放的真机项**：修复后的 Web 导出包在**手机浏览器**上重跑一遍（选关 → 拖 → 松手 → 结算）。
+开发方式：DSH（外部 Coding Agent）接管读写/编译/驱动/验证，引擎只当运行时；工具链见 `PROGRESS.md` 会话 13 与 `PROJECT_MEMORY.md` §Build And Run。
 
 ### Milestone Ledger (S0 · 已提交 `89be60e`)
 
@@ -28,7 +32,14 @@
 
 - **S2.1 六关数据与目标判定** — `game/LevelData.ts`（六关 + `findGoalIndex`）；`resolveResult` 接入 Game；`GameTest` 30 + `LevelDataTest` 34（含每关可玩性硬门）；已提交 `9d080b6` → **PASS**
 - **🔴 预测线垂直镜像修复（用户反馈）** — 已提交 `7cb72b0` → **PASS**（详见下）
-- **S2.2 结算三态面板 / S2.3 关卡选择与解锁** — 未开始。
+- **S2.2 结算三态面板 / S2.3 关卡选择与解锁** — `game/Ui.ts` + `game/Hud.ts`（`createResultPanel` / `createLevelSelect`）+ `game/Progress.ts`（解锁纯函数 + `Content.writablePath` 存档）+ `Game` 的 `LevelSelect` 相态与 `coreBackToSelect`/`startLevel` + `init.ts` 启动即选关、惰性建关；`UiProbe` = `RESULT=PASS`（三态 + 选关截图人工查看）；`ProgressTest` 36 断言；已提交 `4033e09` → **PASS**
+- **会话 15–20 · 真机问题三连修**（每项都有截图/日志/单测证据）→ **PASS**：
+  1. `09645a5` 瞄准层没接到状态机（“进关卡拖不动”的**真根因**；会话 15 的“全屏吞触摸层”判断被如实纠正）；
+  2. `bd12af8` 交互改**相对拖动**（按下 = 摇杆零点 → 直飞；位移决定方向/力度；松手才发射）+ 触摸命中框 `anchor` 改 `(0,0)`（六点网格实测）；
+  3. `238cc95` 预测线整体平移半屏（投影输出空间 ≠ 绘制层空间，层原点显式传参）；
+  4. `21a5c78` 竖屏（601×1066）布局溢出修复（选关 2 列×3 行、结算按钮不出卡片）；
+  5. `31cba6e` **视口变化整体重建**（`onAppChange === 'Size'`）+ `set-window.ps1` 竖屏窗口；
+  6. `e62c07d`/`4c160f9`/`283e9cb`/`138e6ce` 清理残留诊断、启动日志带视口与平台、守则补“提交前必须构建全绿”。
 
 ### 预测线垂直镜像修复（用户反馈，已修）
 
@@ -49,6 +60,12 @@
 
 ### Recent Progress
 
+- **会话 20 · 视口尺寸变化没处理（手机真机问题的根因）**：所有几何都在**启动时**读一次 `View.size` 就算死了，而手机浏览器画布启动后还会变一次 ⇒ 预测线偏移、新区域收不到触摸。修复：`buildPanels()`（可重复调用）+ `relayoutForViewport()`（隐藏旧层与旧运行时、更新容器 `size`、重建面板、恢复当前状态），监听 `Director.entry.onAppChange(name === 'Size')`。验证：运行中改窗口 → 日志 `viewport rebuilt: 601x1066` → 用**竖屏坐标**点击仍能正确进关；截图确认选关 2×3 与预测线笔直向上。附带工具 `tools/input-inject/set-window.ps1`（**必须 CRLF**）。已提交 `31cba6e`。
+- **会话 19 · 竖屏（交付形态）实测**：用 Win32 `MoveWindow` 把窗口改成 400×710（`View.size` 601×1066）后，发现两处溢出并有截图证据 —— 选关 6 行竖排 870 > 可用 636（L6 被裁、底部提示出屏）、结算按钮写死 ≥560 而卡片只有 529（按钮戳出卡片）。修复：列数随宽高比自适应（竖 **2×3** / 横 1×6）、按钮尺寸按可用空间推算、下限降到 160×72；结算按钮宽 = 卡片宽 − 60。已提交 `21a5c78`。
+- **会话 18 · 相对拖动 + 命中框象限 bug**：用户要求“按哪里都能瞄、松手才发射、按下时线回到直飞”。实现：按下点 = 摇杆零点（复用 `computeAim`，把按下点当 `probeOffset`），位移方向/长度决定方向与力度。同时定位到 `createAimInput` 根节点 `anchor=(0.5,0.5)` 导致**命中框只剩左下象限**（子坐标原点 = 位置 − anchor×尺寸），改 `(0,0)` 后六点网格全部命中。已提交 `bd12af8`。
+- **会话 17 · 预测线整体平移半屏**：S2.2 把 2D 层从 `Director.ui` 改挂 `levelLayers[i]` 后，绘制层子空间变成“左下原点绝对像素”，而 `project()` 输出是“中心原点偏移” ⇒ 整条线平移 (+W/2, +H/2)。修复：`projectPolyline` 增加显式 `originX/originY`，`TrajectoryOptions.layerOriginX/Y`；新增回归断言 `layer-origin-is-half-view`（读全局 `View.size` 的第一版被 `basis-matches-project` 当场判失败，证明测试有判别力）。已提交 `238cc95`。
+- **会话 16 · “进关卡拖不动”的真根因**：S2.2 重写 `init.ts` 时**漏掉把瞄准层接到状态机的两行**（`aim.onDrag` / `aim.onRelease`），触摸到了但状态机没动。新增能力：**合成鼠标输入注入**（Dora 的触摸事件同时代表鼠标点击）→ `tools/input-inject/mousectl.ps1`，触摸类改动从此可自动验收。已提交 `09645a5`。
+- **会话 15 · 全屏吞触摸层**（当时的判断，后被会话 16 纠正为非根因）：给面板底板设 `touchEnabled + swallowTouches` 会独占点击且 `hide()` 没断触摸；已移除全屏独占层并在 `hide()` 里 `setEnabled(false)`（加固本身保留）。已提交 `dddb404`。
 - **会话 14 · S2.2 + S2.3 交付**：`game/Ui.ts`（2D 原语）+ `game/Hud.ts` 的 `createResultPanel`/`createLevelSelect` + `game/Progress.ts`（解锁推进纯函数 + `Content.writablePath` 存档）+ `Game` 的 `LevelSelect` 相态与 `coreBackToSelect`/`startLevel` + `init.ts` 启动即选关。证据：cli build 69/69 无诊断；单测 `SUMMARY passed=7 failed=0 total=7`（新增 ProgressTest 36 断言）；探针 `Test/UiProbe.ts` = `RESULT=PASS` 且 `switchProblems=0`；整项目入口启动约 7s 无崩；**结算三态与选关截图已转 PNG 人工逐张查看**（布局/配色/文案一致）。实测踩坑并修复：`swallowTouches` 全屏触摸层独占触摸 → `AimInput.setEnabled` 同步 `touchLayer.touchEnabled`。已提交 `4033e09`。
 
 - **会话 13 工具链**：发动机 HTTP API 打通（关掉「访问验证」后无鉴权）；两条构建路（`Dora.exe cli build` + 本地 tstl `tools/dora-build/`，产物逐字节一致）；`Test/UnitRunner.lua` 批跑单测；TGA→PIL→PNG 原生看图；`LICENSE` 补官方全文；作者/已测设备/引擎版本写入 README。
@@ -60,8 +77,9 @@
 
 ### Open Issues
 
-- ⚠️ **真机触屏未验收**（S2 唯一缺口）：按钮点击/拖拽的真实 `touch.location` 需在真机或浏览器上点一次；手册 §12 已列待办。
-- ⚠️ 解锁写盘由单测（存档往返）+ 真机文件（`%APPDATA%\IppClub\DoraSSR\escape-velocity.progress`）双重守着，但「success 解锁下一关」的**完整真人对局**未跑过。
+- ⚠️ **手机浏览器待复测（当前唯一开放的真机项）**：修复后的 Web 导出包需在手机上重跑「选关 → 拖 → 松手 → 结算」。
+  桌面侧的触摸路径**已可自动验收**（`tools/input-inject/mousectl.ps1` 合成鼠标 = 真实命中判定；六点网格 + 相对拖动 + 松手发射 + 按钮点击均已跑通）。
+- ⚠️ 解锁写盘由单测（存档往返）+ 真机文件（`%APPDATA%\IppClub\DoraSSR\escape-velocity.progress`）双重守着；「success 解锁下一关」的完整真人对局仍建议在手机复测时顺带确认。
 
 - ✅ LICENSE 官方全文已补齐；作者 / 已测设备已填 README。
 - ⚠️ 引擎「访问验证」当前关闭（本机开发所需）：同局域网其他设备也能无鉴权访问 8866 API，勿在不安全网络下长期关闭。
@@ -69,7 +87,7 @@
 - 🚨 **R6 包体积**：导出实测 **17 MB**，超 8 MB 目标；用户已决定**暂不处理**。
 - ⚠️ **入口租约**：Web IDE 占用入口时 `stopEntry()` 无效，需用户先停游戏。
 - ⚠️ **增量构建** 有时不重新转译（本会话在 `Config.lua`、`Projection.lua` 各踩一次）。
-- ⚠️ **真实触摸坐标系需一次人工校对**（`localToOffset` 是唯一校准点；`Touch` 私有构造无法注入）。
+- ✅ **触摸路径在桌面上已可自动验收**（`tools/input-inject/mousectl.ps1` 合成鼠标 = 真实命中判定）；真机（手机）只需一次整体复测。
 
 - ⚠️ 关卡手感（难度曲线）需真人试玩校准（用户反馈"手感还可以，大致有简单玩法"）。
 - ⚠️ 区域检测（cell=12 中心采样）会漏掉 ~5px 宽的细竖线 → 诊断细线改用 ASCII 图。
@@ -81,11 +99,17 @@
 
 ### Active Checkpoint
 
-- **当前目标**：实现 **S2.2 结算三态面板**（成功/错过/撞毁 + "重试本关 / 返回关卡选择" 可见可点按钮，触屏目标足够大）→ 再做 S2.3 关卡选择与解锁进度。
-- **已完成**：S0 全部（`89be60e`）；S1.1–S1.5（`ed29f75`/`94b77af`/`eb75f07`/`3205cb8`/`4125b1a`）；S2.1（`9d080b6`）；预测线垂直镜像修复（`7cb72b0`）。
-- **最新验证结果**：`build` 全绿 **33/33**；单测 `TrajectoryTest` 10 / `HudTest` 17 / `GameTest` 30 / `LevelDataTest` 34 **全过**；`LineDirProbe` 运行时确认预测线从探测器（屏幕下方）朝目标（上方）出发；`GameProbe` 完整循环 `RESULT=PASS`（拖拽→`power=1.000 vel=(12.09,-18.38)`→Flying 6.2s→Result(missed)→retry→Aiming）；`init.ts` 加载 `L1 直飞` 运行 3 秒干净退出。
-- **关键约束**：竖屏 1080×1920（运行时窗口实测 2024×1230）；物理平面沿世界 Z 展开；**世界 +z（近相机）在屏幕下方**；`getRayDirection` viewPoint = 左下原点 +Y 向上（`toOverlay` 恒等）；Web 用 Web IDE「导出 HTML」；命令模式 Content 只读；入口被占用时跑不了运行时探针；TS 产物与源同目录（`*.lua` 不可笼统忽略）；TSTL 坑：接口成员需 `@noSelf`/属性式箭头、`threadLoop` false 继续且回调无参（用 `App.deltaTime`）、2D 节点挂 `Director.ui`、`Vec2` 是 float32、简写属性触发 TS100016、`Model3D.Type`。
-- **已读/已改文件（本会话）**：`game/{Config,Projection,Gravity,Scene,CameraRig,Trajectory,Hud,Game,LevelData}.ts`、`init.ts`、`docs/开发手册.md`、`.agent/plan/{PLAN,PROGRESS}.md`，以及 `Test/{TrajectoryTest,TrajectoryProbe,HudTest,HudProbe,GameTest,GameProbe,LevelDataTest,ClearTest,ProjCheckProbe,VerdictProbe,LineDirProbe,LineAlignProbe,LineAlignProbe}.ts`。
-- **下一步**：开始 **S2.2 结算三态面板**（新建/改写结算 UI 模块 + 接线 `Game.onResult`/`onPhase`；重试与返回按钮用 `Director.ui` 上可见可点 2D 按钮），然后 `build` → 运行时探针验证。
-
-**Next tool**: `edit_file`
+- **当前目标**：**S3 视觉** —— S3.1 星球与土星环造型 → S3.2 轨迹发光与星空 → S3.3 金唱片开场与关间简报 → 可选 S3.4 粒子/后处理。
+  每项的交付物与可观测验收判据见 `.agent/plan/PLAN.md`。
+- **已完成**：S0 全部（`89be60e`）；S1.1–S1.5（`ed29f75`/`94b77af`/`eb75f07`/`3205cb8`/`4125b1a`）；S2.1（`9d080b6`）；镜像修复（`7cb72b0`）；S2.2 + S2.3（`4033e09`）；
+  真机三连修（`dddb404`/`09645a5`/`238cc95`/`bd12af8`/`21a5c78`/`31cba6e`）；守则与清理（`c0179fc`/`e62c07d`/`4c160f9`/`138e6ce`/`283e9cb`）。
+- **最新验证结果（会话 20 结束态）**：`node tools/dora-build/build.mjs --all` = **36/36 成功**；单测 `SUMMARY passed=7 failed=0 total=7`（7 模块 / 164 断言）；
+  运行中改视口 → `viewport rebuilt: 601x1066`，之后用**竖屏坐标**点击仍能正确进关；合成鼠标闭环 `enter L1` → `phase -> Flying` → `result = …` → 点重试回 `Aiming`；
+  竖屏（601×1066）与横屏（2024×1231）两套布局截图均人工查看通过。
+- **关键约束**：`View.size` = 客户区 ×1.5（横屏实测 2024×1230 / 竖屏 601×1066）；物理平面沿世界 Z 展开；**世界 +z（近相机）在屏幕下方**；
+  `getRayDirection` viewPoint = 左下原点 +Y 向上（`toOverlay` 恒等）；**全屏容器 `anchor` 必须是 (0,0)**；**投影输出空间 ≠ 绘制层空间（层原点显式传参）**；
+  **视口变化必须重建**；Web 导出用 Web IDE「导出 HTML」；命令模式 Content 只读；入口被占用时跑不了运行时探针；TS 产物与源同目录（`*.lua` 不可笼统忽略）；
+  `.ps1` 必须 CRLF；TSTL 坑：接口成员需 `@noSelf`/属性式箭头、`threadLoop` false 继续且回调无参（用 `App.deltaTime`）、2D 节点挂 `Director.ui`、`Vec2` 是 float32、简写属性触发 TS100016、`Model3D.Type`。
+- **下一步**：**S3.1** —— 提高球体细分（`Test/gen_shapes.lua`）或产出更精细的自产 glTF、定稿六关行星配色/尺寸（`LevelData.visuals`）、土星环与探测器造型；
+  流程仍是「改代码 → `node tools/dora-build/build.mjs --all` 36/36 → 截图/探针验证 → 更新 `PROGRESS.md` → 提交」。
+- ⚠️ **开放项**：手机浏览器上重跑 Web 导出包（选关 → 拖 → 松手 → 结算）。

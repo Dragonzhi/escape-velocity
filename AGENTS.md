@@ -29,6 +29,9 @@
 5. **物理确定性**：`game/Gravity.ts` 是纯函数、零引擎依赖；预测线与真实轨迹共用同一个 `simulate`；
    不引入时钟/帧率依赖（固定步长 `Config.PhysicsStep`）。
 6. 不新增运行时依赖；`Assets/*` 由 `Test/gen_shapes.lua` 代码生成；除记忆维护任务外不要动 `.agent/main/*`。
+7. **全屏容器的 `anchor` 必须是 `(0,0)`**：子坐标原点 = 位置 − anchor×尺寸，取 `(0.5,0.5)` 会把整棵子树（含**触摸命中框**）推走半个屏幕 —— 踩过两次（预测线平移半屏、命中框只剩左下象限）。
+8. **不要只在启动时读 `View.size`**：手机浏览器的画布启动后还会变一次，视口变化必须整体重建（`Director.entry.onAppChange(name === 'Size')`）。
+9. **Windows PowerShell 脚本用 CRLF**（here-string 在纯 LF 下解析失败，`tools/input-inject/set-window.ps1` 踩过）。
 
 ## 验证纪律（写了代码 ≠ 通过）
 
@@ -49,8 +52,8 @@ python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"
 
 ✅ **触摸可以自动验收（Windows 桌面）**：`Touch` 是私有构造，探针注入不了，
 但 Dora 的触摸事件**同时代表鼠标点击** —— 用 `tools/input-inject/mousectl.ps1` 合成鼠标事件即可驱动真实命中判定与状态机。
-坐标换算：`View.size` 是逻辑坐标（2024×1230，用 `Test/SizeProbe.lua` 读），窗口客户区是缩放显示，
-`client_x = view_x·(clientW/2024)`、`client_y = (1230−view_y)·(clientH/1230)`。
+坐标换算：`View.size`（W×H，用 `Test/SizeProbe.lua` 读，**不要写死** —— 横屏 2024×1230 / 竖屏 601×1066）是逻辑坐标，窗口客户区是缩放显示，
+`client_x = view_x·(clientW/W)`、`client_y = (H−view_y)·(clientH/H)`（`set-window.ps1` 改窗口后 W/H 会变）。
 回归模板：点选关(674,191) → 拖动(674,600→690,320) → 日志应依次出现 `enter L1`、`phase -> Flying`、`result = ...`、`phase -> Aiming`（点重试 674,470）。
 真机多点触控/手势差异仍建议人工抽查；日志请用 `POST /log` 读（`log.txt` 有缓冲与轮转）。
 

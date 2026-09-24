@@ -16,11 +16,17 @@
 - 纯逻辑单测（**批跑入口**）：引擎内运行 `Test/UnitRunner.lua` → `.agent/test-results/unit-summary.txt`。单模块也可 `requireProjectModule("Test.<X>").runTests()`（先 `package.loaded[...] = nil` 清缓存）。
 - **引擎命令行**（`<引擎>\Dora.exe cli …`）：`status` / `build -p <项目>` / `run` / `buildrun` / `stop` / `log -n` / `doc search|read` / `ts install`。`cli build` 全量编译并给逐文件诊断（`Duplicate compiler file: lualib_bundle.lua` 是已知噪音）。
 - **引擎 HTTP API（8866）**：关掉引擎设置里的「访问验证 / Auth Required」后无鉴权可用；常用 `POST /status`、`/run`、`/stop`、`/run/status`、`/log`、`/ts/build`、`/doc/search`。⚠️ `/ts/build` 要求 Web IDE 浏览器已连接；WS 在 8868。
-- **本地 TS→Lua 构建（不依赖引擎与浏览器）**：`node .temp/dora-build/build.mjs --all`，产物与引擎逐字节一致（标定细节见 `PROGRESS.md` 会话 13）。
+- **本地 TS→Lua 构建（不依赖引擎与浏览器）**：`node tools/dora-build/build.mjs --all`（仓库内，不是 `.temp/`），产物与引擎逐字节一致；
+  版本钉死 **tstl 1.37.1 + TS 5.9.3**，安装必须 `npm i --legacy-peer-deps`；一致性门禁 `--out <tmp>` + `compare-all.mjs`（标定见 `tools/dora-build/REPORT.md`）。
+  ⚠️ **提交前必须 36/36 全绿**（曾提交过构建失败的状态 `e62c07d`）。
 - **看图**：引擎截图是未压缩 TGA → `python -c "from PIL import Image; Image.open('x.tga').save('x.png')"` 后可直接查看。
 - 运行时探针：`enterEntryAsync({fileName="Test/<X>Probe.ts"})` + 轮询标记文件到 `phase=done`。
   ⚠️ **入口租约**：Web IDE 占用入口时无法运行；`stopEntry()` 也不能释放。
   ⚠️ **轮询诀窍**：探针会先写 `phase=started`，轮询循环必须等到出现 `phase=done`（或 `RESULT=PASS/FAIL`）才停。
+- **合成鼠标 = 真实触摸路径**：`tools/input-inject/mousectl.ps1`（`click/drag/press/move/release`，`-HoldMs` 做分段时序）驱动**真实命中判定**与状态机；
+  坐标换算基准是 `Test/SizeProbe.lua` 读出的 `View.size`（**不要写死分辨率**）：`client_x = view_x·(clientW/W)`、`client_y = (H − view_y)·(clientH/H)`。
+- **竖屏窗口**：`tools/input-inject/set-window.ps1 -Shape portrait|landscape`（Win32 `MoveWindow`；客户区 400×710 → `View.size` 601×1066）。
+  ⚠️ `.ps1` 必须 CRLF（here-string 在纯 LF 下解析失败）。日志用 `POST /log` 读（`log.txt` 有缓冲与轮转）。
 - 离线资产生成：`Test/gen_shapes.lua`（在入口内执行才能写文件；命令模式 Content 只读）。
 - ⚠️ **增量构建有时不重新转译**（本会话在 `Config.lua`、`Projection.lua` 上各踩一次）：`build` 报成功但 `.lua` 未更新 → 改一次 `.ts`（哪怕改注释）强制重编，然后 grep 编译产物确认。
 - 🚨 **包体积**：Web 导出实测 **17 MB** > 8 MB 目标（用户已决定暂不处理）。
@@ -28,6 +34,15 @@
 
 ### Git History
 
+- `283e9cb` / `138e6ce` 守则：提交前必须构建全绿；删掉重复条目
+- `e62c07d` / `4c160f9` 清理 init.ts 残留截图钩子（构建曾失败）；启动日志补视口尺寸与平台
+- `31cba6e` **视口尺寸变化时整体重建**（手机真机：预测线偏移 / 竖屏没适配的根因，会话 20）
+- `21a5c78` **竖屏（交付形态）实测与修复**：关卡选择溢出、结算按钮戳出卡片（会话 19）
+- `bd12af8` **交互改为相对拖动 + 修触摸命中框只剩左下象限**（会话 18）
+- `238cc95` **修复预测线整体平移半个屏幕**：绘制层坐标空间 ≠ 投影输出空间（会话 17）
+- `09645a5` **修复真机“进关卡拖不动”的真正根因**：瞄准层没接到状态机（会话 16）
+- `c0179fc` 仓库级守则与 Dora 引擎技能：`AGENTS.md` + `.dsh/skills/dora-ssr-engine`
+- `dddb404` 修复全屏吞触摸层独占点击（会话 15，当时判断非最终根因）
 - `029bdad` **工具链：本地 TS→Lua 构建纳入仓库 + 单测入口与许可补齐**（会话 13；`tools/dora-build/`、`Test/UnitRunner.lua`、LICENSE 官方全文、README 作者/设备）
 - `4033e09` **S2.2 + S2.3：结算三态面板与关卡选择、解锁进度**（会话 14）
 
@@ -45,9 +60,12 @@
 
 - `game/Ui.ts`（会话 14 新增）：视图空间 2D 原语 `createPanel` / `createLabel` / `createButton`（按钮自身可点：`touchEnabled`+`swallowTouches`+`onTapEnded`；配色与触屏下限集中于此）。
 - `game/Progress.ts`（会话 14 新增）：`clampUnlocked` / `advanceUnlocked`（纯函数，仅 success 解锁、重玩不回退）+ `loadProgress` / `saveProgress`（`Content.writablePath/escape-velocity.progress`，一行 `unlocked=N`，损坏即 0）。⚠️ v1.9.3 的 `App` 无 `writablePath`，只有 `Content.writablePath`。
-- `game/Hud.ts`：新增 `createResultPanel`（三态 + 重试/返回）与 `createLevelSelect`（六关竖排 + 解锁态）。
+- `game/Hud.ts`：`createResultPanel`（三态 + 重试/返回）与 `createLevelSelect`（六关；竖屏 2 列×3 行 / 横屏 1 列×6 行）。
+  **瞄准层 `createAimInput` 的根节点 `anchor` 必须是 `(0,0)`**（见 Known Issues 第 11 条）；交互语义 = **相对拖动**（按下点 = 摇杆零点 → 位移决定方向/力度 → 松手发射）。
 - `game/Game.ts`：`GamePhase` 增加 `'LevelSelect'`；`coreBackToSelect`（仅 Result 态）与 `startLevel`；`coreLaunch`/`coreUpdate`/`coreRetry` 语义未改。
-- `init.ts`：启动即 LevelSelect；`ensureLevel(i)` 惰性建每关运行时（只让当前关 `visible`）；单一主循环。
+- `init.ts`（336 行）：启动即 LevelSelect；`ensureLevel(i)` 惰性建每关运行时（只让当前关 `visible` + 只开当前关的瞄准层）；单一 `threadLoop`；
+  `buildPanels()` 可重复调用 + `relayoutForViewport()`（`onAppChange === 'Size'` 时整体重建，会话 20）。
+- `game/Trajectory.ts`：`projectPolyline(points, y, basis, originX, originY)` —— **层原点显式传参**（`TrajectoryOptions.layerOriginX/Y`，默认 `View.size/2`）。
 
 - `docs/开发手册.md`：架构分层与模块清单、参数表、编码规范、验收标准与证据分级（§2 D1–D7、§5.5 轨迹、§5.6 关卡数据、§5.7 输入、§5.8 结算、§7.2.1 TSTL 坑、§8.1 lua 忽略、§9.1 视觉验证、§11 R1/R6）。
 - `game/Config.ts`：全局常量与调参表（`PlaneToWorldX/Z`、`CameraTilt*`、`CameraMin/MaxDistance`、`PhysicsStep`、`MaxStepsPerFrame`、`PredictSteps`、`GravityScale`、`OrbitSpeedScale`、**`AimMinSpeed=2`/`AimMaxSpeed=22`/`AimMaxDragPx=380`**、**`FlightPlayback=2`**）。
@@ -63,10 +81,11 @@
   - **引擎驱动层 `createGame(level, deps)`**：驱动场景/相机/轨迹/瞄准，回调 `onPhase`/`onResult`；瞄准态**每帧**重画预测线（相机可能仍在 lerp）。
 - `Assets/Model/`：离线生成的自包含 glTF（Sphere 61v/120f、Ring 16/16、Probe 12v/4f）。
 - 测试/探针（`Test/`）：
-  - 单测：`GravityTest`(25)、`CameraRigTest`(11)、`TrajectoryTest`(10)、`HudTest`(17)、`GameTest`(30)、`LevelDataTest`(34)；批跑入口 `UnitRunner.lua`。
+  - 单测（7 模块 / 164 断言）：`GravityTest`(25)、`CameraRigTest`(11)、`TrajectoryTest`(11，含 `layer-origin-is-half-view`)、`HudTest`(17)、`GameTest`(30)、`LevelDataTest`(34)、`ProgressTest`(36)；批跑入口 `UnitRunner.lua`。
   - 运行时探针：`Smoke`、`ProjectionProbe`（`RESULT=PASS maxPxErr=1.00`）、`CameraProbe`、`CameraVisual`、`SceneProbe`、`TrajectoryProbe`、`HudProbe`、`GameProbe`（完整循环 `RESULT=PASS`）、`VisionProbe`。
   - 诊断探针（镜像 bug 期间新增）：`ClearTest`（验证 `DrawNode.clear()` 正常）、`ProjCheckProbe`（`project()` vs `getRayDirection`）、`VerdictProbe`（颜色标记球裁决）、`LineDirProbe`、`LineAlignProbe`。
-  - 工具库：`Vision.ts`（TGA → ASCII/亮度/列剖面/连通域/rgbAt）。
+  - 工具库：`Vision.ts`（TGA → ASCII/亮度/列剖面/连通域/rgbAt）；`SizeProbe.lua`（读 `View.size` 等，合成鼠标坐标基准）。
+  - 仓库工具：`tools/dora-build/`（本地构建）、`tools/input-inject/`（`mousectl.ps1` 合成鼠标、`set-window.ps1` 竖屏窗口）。
 - 仓库骨架：`README.md`、`.gitignore`、`LICENSE`、`Assets/`、`Test/`、`game/`、`.agent/plan/PLAN.md`。
 
 ### Decisions
@@ -95,7 +114,10 @@
 ### Camera And Layout Facts (S0/S1.2 实测)
 
 - **竖屏 1080×1920（宽高比 0.5625）**；`View.fieldOfView` = 45°（垂直 FOV）。
-- **桌面运行时窗口实测 2024×1230**（`View.size` 只读、无法运行时改窗口尺寸）；`aspect≈1.6455`。投影标定在该分辨率下完成。
+- **`View.size` = 窗口客户区像素 × 1.5**（引擎渲染逻辑尺寸）。桌面上**可以**在运行时改窗口（`tools/input-inject/set-window.ps1` 用 Win32 `MoveWindow`），改完 `View.size` 跟着变：
+  **横屏 1349×820 客户区 → 2024×1230**（投影标定在此分辨率完成，`aspect≈1.6455`）；**竖屏 400×710 客户区 → 601×1066**（交付形态）。
+- 🚨 **视口变化必须整体重建**（会话 20）：手机浏览器画布在启动后还会变一次；`onAppChange === 'Size'` → `init.ts` 的 `relayoutForViewport()`
+  （更新 `uiLayer`/`levelLayers[i]` 的 `size` → 重建面板 → 按需重建关卡运行时；旧层只隐藏 + 断触摸，不销毁）。
 - **物理平面必须沿屏幕纵向（世界 Z）展开**：横向展开的轨道在竖屏下 `maxNdcX=1.50` 被裁；纵向展开 `maxNdcX=0.72`/`maxNdcY=0.65` 完整可见（dist=30/tilt=45）。
 - **倾角安全区间 20–60°**（>70° 贴边）；**纵向轨道 `dist ≥ 25`** 即可框住整条轨道；横向轨道需 `dist ≥ 50`。
 - ⚠️ 修正后屏幕方向语义：**世界 +z（靠近相机）在屏幕下方**，-z 在上方（近景在画面下方，与真实相机一致）→ 探测器在下、目标在上，向上发射。
@@ -121,12 +143,18 @@
   8. **TS100037**：Lua 里只有 `false`/`nil` 为假，条件判断须显式 `!== undefined`。
   9. **字面量类型比较**：`const PlaneToWorldX = 1`（字面量 1）与 `!== 0` 比较会被 TS 判为无意义（TS2367）→ 避免这类判断。
   10. **增量构建有时不重新转译**：`build` 报成功但 `.lua` 未更新 → 改一次 `.ts` 强制重编；批处理编辑若报 "saved N/M operations" 说明有编辑静默失败，需重试。
-  详见手册 §7.2.1 与 §5.5/§5.7。
+ 11. 🔴 **子坐标原点 = 位置 − anchor × 尺寸**：全屏容器/层 `anchor` 必须 `(0,0)`；(0.5,0.5) 会把**触摸命中框**与 2D 绘制原点推走半个屏幕
+     （踩两次：预测线平移半屏、命中框只剩左下象限）。需要居中时显式设 `position = (W/2, H/2)`。
+ 12. 🔴 **投影输出的空间 ≠ 绘制层的空间**：`project()` = 中心原点偏移，`levelLayers[i]` 子空间 = 左下原点绝对像素；
+     偏移量必须显式传参（`TrajectoryOptions.layerOriginX/Y`），不要在函数里读全局 `View.size`。
+ 13. 🔴 **Windows PowerShell 脚本必须 CRLF**（here-string 在纯 LF 下解析失败，`set-window.ps1` 踩过）。
+  详见手册 §7.2.1、§5.5 第 6 条与 §5.7 第 2 条。
 - **Lua 无 `io` 库**（`io=nil`，`os.execute`/`os.rename`/`os.remove` 均 nil，仅 `os.getenv` 可用）；支持 `string.pack`/`string.unpack`/位运算（Lua 5.5）。
 - **命令模式 Content 只读且被沙箱限制**（见 Core Memory）。
 - **入口租约**：Web IDE 占用入口时 `stopEntry()` 不释放，`enterEntryAsync`/`previewGame` 报 `Dora entry runtime is in use`。
 - **R8 网络取物不可用**：`fetch_url` 落盘 0 字节 / 移入目标路径失败；`git clone` 到 github 超时。
 - 🚨 **R6：Web 导出实测 17 MB**，超 8 MB 目标（包体由引擎 WASM 主导，项目侧无法解决）。
 - ⚠️ **区域检测（cell=12 中心采样）会漏掉 ~5px 宽的细竖线** → 诊断细线改用 ASCII 图。
-- ⚠️ **结算 UI 目前是最小版（Label）**；正式三态面板与"返回关卡选择"在 S2.2/S2.3。
+- ✅ **结算 UI 已交付**（S2.2/S2.3）：三态面板（借力成功 / 错过目标 / 信号中断）+ 重试 / 返回关卡选择 + 关卡选择与解锁存档；
+  ⚠️ 但**手机 Web 导出尚未复测**（两轮真机问题已修：命中框 anchor、视口变化重建）。
 - ⚠️ **关卡手感需真人试玩校准**（数据只能证明"可解"，不能证明"好玩"）。
