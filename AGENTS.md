@@ -47,8 +47,12 @@
 python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"
 ```
 
-⚠️ **真实触摸无法无头验证**：`Touch` 是私有构造，探针只能用 `handleOffset` 程序化驱动。
-凡涉及触摸层/按钮命中/坐标换算的改动，**必须请人在真机或浏览器上点一次**才算验收。
+✅ **触摸可以自动验收（Windows 桌面）**：`Touch` 是私有构造，探针注入不了，
+但 Dora 的触摸事件**同时代表鼠标点击** —— 用 `tools/input-inject/mousectl.ps1` 合成鼠标事件即可驱动真实命中判定与状态机。
+坐标换算：`View.size` 是逻辑坐标（2024×1230，用 `Test/SizeProbe.lua` 读），窗口客户区是缩放显示，
+`client_x = view_x·(clientW/2024)`、`client_y = (1230−view_y)·(clientH/1230)`。
+回归模板：点选关(674,191) → 拖动(674,600→690,320) → 日志应依次出现 `enter L1`、`phase -> Flying`、`result = ...`、`phase -> Aiming`（点重试 674,470）。
+真机多点触控/手势差异仍建议人工抽查；日志请用 `POST /log` 读（`log.txt` 有缓冲与轮转）。
 
 ## 交付习惯
 

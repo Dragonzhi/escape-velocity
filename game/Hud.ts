@@ -473,6 +473,10 @@ export function createResultPanel(
 	backButton.root.position = Vec2(padX, cursor);
 
 	root.visible = false;
+	// ⚠️ 创建即禁用：面板在第一次 show() 之前也处于树里，若按钮此刻是可点的，
+	// 隐藏面板会继续参与命中并吞掉覆盖区域的点击（真机验收踩到的坑）。
+	retryButton.setEnabled(false);
+	backButton.setEnabled(false);
 
 	return {
 		root,
@@ -577,6 +581,7 @@ export function createLevelSelect(
 	}
 
 	root.visible = false;
+	for (let i = 0; i < count; i++) buttons[i].setEnabled(false); // 创建即禁用（同上）
 
 	return {
 		root,

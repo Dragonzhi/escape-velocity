@@ -23,7 +23,7 @@ import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
-import { AimInput, LevelSelect, ResultPanel, createAimInput, createLevelSelect, createResultPanel } from 'game/Hud';
+import { AimInput, AimResult, LevelSelect, ResultPanel, createAimInput, createLevelSelect, createResultPanel } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
 import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
 
@@ -191,6 +191,12 @@ if (levelTotal <= 0) {
 			},
 		});
 
+		// ⚠️ 把瞄准层接到状态机上（S2.2 重写 init.ts 时漏掉这两行，真机表现为
+		// “进关卡拖不动飞行器”：触摸收到了，但 aim 的拖动/松手回调没人接，
+		// 于是预测线不跟手、松手也不发射。旧版 init.ts(7cb72b0) 里就是这两行。）
+		aim.onDrag((a: AimResult): void => { game.onAimDrag(a); });
+		aim.onRelease((a: AimResult): void => { game.launch(a.velocity); });
+
 		const runtime: LevelRuntime = {
 			index,
 			name: levelNames[index],
@@ -259,6 +265,7 @@ if (levelTotal <= 0) {
 	threadLoop(() => {
 		const runtime = activeRuntime();
 		if (runtime !== undefined) runtime.game.update(App.deltaTime);
+
 		return false; // false = 继续
 	});
 

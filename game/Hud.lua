@@ -331,36 +331,38 @@ function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 392
 	}) -- 471
 	backButton.root.position = Vec2(padX, cursor) -- 473
 	root.visible = false -- 475
-	return { -- 477
-		root = root, -- 478
-		show = function(____, result, levelName) -- 479
-			retryButton:setEnabled(true) -- 481
-			backButton:setEnabled(true) -- 482
-			setLabelText(levelLabel, levelName) -- 483
-			setLabelText( -- 484
-				titleLabel, -- 484
-				resultTitle(result) -- 484
-			) -- 484
-			setLabelColor( -- 485
-				titleLabel, -- 485
-				resultTitleColor(result) -- 485
-			) -- 485
-			setLabelText( -- 486
-				bodyLabel, -- 486
-				resultBody(result) -- 486
-			) -- 486
-			setLabelText( -- 487
-				hintLabel, -- 487
-				resultHint(result) -- 487
-			) -- 487
-			root.visible = true -- 488
-		end, -- 479
-		hide = function() -- 490
-			root.visible = false -- 491
-			retryButton:setEnabled(false) -- 494
-			backButton:setEnabled(false) -- 495
-		end -- 490
-	} -- 490
+	retryButton:setEnabled(false) -- 478
+	backButton:setEnabled(false) -- 479
+	return { -- 481
+		root = root, -- 482
+		show = function(____, result, levelName) -- 483
+			retryButton:setEnabled(true) -- 485
+			backButton:setEnabled(true) -- 486
+			setLabelText(levelLabel, levelName) -- 487
+			setLabelText( -- 488
+				titleLabel, -- 488
+				resultTitle(result) -- 488
+			) -- 488
+			setLabelColor( -- 489
+				titleLabel, -- 489
+				resultTitleColor(result) -- 489
+			) -- 489
+			setLabelText( -- 490
+				bodyLabel, -- 490
+				resultBody(result) -- 490
+			) -- 490
+			setLabelText( -- 491
+				hintLabel, -- 491
+				resultHint(result) -- 491
+			) -- 491
+			root.visible = true -- 492
+		end, -- 483
+		hide = function() -- 494
+			root.visible = false -- 495
+			retryButton:setEnabled(false) -- 498
+			backButton:setEnabled(false) -- 499
+		end -- 494
+	} -- 494
 end -- 392
 --- 建关卡选择：标题 + 副标题 + 六关竖排按钮 + 底部提示。
 -- 
@@ -375,94 +377,101 @@ end -- 392
 -- 
 -- @param viewW 视图逻辑宽
 -- @param viewH 视图逻辑高
-function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 533
-	local root = createPanel( -- 539
-		parent, -- 539
-		viewW, -- 539
-		viewH, -- 539
-		SelectBackdropHex, -- 539
-		{alpha = 0.9} -- 539
-	) -- 539
-	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 541
-	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 542
-	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 544
-	setLabelCenter(subtitleLabel, viewW / 2, viewH - 168) -- 545
-	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 547
-	setLabelCenter(hintLabel, viewW / 2, 64) -- 548
-	local count = #opts.levels -- 550
-	local btnW = math.max( -- 551
-		MinButtonWidth, -- 551
-		math.min(viewW * 0.8, 820) -- 551
-	) -- 551
-	local gap = 18 -- 552
-	local headerH = 220 -- 553
-	local footerH = 120 -- 554
-	local avail = viewH - headerH - footerH - gap * (count - 1) -- 555
-	local btnH = clampNumber(count > 0 and avail / count or MinButtonHeight, MinButtonHeight, 190) -- 558
-	local topY = viewH - headerH -- 559
-	local buttons = {} -- 561
-	do -- 561
-		local i = 0 -- 562
-		while i < count do -- 562
-			local index = i -- 564
-			local button = createButton( -- 565
-				root, -- 565
-				{ -- 565
-					w = btnW, -- 566
-					h = btnH, -- 567
-					text = opts.levels[index + 1].name, -- 568
-					fontSize = 38, -- 569
-					bgHex = SelectLockedBgHex, -- 570
-					fgHex = SelectLockedFgHex, -- 571
-					borderHex = SelectBorderHex, -- 572
-					onTap = function() return opts:onPick(index) end -- 573
-				} -- 573
-			) -- 573
-			button.root.position = Vec2((viewW - btnW) / 2, topY - (index + 1) * btnH - index * gap) -- 575
-			buttons[#buttons + 1] = button -- 576
-			i = i + 1 -- 562
-		end -- 562
-	end -- 562
-	root.visible = false -- 579
-	return { -- 581
-		root = root, -- 582
-		show = function(____, unlocked) -- 583
-			local maxUnlocked = clampNumber( -- 584
-				math.floor(unlocked), -- 584
-				0, -- 584
-				count - 1 -- 584
-			) -- 584
-			setLabelText( -- 585
-				subtitleLabel, -- 585
-				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 585
-			) -- 585
-			do -- 585
-				local i = 0 -- 586
-				while i < count do -- 586
-					local button = buttons[i + 1] -- 587
-					local open = i <= maxUnlocked -- 588
-					button:setEnabled(open) -- 589
-					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 590
-					if open then -- 590
-						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 591
-					else -- 591
-						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 592
-					end -- 592
-					i = i + 1 -- 586
-				end -- 586
-			end -- 586
-			root.visible = true -- 594
-		end, -- 583
-		hide = function() -- 596
-			root.visible = false -- 597
-			do -- 597
-				local i = 0 -- 599
-				while i < count do -- 599
-					buttons[i + 1]:setEnabled(false) -- 599
-					i = i + 1 -- 599
-				end -- 599
-			end -- 599
-		end -- 596
-	} -- 596
-end -- 533
-return ____exports -- 533
+function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 537
+	local root = createPanel( -- 543
+		parent, -- 543
+		viewW, -- 543
+		viewH, -- 543
+		SelectBackdropHex, -- 543
+		{alpha = 0.9} -- 543
+	) -- 543
+	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 545
+	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 546
+	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 548
+	setLabelCenter(subtitleLabel, viewW / 2, viewH - 168) -- 549
+	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 551
+	setLabelCenter(hintLabel, viewW / 2, 64) -- 552
+	local count = #opts.levels -- 554
+	local btnW = math.max( -- 555
+		MinButtonWidth, -- 555
+		math.min(viewW * 0.8, 820) -- 555
+	) -- 555
+	local gap = 18 -- 556
+	local headerH = 220 -- 557
+	local footerH = 120 -- 558
+	local avail = viewH - headerH - footerH - gap * (count - 1) -- 559
+	local btnH = clampNumber(count > 0 and avail / count or MinButtonHeight, MinButtonHeight, 190) -- 562
+	local topY = viewH - headerH -- 563
+	local buttons = {} -- 565
+	do -- 565
+		local i = 0 -- 566
+		while i < count do -- 566
+			local index = i -- 568
+			local button = createButton( -- 569
+				root, -- 569
+				{ -- 569
+					w = btnW, -- 570
+					h = btnH, -- 571
+					text = opts.levels[index + 1].name, -- 572
+					fontSize = 38, -- 573
+					bgHex = SelectLockedBgHex, -- 574
+					fgHex = SelectLockedFgHex, -- 575
+					borderHex = SelectBorderHex, -- 576
+					onTap = function() return opts:onPick(index) end -- 577
+				} -- 577
+			) -- 577
+			button.root.position = Vec2((viewW - btnW) / 2, topY - (index + 1) * btnH - index * gap) -- 579
+			buttons[#buttons + 1] = button -- 580
+			i = i + 1 -- 566
+		end -- 566
+	end -- 566
+	root.visible = false -- 583
+	do -- 583
+		local i = 0 -- 584
+		while i < count do -- 584
+			buttons[i + 1]:setEnabled(false) -- 584
+			i = i + 1 -- 584
+		end -- 584
+	end -- 584
+	return { -- 586
+		root = root, -- 587
+		show = function(____, unlocked) -- 588
+			local maxUnlocked = clampNumber( -- 589
+				math.floor(unlocked), -- 589
+				0, -- 589
+				count - 1 -- 589
+			) -- 589
+			setLabelText( -- 590
+				subtitleLabel, -- 590
+				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 590
+			) -- 590
+			do -- 590
+				local i = 0 -- 591
+				while i < count do -- 591
+					local button = buttons[i + 1] -- 592
+					local open = i <= maxUnlocked -- 593
+					button:setEnabled(open) -- 594
+					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 595
+					if open then -- 595
+						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 596
+					else -- 596
+						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 597
+					end -- 597
+					i = i + 1 -- 591
+				end -- 591
+			end -- 591
+			root.visible = true -- 599
+		end, -- 588
+		hide = function() -- 601
+			root.visible = false -- 602
+			do -- 602
+				local i = 0 -- 604
+				while i < count do -- 604
+					buttons[i + 1]:setEnabled(false) -- 604
+					i = i + 1 -- 604
+				end -- 604
+			end -- 604
+		end -- 601
+	} -- 601
+end -- 537
+return ____exports -- 537

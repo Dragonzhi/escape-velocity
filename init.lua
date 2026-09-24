@@ -194,90 +194,96 @@ else -- 51
 				end -- 179
 			} -- 179
 		) -- 179
-		local runtime = { -- 194
-			index = index, -- 195
-			name = levelNames[index + 1], -- 196
-			world = world, -- 197
-			camera = camera, -- 198
-			game = game, -- 199
-			aim = aim -- 200
-		} -- 200
-		slot.built = true -- 202
-		slot.runtime = runtime -- 203
-		print((("[escape-velocity] built L" .. __TS__NumberToFixed(index + 1, 0)) .. " ") .. levelNames[index + 1]) -- 204
-		return runtime -- 205
+		aim:onDrag(function(a) -- 197
+			game:onAimDrag(a) -- 197
+		end) -- 197
+		aim:onRelease(function(a) -- 198
+			game:launch(a.velocity) -- 198
+		end) -- 198
+		local runtime = { -- 200
+			index = index, -- 201
+			name = levelNames[index + 1], -- 202
+			world = world, -- 203
+			camera = camera, -- 204
+			game = game, -- 205
+			aim = aim -- 206
+		} -- 206
+		slot.built = true -- 208
+		slot.runtime = runtime -- 209
+		print((("[escape-velocity] built L" .. __TS__NumberToFixed(index + 1, 0)) .. " ") .. levelNames[index + 1]) -- 210
+		return runtime -- 211
 	end -- 126
 	--- 选关：隐藏选择界面 → 激活该关 → 回到 Aiming。
-	local function enterLevel(index) -- 209
-		local runtime = ensureLevel(index) -- 210
-		if runtime == nil then -- 210
-			return -- 211
-		end -- 211
-		activeIndex = index -- 212
-		showOnlyLevel(index) -- 213
-		Director:pushCamera(runtime.camera) -- 214
-		runtime.game:startLevel() -- 215
-		print("[escape-velocity] enter " .. runtime.name) -- 216
-	end -- 209
-	local function onRetryTap() -- 219
-		if resultPanel ~= nil then -- 219
-			resultPanel:hide() -- 220
-		end -- 220
-		local runtime = activeRuntime() -- 221
-		if runtime ~= nil then -- 221
-			runtime.game:retry() -- 222
-		end -- 222
-	end -- 219
-	local function onBackToSelectTap() -- 225
-		local runtime = activeRuntime() -- 226
-		if runtime == nil then -- 226
-			return -- 227
-		end -- 227
-		if not runtime.game:backToSelect() then -- 227
-			return -- 229
-		end -- 229
-		runtime.world.visible = false -- 230
-		runtime.aim:setEnabled(false) -- 231
-		if resultPanel ~= nil then -- 231
-			resultPanel:hide() -- 232
-		end -- 232
-		progress = loadProgress(levelTotal) -- 234
-		if select ~= nil then -- 234
-			select:show(progress.unlocked) -- 235
-		end -- 235
-		print("[escape-velocity] back to select: unlocked=" .. __TS__NumberToFixed(progress.unlocked, 0)) -- 236
+	local function enterLevel(index) -- 215
+		local runtime = ensureLevel(index) -- 216
+		if runtime == nil then -- 216
+			return -- 217
+		end -- 217
+		activeIndex = index -- 218
+		showOnlyLevel(index) -- 219
+		Director:pushCamera(runtime.camera) -- 220
+		runtime.game:startLevel() -- 221
+		print("[escape-velocity] enter " .. runtime.name) -- 222
+	end -- 215
+	local function onRetryTap() -- 225
+		if resultPanel ~= nil then -- 225
+			resultPanel:hide() -- 226
+		end -- 226
+		local runtime = activeRuntime() -- 227
+		if runtime ~= nil then -- 227
+			runtime.game:retry() -- 228
+		end -- 228
 	end -- 225
-	resultPanel = createResultPanel( -- 241
-		uiLayer, -- 241
-		viewW, -- 241
-		viewH, -- 241
-		{ -- 241
-			onRetry = function() return onRetryTap() end, -- 242
-			onBackToSelect = function() return onBackToSelectTap() end -- 243
-		} -- 243
-	) -- 243
-	select = createLevelSelect( -- 246
-		uiLayer, -- 246
-		viewW, -- 246
-		viewH, -- 246
-		{ -- 246
-			levels = levelEntries, -- 247
-			onPick = function(____, index) -- 248
-				if select ~= nil then -- 248
-					select:hide() -- 249
-				end -- 249
-				enterLevel(index) -- 250
-			end -- 248
-		} -- 248
-	) -- 248
-	select:show(progress.unlocked) -- 255
-	threadLoop(function() -- 259
-		local runtime = activeRuntime() -- 260
-		if runtime ~= nil then -- 260
-			runtime.game:update(App.deltaTime) -- 261
-		end -- 261
-		return false -- 262
-	end) -- 259
-	print(((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", level select shown") -- 265
-end -- 265
-return ____exports -- 265
+	local function onBackToSelectTap() -- 231
+		local runtime = activeRuntime() -- 232
+		if runtime == nil then -- 232
+			return -- 233
+		end -- 233
+		if not runtime.game:backToSelect() then -- 233
+			return -- 235
+		end -- 235
+		runtime.world.visible = false -- 236
+		runtime.aim:setEnabled(false) -- 237
+		if resultPanel ~= nil then -- 237
+			resultPanel:hide() -- 238
+		end -- 238
+		progress = loadProgress(levelTotal) -- 240
+		if select ~= nil then -- 240
+			select:show(progress.unlocked) -- 241
+		end -- 241
+		print("[escape-velocity] back to select: unlocked=" .. __TS__NumberToFixed(progress.unlocked, 0)) -- 242
+	end -- 231
+	resultPanel = createResultPanel( -- 247
+		uiLayer, -- 247
+		viewW, -- 247
+		viewH, -- 247
+		{ -- 247
+			onRetry = function() return onRetryTap() end, -- 248
+			onBackToSelect = function() return onBackToSelectTap() end -- 249
+		} -- 249
+	) -- 249
+	select = createLevelSelect( -- 252
+		uiLayer, -- 252
+		viewW, -- 252
+		viewH, -- 252
+		{ -- 252
+			levels = levelEntries, -- 253
+			onPick = function(____, index) -- 254
+				if select ~= nil then -- 254
+					select:hide() -- 255
+				end -- 255
+				enterLevel(index) -- 256
+			end -- 254
+		} -- 254
+	) -- 254
+	select:show(progress.unlocked) -- 261
+	threadLoop(function() -- 265
+		local runtime = activeRuntime() -- 266
+		if runtime ~= nil then -- 266
+			runtime.game:update(App.deltaTime) -- 267
+		end -- 267
+		return false -- 269
+	end) -- 265
+	print(((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", level select shown") -- 272
+end -- 272
+return ____exports -- 272
