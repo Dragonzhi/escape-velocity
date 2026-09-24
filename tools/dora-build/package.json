@@ -1,0 +1,16 @@
+{
+  "name": "dora-build",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dora SSR local TypeScript -> Lua build tool (byte-identical to engine Web IDE output)",
+  "type": "commonjs",
+  "scripts": {
+    "build:all": "node build.mjs --all",
+    "verify": "node build.mjs --all --out out && node compare-all.mjs out"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "5.9.3",
+    "typescript-to-lua": "1.37.1"
+  }
+}

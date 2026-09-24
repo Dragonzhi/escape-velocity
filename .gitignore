@@ -23,3 +23,7 @@ dist/
 # 临时目录
 .temp/
 tmp/
+
+# 依赖与本地构建产物
+node_modules/
+tools/dora-build/out/
