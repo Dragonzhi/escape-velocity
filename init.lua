@@ -5,9 +5,11 @@ local ____exports = {} -- 1
 local ____Dora = require("Dora") -- 21
 local App = ____Dora.App -- 21
 local Camera3D = ____Dora.Camera3D -- 21
+local Content = ____Dora.Content -- 21
 local Director = ____Dora.Director -- 21
 local Node = ____Dora.Node -- 21
 local Node3D = ____Dora.Node3D -- 21
+local Path = ____Dora.Path -- 21
 local Size = ____Dora.Size -- 21
 local Vec2 = ____Dora.Vec2 -- 21
 local View = ____Dora.View -- 21
@@ -253,37 +255,124 @@ else -- 51
 		end -- 241
 		print("[escape-velocity] back to select: unlocked=" .. __TS__NumberToFixed(progress.unlocked, 0)) -- 242
 	end -- 231
-	resultPanel = createResultPanel( -- 247
-		uiLayer, -- 247
-		viewW, -- 247
-		viewH, -- 247
-		{ -- 247
-			onRetry = function() return onRetryTap() end, -- 248
-			onBackToSelect = function() return onBackToSelectTap() end -- 249
-		} -- 249
-	) -- 249
-	select = createLevelSelect( -- 252
-		uiLayer, -- 252
-		viewW, -- 252
-		viewH, -- 252
-		{ -- 252
-			levels = levelEntries, -- 253
-			onPick = function(____, index) -- 254
-				if select ~= nil then -- 254
-					select:hide() -- 255
-				end -- 255
-				enterLevel(index) -- 256
-			end -- 254
-		} -- 254
-	) -- 254
-	select:show(progress.unlocked) -- 261
-	threadLoop(function() -- 265
-		local runtime = activeRuntime() -- 266
-		if runtime ~= nil then -- 266
-			runtime.game:update(App.deltaTime) -- 267
-		end -- 267
-		return false -- 269
-	end) -- 265
-	print(((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", level select shown") -- 272
-end -- 272
-return ____exports -- 272
+	--- 建（或重建）UI 面板。
+	-- 
+	-- 面板几何全部按 viewW/viewH 推导，所以**视口尺寸一变就必须重建** ——
+	-- 真机（手机浏览器）实测：Web 版画布在启动后还会变一次，旧代码只在启动时读一次 View.size，
+	-- 结果「预测线跑到别的地方」「竖屏没适配」。见下面的 relayoutForViewport。
+	-- 
+	-- ⚠️ 必须包一层箭头函数：直接把局部函数赋给“成员函数式”的属性会触发
+	-- TS100016（无 this 的函数不能转成带 this 的成员），手册 §5.7 第 4 条
+	local function buildPanels() -- 255
+		resultPanel = createResultPanel( -- 256
+			uiLayer, -- 256
+			viewW, -- 256
+			viewH, -- 256
+			{ -- 256
+				onRetry = function() return onRetryTap() end, -- 257
+				onBackToSelect = function() return onBackToSelectTap() end -- 258
+			} -- 258
+		) -- 258
+		local created = createLevelSelect( -- 260
+			uiLayer, -- 260
+			viewW, -- 260
+			viewH, -- 260
+			{ -- 260
+				levels = levelEntries, -- 261
+				onPick = function(____, index) -- 262
+					if select ~= nil then -- 262
+						select:hide() -- 263
+					end -- 263
+					enterLevel(index) -- 264
+				end -- 262
+			} -- 262
+		) -- 262
+		select = created -- 267
+		return created -- 268
+	end -- 255
+	--- 视口尺寸变化时的整体重建。
+	-- 
+	-- 为什么必须重建：2D 节点的子坐标原点是「位置 − anchor × 尺寸」（本轮已两次踩到），
+	-- 所以容器（uiLayer / levelLayers）的尺寸**直接决定**子节点坐标系的原点与新区域覆盖。
+	-- 尺寸变了却沿用旧几何 ⇒ 整体错位（预测线偏移）+ 新区域收不到触摸（没适配）。
+	-- 
+	-- 旧的层与关卡运行时只**隐藏 + 断触摸**，不销毁（避免依赖不确定的销毁 API）；
+	-- 关卡运行时按需重建（slots 标记为未建）。
+	local function relayoutForViewport() -- 281
+		local w = View.size.width -- 282
+		local h = View.size.height -- 283
+		if w == viewW and h == viewH then -- 283
+			return -- 284
+		end -- 284
+		if select ~= nil then -- 284
+			select:hide() -- 287
+		end -- 287
+		if resultPanel ~= nil then -- 287
+			resultPanel:hide() -- 288
+		end -- 288
+		do -- 288
+			local i = 0 -- 289
+			while i < levelTotal do -- 289
+				local slot = slots[i + 1] -- 290
+				if slot.runtime ~= nil then -- 290
+					slot.runtime.world.visible = false -- 292
+					slot.runtime.aim:setEnabled(false) -- 293
+				end -- 293
+				slot.built = false -- 295
+				slot.runtime = nil -- 296
+				i = i + 1 -- 289
+			end -- 289
+		end -- 289
+		viewW = w -- 300
+		viewH = h -- 301
+		uiLayer.size = Size(viewW, viewH) -- 302
+		do -- 302
+			local i = 0 -- 303
+			while i < levelTotal do -- 303
+				levelLayers[i + 1].size = Size(viewW, viewH) -- 303
+				i = i + 1 -- 303
+			end -- 303
+		end -- 303
+		local panel = buildPanels() -- 306
+		if activeIndex >= 0 then -- 306
+			local keep = activeIndex -- 308
+			activeIndex = -1 -- 309
+			enterLevel(keep) -- 310
+		else -- 310
+			panel:show(progress.unlocked) -- 312
+		end -- 312
+		print((("[escape-velocity] viewport rebuilt: " .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) -- 314
+	end -- 281
+	Director.entry:onAppChange(function(name) -- 318
+		if name == "Size" then -- 318
+			relayoutForViewport() -- 319
+		end -- 319
+	end) -- 318
+	buildPanels():show(progress.unlocked) -- 323
+	local shotFrame = 0 -- 325
+	threadLoop(function() -- 328
+		local runtime = activeRuntime() -- 329
+		if runtime ~= nil then -- 329
+			runtime.game:update(App.deltaTime) -- 330
+		end -- 330
+		shotFrame = shotFrame + 1 -- 332
+		if shotFrame == 240 then -- 332
+			local d = Path(Content.searchPaths[1], ".agent/test-results") -- 333
+			App:saveScreenshot(Path(d, "r-pre")) -- 333
+			print("[shot] r-pre") -- 333
+		end -- 333
+		if shotFrame == 600 then -- 333
+			local d2 = Path(Content.searchPaths[1], ".agent/test-results") -- 334
+			App:saveScreenshot(Path(d2, "r-post")) -- 334
+			print("[shot] r-post") -- 334
+		end -- 334
+		if shotFrame == 900 then -- 334
+			local d3 = Path(Content.searchPaths[1], ".agent/test-results") -- 335
+			App:saveScreenshot(Path(d3, "r-aim")) -- 335
+			print("[shot] r-aim") -- 335
+		end -- 335
+		return false -- 337
+	end) -- 328
+	print(((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", level select shown") -- 340
+end -- 340
+return ____exports -- 340

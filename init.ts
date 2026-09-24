@@ -18,7 +18,7 @@
  *   LevelSelect --选关--> Aiming（拖动矄准）→ 松手发射 → Flying → Result
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
-import { App, Camera3D, Director, Node, Node3D, Size, Vec2, View, threadLoop } from 'Dora';
+import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
 import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
@@ -50,8 +50,8 @@ const levelTotal = levelCount();
 if (levelTotal <= 0) {
 	print('[escape-velocity] FATAL: no level data');
 } else {
-	const viewW = View.size.width;
-	const viewH = View.size.height;
+	let viewW = View.size.width;
+	let viewH = View.size.height; // 视口变化时会更新（见 relayoutForViewport）
 
 	Director.entry.setEnvironmentIntensity(0.35, 0.35, 1);
 
@@ -242,29 +242,96 @@ if (levelTotal <= 0) {
 		print('[escape-velocity] back to select: unlocked=' + progress.unlocked.toFixed(0));
 	};
 
-	// ⚠️ 必须包一层箭头函数：直接把局部函数赋给“成员函数式”的属性会触发
-	// TS100016（无 this 的函数不能转成带 this 的成员），手册 §5.7 第 4 条
-	resultPanel = createResultPanel(uiLayer, viewW, viewH, {
-		onRetry: (): void => onRetryTap(),
-		onBackToSelect: (): void => onBackToSelectTap(),
-	});
+	/**
+	 * 建（或重建）UI 面板。
+	 *
+	 * 面板几何全部按 viewW/viewH 推导，所以**视口尺寸一变就必须重建** ——
+	 * 真机（手机浏览器）实测：Web 版画布在启动后还会变一次，旧代码只在启动时读一次 View.size，
+	 * 结果「预测线跑到别的地方」「竖屏没适配」。见下面的 relayoutForViewport。
+	 *
+	 * ⚠️ 必须包一层箭头函数：直接把局部函数赋给“成员函数式”的属性会触发
+	 * TS100016（无 this 的函数不能转成带 this 的成员），手册 §5.7 第 4 条
+	 */
+	const buildPanels = (): LevelSelect => {
+		resultPanel = createResultPanel(uiLayer, viewW, viewH, {
+			onRetry: (): void => onRetryTap(),
+			onBackToSelect: (): void => onBackToSelectTap(),
+		});
+		const created = createLevelSelect(uiLayer, viewW, viewH, {
+			levels: levelEntries,
+			onPick: (index: number): void => {
+				if (select !== undefined) select.hide();
+				enterLevel(index);
+			},
+		});
+		select = created;
+		return created;
+	};
 
-	select = createLevelSelect(uiLayer, viewW, viewH, {
-		levels: levelEntries,
-		onPick: (index: number): void => {
-			if (select !== undefined) select.hide();
-			enterLevel(index);
-		},
+	/**
+	 * 视口尺寸变化时的整体重建。
+	 *
+	 * 为什么必须重建：2D 节点的子坐标原点是「位置 − anchor × 尺寸」（本轮已两次踩到），
+	 * 所以容器（uiLayer / levelLayers）的尺寸**直接决定**子节点坐标系的原点与新区域覆盖。
+	 * 尺寸变了却沿用旧几何 ⇒ 整体错位（预测线偏移）+ 新区域收不到触摸（没适配）。
+	 *
+	 * 旧的层与关卡运行时只**隐藏 + 断触摸**，不销毁（避免依赖不确定的销毁 API）；
+	 * 关卡运行时按需重建（slots 标记为未建）。
+	 */
+	const relayoutForViewport = (): void => {
+		const w = View.size.width;
+		const h = View.size.height;
+		if (w === viewW && h === viewH) return;
+
+		// 1) 旧 UI 与旧关卡运行时：隐藏 + 断触摸
+		if (select !== undefined) select.hide();
+		if (resultPanel !== undefined) resultPanel.hide();
+		for (let i = 0; i < levelTotal; i++) {
+			const slot = slots[i];
+			if (slot.runtime !== undefined) {
+				slot.runtime.world.visible = false;
+				slot.runtime.aim.setEnabled(false);
+			}
+			slot.built = false;
+			slot.runtime = undefined;
+		}
+
+		// 2) 更新容器尺寸（子坐标原点随之变化，必须与新的 View.size 一致）
+		viewW = w;
+		viewH = h;
+		uiLayer.size = Size(viewW, viewH);
+		for (let i = 0; i < levelTotal; i++) levelLayers[i].size = Size(viewW, viewH);
+
+		// 3) 重建面板并恢复当前状态
+		const panel = buildPanels();
+		if (activeIndex >= 0) {
+			const keep = activeIndex;
+			activeIndex = -1;
+			enterLevel(keep);
+		} else {
+			panel.show(progress.unlocked);
+		}
+		print('[escape-velocity] viewport rebuilt: ' + viewW.toFixed(0) + 'x' + viewH.toFixed(0));
+	};
+
+	// 手机/浏览器里画布尺寸会在启动后变化 → 跟随重建（引擎的 AppChange/Size 事件）
+	Director.entry.onAppChange((name) => {
+		if (name === 'Size') relayoutForViewport();
 	});
 
 	// ---- 启动即进入关卡选择（Title/金唱片开场属 S3.3）----
-	select.show(progress.unlocked);
+	buildPanels().show(progress.unlocked);
 
 	// ---- 单一主循环（手册 §4.3）：只驱动当前激活的关 ----
 	// ⚠️ threadLoop 回调没有参数，帧间隔用 App.deltaTime
 	threadLoop(() => {
 		const runtime = activeRuntime();
 		if (runtime !== undefined) runtime.game.update(App.deltaTime);
+		// TEMP SHOT：视口重建前后各一张 + 进关后一张
+		shotFrame += 1;
+		if (shotFrame === 240) { const d = Path(Content.searchPaths[0], '.agent/test-results'); App.saveScreenshot(Path(d, 'r-pre')); print('[shot] r-pre'); }
+		if (shotFrame === 600) { const d2 = Path(Content.searchPaths[0], '.agent/test-results'); App.saveScreenshot(Path(d2, 'r-post')); print('[shot] r-post'); }
+		if (shotFrame === 900) { const d3 = Path(Content.searchPaths[0], '.agent/test-results'); App.saveScreenshot(Path(d3, 'r-aim')); print('[shot] r-aim'); }
 
 		return false; // false = 继续
 	});
