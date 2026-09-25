@@ -164,8 +164,7 @@ if (levelTotal <= 0) {
 			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
 			// 地球锚点（纯视觉）：出发点正下方 ≈4 格——大天线"回头指向"的目标
 			home: { x: level.probeStart.x, y: level.probeStart.y + 4.2 },
-			// 探测器分体（会话 25）：身体 + 天线。建模侧交付前这两个文件不存在，
-			// Model3D 返回 undefined → Scene 自动回退单体 Probe_Voyager_v1.glb（天线刚性）
+			// [二分测试 C：临时禁用分体]
 			probeBodyPath: 'Assets/Model/Probe_Body.glb',
 			probeAntennaPath: 'Assets/Model/Probe_Antenna.glb',
 		});
@@ -234,13 +233,13 @@ if (levelTotal <= 0) {
 	const enterLevel = (index: number): void => {
 		const runtime = ensureLevel(index);
 		if (runtime === undefined) return;
-		// ⚠️ 隐藏选关面板必须在这里做，而不能只靠 onPick 回调——任何进入路径
-		// （自动进关钩子、S3.3 开场衔接）都必须保证面板不盖在关卡上
-		// （2026-09-25 实测：钩子直接进关时面板全程盖着，画面像隔了层毛玻璃）。
+		// [二分 2b] 仅在真正切换关卡时压相机栈：重进已激活的关不重复压
+		// （用户卡死路径 = 重进已建 runtime；怀疑同一相机被重复 push 后渲染遍历异常）
+		const wasActive = activeIndex === index;
 		if (select !== undefined) select.hide();
 		activeIndex = index;
 		showOnlyLevel(index);
-		Director.pushCamera(runtime.camera);
+		if (!wasActive) Director.pushCamera(runtime.camera);
 		runtime.game.startLevel();
 		print('[escape-velocity] enter ' + runtime.name);
 	};
@@ -358,6 +357,9 @@ if (levelTotal <= 0) {
 	let autoFrame = 0;
 	let autoVX = 0;
 	let autoVY = 0;
+	// 回归序列: 发射后回选关再重进 (复用 runtime, 相机 lerp), 复现用户卡死路径
+	let autoBackAt = -1;
+	let autoReenterAt = -1;
 	if (Content.exist(enterReq)) {
 		const spec = Content.load(enterReq);
 		const at = spec.indexOf('@');
@@ -391,12 +393,24 @@ if (levelTotal <= 0) {
 		if (runtime !== undefined) {
 			runtime.game.update(App.deltaTime);
 			// 开发钩子的自动发射（见上方 enter-request 说明）
-			if (autoLaunchAt >= 0) {
+			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0) {
 				autoFrame += 1;
-				if (autoFrame >= autoLaunchAt) {
+				if (autoLaunchAt >= 0 && autoFrame >= autoLaunchAt) {
 					autoLaunchAt = -1;
 					print('[escape-velocity] auto launch');
 					runtime.game.launch({ x: autoVX, y: autoVY });
+					autoBackAt = autoFrame + 320;
+					autoReenterAt = autoFrame + 380;
+				}
+				// [二分 1：注释掉回选关+重进，定位崩溃触发器]
+				if (autoBackAt >= 0 && autoFrame >= autoBackAt) {
+					autoBackAt = -1;
+					if (runtime.game.backToSelect()) print('[escape-velocity] auto back to select');
+				}
+				if (autoReenterAt >= 0 && autoFrame >= autoReenterAt) {
+					autoReenterAt = -1;
+					print('[escape-velocity] auto re-enter');
+					enterLevel(0);
 				}
 			}
 		}

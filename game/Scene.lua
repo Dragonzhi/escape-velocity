@@ -158,13 +158,10 @@ function ____exports.buildScene(options) -- 176
 		singleModel.scale = Vec3(probeScale, probeScale, probeScale) -- 295
 		probeNode:addChild(singleModel) -- 296
 	end -- 296
-	local antennaPivot = nil -- 301
-	if bodyModel ~= nil and antennaModel ~= nil then -- 301
-		antennaModel.scale = Vec3(probeScale, probeScale, probeScale) -- 303
-		antennaPivot = Node3D() -- 304
-		antennaPivot.position = Vec3(0, AntennaPivotY * probeScale, 0) -- 305
-		antennaPivot:addChild(antennaModel) -- 306
-		probeNode:addChild(antennaPivot) -- 307
+	if bodyModel ~= nil and antennaModel ~= nil then -- 296
+		antennaModel.scale = Vec3(probeScale, probeScale, probeScale) -- 305
+		antennaModel.position = Vec3(0, AntennaPivotY * probeScale, 0) -- 306
+		probeNode:addChild(antennaModel) -- 307
 	end -- 307
 	local probeRadius = 0.5 * 3.227 * probeScale * 1.1 -- 316
 	local bodyYawDeg = 0 -- 319
@@ -202,7 +199,7 @@ function ____exports.buildScene(options) -- 176
 	end -- 357
 	local function syncProbe(p) -- 365
 		probeNode.position = ____exports.planeToWorld(p, 0) -- 366
-		if antennaPivot ~= nil and options.home ~= nil then -- 366
+		if antennaModel ~= nil and options.home ~= nil then -- 366
 			local ex = (options.home.x - p.x) * PlaneToWorldX -- 372
 			local ez = (options.home.y - p.y) * PlaneToWorldZ -- 373
 			local dist = math.sqrt(ex * ex + ez * ez) -- 374
@@ -216,45 +213,44 @@ function ____exports.buildScene(options) -- 176
 				end -- 378
 				local tilt = 46 * tiltFactor -- 379
 				local phiWorld = math.atan(-ez, ex) * 180 / math.pi -- 380
-				antennaPivot.angleY = phiWorld - bodyYawDeg -- 381
-				antennaPivot.angleZ = -tilt -- 382
-			end -- 382
-		end -- 382
+				antennaModel.angles = Vec3(0, phiWorld - bodyYawDeg, -tilt) -- 383
+			end -- 383
+		end -- 383
 	end -- 365
-	local function faceVelocity(v) -- 390
-		local wx = v.x * PlaneToWorldX -- 391
-		local wz = v.y * PlaneToWorldZ -- 392
-		if wx * wx + wz * wz < 1e-12 then -- 392
-			return -- 393
-		end -- 393
-		bodyYawDeg = math.atan(-wz, wx) * 180 / math.pi + ProbeYawOffsetDeg -- 394
-		probeNode.angleY = bodyYawDeg -- 395
-	end -- 390
-	local function syncBackdrop(eye, target) -- 399
-		if backdropNode == nil then -- 399
-			return -- 400
-		end -- 400
-		local dx = target.x - eye.x -- 401
-		local dy = target.y - eye.y -- 402
-		local dz = target.z - eye.z -- 403
-		local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 404
-		if len < 0.000001 then -- 404
-			return -- 405
-		end -- 405
-		local s = BackdropDist / len -- 406
-		backdropNode.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s) -- 407
-	end -- 399
-	syncBodies(0) -- 411
-	syncProbe(probeStart) -- 412
-	return { -- 414
-		syncBodies = syncBodies, -- 415
-		syncProbe = syncProbe, -- 416
-		faceVelocity = faceVelocity, -- 417
-		syncBackdrop = syncBackdrop, -- 418
-		probe = probeNode, -- 419
-		antenna = antennaModel, -- 420
-		planets = planets, -- 421
-		probeRadius = probeRadius -- 422
-	} -- 422
+	local function faceVelocity(v) -- 391
+		local wx = v.x * PlaneToWorldX -- 392
+		local wz = v.y * PlaneToWorldZ -- 393
+		if wx * wx + wz * wz < 1e-12 then -- 393
+			return -- 394
+		end -- 394
+		bodyYawDeg = math.atan(-wz, wx) * 180 / math.pi + ProbeYawOffsetDeg -- 395
+		probeNode.angleY = bodyYawDeg -- 396
+	end -- 391
+	local function syncBackdrop(eye, target) -- 400
+		if backdropNode == nil then -- 400
+			return -- 401
+		end -- 401
+		local dx = target.x - eye.x -- 402
+		local dy = target.y - eye.y -- 403
+		local dz = target.z - eye.z -- 404
+		local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 405
+		if len < 0.000001 then -- 405
+			return -- 406
+		end -- 406
+		local s = BackdropDist / len -- 407
+		backdropNode.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s) -- 408
+	end -- 400
+	syncBodies(0) -- 412
+	syncProbe(probeStart) -- 413
+	return { -- 415
+		syncBodies = syncBodies, -- 416
+		syncProbe = syncProbe, -- 417
+		faceVelocity = faceVelocity, -- 418
+		syncBackdrop = syncBackdrop, -- 419
+		probe = probeNode, -- 420
+		antenna = antennaModel, -- 421
+		planets = planets, -- 422
+		probeRadius = probeRadius -- 423
+	} -- 423
 end -- 176
 return ____exports -- 176

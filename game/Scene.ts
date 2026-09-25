@@ -296,15 +296,15 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		probeNode.addChild(singleModel);
 	}
 
-	// 天线挂在**枢轴节点**下：枢轴位于转轴处（模型本地 (0, AntennaPivotY, 0)）。
-	// 转枢轴 = 天线绕转轴摆动；机身的 angleY 由 probeNode 承担，子节点自动跟随。
-	let antennaPivot: Node3D.Type | undefined = undefined;
+	// 天线模型直接挂在 probeNode 下、位置在转轴处（模型本地 (0, AntennaPivotY, 0)·scale；
+	// 建模约定：天线文件以转轴为原点）⇒ 旋转天线模型节点 = 绕转轴摆动。
+	// ⚠️ 不要套一层普通 Node3D 枢轴容器再每帧旋转它——每帧旋转空容器会触发引擎堆损坏
+	// （0xc0000374，二分 C1/C2 实测：关掉旋转存活、任何形式的每帧容器旋转必崩），
+	// 直接旋转 Model3D 节点则稳定。
 	if (bodyModel !== undefined && antennaModel !== undefined) {
 		antennaModel.scale = Vec3(probeScale, probeScale, probeScale);
-		antennaPivot = Node3D();
-		antennaPivot.position = Vec3(0, AntennaPivotY * probeScale, 0);
-		antennaPivot.addChild(antennaModel);
-		probeNode.addChild(antennaPivot);
+		antennaModel.position = Vec3(0, AntennaPivotY * probeScale, 0);
+		probeNode.addChild(antennaModel);
 	}
 
 	// 取景用：探测器的世界外接半径。
@@ -368,7 +368,7 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		// 目标法线 = 从“朝上”向地球方向倾斜（倾角随距离渐入——刚出发距离≈0，不倾）；
 		// 方位角在**机身本地系**里算（机身自己会被 faceVelocity 转到速度方向）。
 		// Euler 次序（angleY 后 angleZ）按截图标定；若天线倾倒方向不随位置变，说明次序反了。
-		if (antennaPivot !== undefined && options.home !== undefined) {
+		if (antennaModel !== undefined && options.home !== undefined) {
 			const ex = (options.home.x - p.x) * PlaneToWorldX;
 			const ez = (options.home.y - p.y) * PlaneToWorldZ;
 			const dist = Math.sqrt(ex * ex + ez * ez);
@@ -378,8 +378,9 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 				if (tiltFactor > 1) tiltFactor = 1;
 				const tilt = 46 * tiltFactor;
 				const phiWorld = Math.atan2(-ez, ex) * 180 / Math.PI;
-				antennaPivot.angleY = phiWorld - bodyYawDeg;
-				antennaPivot.angleZ = -tilt;
+				// ⚠️ 不要拆成 angleY/angleZ 两次赋值：每帧两次独立 Euler setter 会触发引擎
+				//    堆损坏（0xc0000374，二分 C1 实测定位）；一次性写 angles 整体更新则稳定。
+				antennaModel.angles = Vec3(0, phiWorld - bodyYawDeg, -tilt);
 			}
 		}
 	};
