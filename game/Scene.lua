@@ -60,200 +60,201 @@ local AntennaPivotY = 0.2 -- 89
 --- 构建场景。
 -- 
 -- @returns 场景句柄；若关键模型加载失败则返回 undefined（调用方应报错）。
-function ____exports.buildScene(options) -- 174
-	local ____options_0 = options -- 175
-	local root = ____options_0.root -- 175
-	local bodies = ____options_0.bodies -- 175
-	local visuals = ____options_0.visuals -- 175
-	local probeStart = ____options_0.probeStart -- 175
-	local light = DirectionalLight3D() -- 182
-	light.color = Color3(16774106) -- 183
-	light.intensity = 3.6 -- 184
-	light.angleX = -42 -- 185
-	light.angleY = 75 -- 186
-	root:addChild(light) -- 187
-	local planets = {} -- 190
-	do -- 190
-		local i = 0 -- 191
-		while i < #bodies do -- 191
-			local def = bodies[i + 1] -- 192
-			local vis = visuals[i + 1] -- 193
-			local bodyModel = nil -- 196
-			local k = 1 -- 197
-			local modelName = vis.model ~= nil and vis.model or "" -- 198
-			if modelName ~= "" then -- 198
-				local loaded = Model3D(("Assets/Model/" .. modelName) .. ".glb") -- 200
-				if loaded ~= nil then -- 200
-					bodyModel = loaded -- 202
-					k = modelRadius(modelName) -- 203
-				end -- 203
-			end -- 203
-			if bodyModel == nil then -- 203
-				bodyModel = Model3D(options.spherePath) -- 207
-				k = 1 -- 208
-			end -- 208
-			if bodyModel == nil then -- 208
-				return nil -- 210
+function ____exports.buildScene(options) -- 176
+	local ____options_0 = options -- 177
+	local root = ____options_0.root -- 177
+	local bodies = ____options_0.bodies -- 177
+	local visuals = ____options_0.visuals -- 177
+	local probeStart = ____options_0.probeStart -- 177
+	local light = DirectionalLight3D() -- 184
+	light.color = Color3(16774106) -- 185
+	light.intensity = 3.6 -- 186
+	light.angleX = -42 -- 187
+	light.angleY = 75 -- 188
+	root:addChild(light) -- 189
+	local planets = {} -- 192
+	do -- 192
+		local i = 0 -- 193
+		while i < #bodies do -- 193
+			local def = bodies[i + 1] -- 194
+			local vis = visuals[i + 1] -- 195
+			local bodyModel = nil -- 198
+			local k = 1 -- 199
+			local modelName = vis.model ~= nil and vis.model or "" -- 200
+			if modelName ~= "" then -- 200
+				local loaded = Model3D(("Assets/Model/" .. modelName) .. ".glb") -- 202
+				if loaded ~= nil then -- 202
+					bodyModel = loaded -- 204
+					k = modelRadius(modelName) -- 205
+				end -- 205
+			end -- 205
+			if bodyModel == nil then -- 205
+				bodyModel = Model3D(options.spherePath) -- 209
+				k = 1 -- 210
 			end -- 210
-			local scale = vis.displayRadius / k -- 213
-			bodyModel.scale = Vec3(scale, scale, scale) -- 214
-			local mi = 0 -- 217
-			while mi < 64 do -- 217
-				local mat = bodyModel:getMaterial(mi) -- 219
-				if mat == nil then -- 219
-					break -- 220
-				end -- 220
-				mat.baseColor = Color(vis.r * 255, vis.g * 255, vis.b * 255, 255) -- 221
-				mi = mi + 1 -- 222
-			end -- 222
-			root:addChild(bodyModel) -- 225
-			local ringNode = nil -- 228
-			if modelName == "" and vis.ring then -- 228
-				local ring = Model3D(options.ringPath) -- 230
-				if ring ~= nil then -- 230
-					local rs = scale * 1.5 -- 233
-					ring.scale = Vec3(rs, rs, rs) -- 234
-					root:addChild(ring) -- 235
-					ringNode = ring -- 236
-				end -- 236
-			end -- 236
-			planets[#planets + 1] = {body = bodyModel, ring = ringNode, def = def} -- 240
-			i = i + 1 -- 191
-		end -- 191
-	end -- 191
-	if options.home ~= nil then -- 191
-		local earth = Model3D("Assets/Model/Planet_Earth.glb") -- 248
-		if earth ~= nil then -- 248
-			local ke = modelRadius("Planet_Earth") -- 250
-			local es = 1.15 / ke -- 251
-			earth.scale = Vec3(es, es, es) -- 252
-			local emi = 0 -- 253
-			while emi < 64 do -- 253
-				local em = earth:getMaterial(emi) -- 255
-				if em == nil then -- 255
-					break -- 256
-				end -- 256
-				em.baseColor = Color(110, 170, 235, 255) -- 257
-				em.emissive = Color3(792098) -- 259
-				emi = emi + 1 -- 260
-			end -- 260
-			earth.position = ____exports.planeToWorld(options.home, 0) -- 262
-			root:addChild(earth) -- 263
-		end -- 263
-	end -- 263
-	local probeScale = options.probeScale -- 272
-	local bodyModel = options.probeBodyPath ~= nil and Content:exist(options.probeBodyPath) and Model3D(options.probeBodyPath) or nil -- 276
-	local antennaModel = bodyModel ~= nil and options.probeAntennaPath ~= nil and Content:exist(options.probeAntennaPath) and Model3D(options.probeAntennaPath) or nil -- 279
-	local singleModel = bodyModel == nil and Model3D(options.probePath) or nil -- 282
-	if bodyModel == nil and singleModel == nil then -- 282
-		return nil -- 283
-	end -- 283
-	local probeNode = Node3D() -- 285
-	root:addChild(probeNode) -- 286
-	if bodyModel ~= nil then -- 286
-		bodyModel.scale = Vec3(probeScale, probeScale, probeScale) -- 289
-		probeNode:addChild(bodyModel) -- 290
-	end -- 290
-	if singleModel ~= nil then -- 290
-		singleModel.scale = Vec3(probeScale, probeScale, probeScale) -- 293
-		probeNode:addChild(singleModel) -- 294
-	end -- 294
-	local antennaPivot = nil -- 299
-	if bodyModel ~= nil and antennaModel ~= nil then -- 299
-		antennaModel.scale = Vec3(probeScale, probeScale, probeScale) -- 301
-		antennaPivot = Node3D() -- 302
-		antennaPivot.position = Vec3(0, AntennaPivotY * probeScale, 0) -- 303
-		antennaPivot:addChild(antennaModel) -- 304
-		probeNode:addChild(antennaPivot) -- 305
-	end -- 305
-	local probeRadius = 0.5 * 3.227 * probeScale * 1.1 -- 314
-	local bodyYawDeg = 0 -- 317
-	local BackdropDist = 600 -- 329
-	local BackdropHalf = 560 -- 330
-	local backdropNode = nil -- 331
-	local backdrop = Model3D("Assets/Model/StarQuad.gltf") -- 332
-	if backdrop ~= nil then -- 332
-		local tex = Texture2D("Assets/Image/starfield.png") -- 334
-		local bm = backdrop:getMaterial(0) -- 335
-		if bm ~= nil and tex ~= nil then -- 335
-			bm:setEmissiveTexture(tex) -- 339
-			bm.baseColor = Color(0, 0, 0, 255) -- 340
-			bm.emissive = Color3(9211020) -- 341
-			bm.roughness = 1 -- 342
-			bm.metallic = 0 -- 343
-		end -- 343
-		backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf) -- 345
-		backdrop.angleX = -45 -- 348
-		backdrop.position = Vec3(0, 0, -BackdropDist) -- 349
-		root:addChild(backdrop) -- 350
-		backdropNode = backdrop -- 351
-	end -- 351
-	local function syncBodies(t) -- 355
-		for ____, p in ipairs(planets) do -- 356
-			local wp = ____exports.planeToWorld( -- 357
-				bodyPositionAt(p.def, t), -- 357
-				0 -- 357
-			) -- 357
-			p.body.position = wp -- 358
-			if p.ring ~= nil then -- 358
-				p.ring.position = wp -- 359
-			end -- 359
-		end -- 359
-	end -- 355
-	local function syncProbe(p) -- 363
-		probeNode.position = ____exports.planeToWorld(p, 0) -- 364
-		if antennaPivot ~= nil and options.home ~= nil then -- 364
-			local ex = (options.home.x - p.x) * PlaneToWorldX -- 370
-			local ez = (options.home.y - p.y) * PlaneToWorldZ -- 371
-			local dist = math.sqrt(ex * ex + ez * ez) -- 372
-			if dist > 0.0001 then -- 372
-				local tiltFactor = (dist - 0.5) / 3 -- 374
-				if tiltFactor < 0 then -- 374
-					tiltFactor = 0 -- 375
-				end -- 375
-				if tiltFactor > 1 then -- 375
-					tiltFactor = 1 -- 376
-				end -- 376
-				local tilt = 46 * tiltFactor -- 377
-				local phiWorld = math.atan(-ez, ex) * 180 / math.pi -- 378
-				antennaPivot.angleY = phiWorld - bodyYawDeg -- 379
-				antennaPivot.angleZ = -tilt -- 380
-			end -- 380
-		end -- 380
-	end -- 363
-	local function faceVelocity(v) -- 388
-		local wx = v.x * PlaneToWorldX -- 389
-		local wz = v.y * PlaneToWorldZ -- 390
-		if wx * wx + wz * wz < 1e-12 then -- 390
-			return -- 391
-		end -- 391
-		bodyYawDeg = math.atan(-wz, wx) * 180 / math.pi + ProbeYawOffsetDeg -- 392
-		probeNode.angleY = bodyYawDeg -- 393
-	end -- 388
-	local function syncBackdrop(eye, target) -- 397
-		if backdropNode == nil then -- 397
-			return -- 398
-		end -- 398
-		local dx = target.x - eye.x -- 399
-		local dy = target.y - eye.y -- 400
-		local dz = target.z - eye.z -- 401
-		local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 402
-		if len < 0.000001 then -- 402
-			return -- 403
-		end -- 403
-		local s = BackdropDist / len -- 404
-		backdropNode.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s) -- 405
-	end -- 397
-	syncBodies(0) -- 409
-	syncProbe(probeStart) -- 410
-	return { -- 412
-		syncBodies = syncBodies, -- 412
-		syncProbe = syncProbe, -- 412
-		faceVelocity = faceVelocity, -- 412
-		syncBackdrop = syncBackdrop, -- 412
-		probe = probeNode, -- 412
-		planets = planets, -- 412
-		probeRadius = probeRadius -- 412
-	} -- 412
-end -- 174
-return ____exports -- 174
+			if bodyModel == nil then -- 210
+				return nil -- 212
+			end -- 212
+			local scale = vis.displayRadius / k -- 215
+			bodyModel.scale = Vec3(scale, scale, scale) -- 216
+			local mi = 0 -- 219
+			while mi < 64 do -- 219
+				local mat = bodyModel:getMaterial(mi) -- 221
+				if mat == nil then -- 221
+					break -- 222
+				end -- 222
+				mat.baseColor = Color(vis.r * 255, vis.g * 255, vis.b * 255, 255) -- 223
+				mi = mi + 1 -- 224
+			end -- 224
+			root:addChild(bodyModel) -- 227
+			local ringNode = nil -- 230
+			if modelName == "" and vis.ring then -- 230
+				local ring = Model3D(options.ringPath) -- 232
+				if ring ~= nil then -- 232
+					local rs = scale * 1.5 -- 235
+					ring.scale = Vec3(rs, rs, rs) -- 236
+					root:addChild(ring) -- 237
+					ringNode = ring -- 238
+				end -- 238
+			end -- 238
+			planets[#planets + 1] = {body = bodyModel, ring = ringNode, def = def} -- 242
+			i = i + 1 -- 193
+		end -- 193
+	end -- 193
+	if options.home ~= nil then -- 193
+		local earth = Model3D("Assets/Model/Planet_Earth.glb") -- 250
+		if earth ~= nil then -- 250
+			local ke = modelRadius("Planet_Earth") -- 252
+			local es = 1.15 / ke -- 253
+			earth.scale = Vec3(es, es, es) -- 254
+			local emi = 0 -- 255
+			while emi < 64 do -- 255
+				local em = earth:getMaterial(emi) -- 257
+				if em == nil then -- 257
+					break -- 258
+				end -- 258
+				em.baseColor = Color(110, 170, 235, 255) -- 259
+				em.emissive = Color3(792098) -- 261
+				emi = emi + 1 -- 262
+			end -- 262
+			earth.position = ____exports.planeToWorld(options.home, 0) -- 264
+			root:addChild(earth) -- 265
+		end -- 265
+	end -- 265
+	local probeScale = options.probeScale -- 274
+	local bodyModel = options.probeBodyPath ~= nil and Content:exist(options.probeBodyPath) and Model3D(options.probeBodyPath) or nil -- 278
+	local antennaModel = bodyModel ~= nil and options.probeAntennaPath ~= nil and Content:exist(options.probeAntennaPath) and Model3D(options.probeAntennaPath) or nil -- 281
+	local singleModel = bodyModel == nil and Model3D(options.probePath) or nil -- 284
+	if bodyModel == nil and singleModel == nil then -- 284
+		return nil -- 285
+	end -- 285
+	local probeNode = Node3D() -- 287
+	root:addChild(probeNode) -- 288
+	if bodyModel ~= nil then -- 288
+		bodyModel.scale = Vec3(probeScale, probeScale, probeScale) -- 291
+		probeNode:addChild(bodyModel) -- 292
+	end -- 292
+	if singleModel ~= nil then -- 292
+		singleModel.scale = Vec3(probeScale, probeScale, probeScale) -- 295
+		probeNode:addChild(singleModel) -- 296
+	end -- 296
+	local antennaPivot = nil -- 301
+	if bodyModel ~= nil and antennaModel ~= nil then -- 301
+		antennaModel.scale = Vec3(probeScale, probeScale, probeScale) -- 303
+		antennaPivot = Node3D() -- 304
+		antennaPivot.position = Vec3(0, AntennaPivotY * probeScale, 0) -- 305
+		antennaPivot:addChild(antennaModel) -- 306
+		probeNode:addChild(antennaPivot) -- 307
+	end -- 307
+	local probeRadius = 0.5 * 3.227 * probeScale * 1.1 -- 316
+	local bodyYawDeg = 0 -- 319
+	local BackdropDist = 600 -- 331
+	local BackdropHalf = 560 -- 332
+	local backdropNode = nil -- 333
+	local backdrop = Model3D("Assets/Model/StarQuad.gltf") -- 334
+	if backdrop ~= nil then -- 334
+		local tex = Texture2D("Assets/Image/starfield.png") -- 336
+		local bm = backdrop:getMaterial(0) -- 337
+		if bm ~= nil and tex ~= nil then -- 337
+			bm:setEmissiveTexture(tex) -- 341
+			bm.baseColor = Color(0, 0, 0, 255) -- 342
+			bm.emissive = Color3(9211020) -- 343
+			bm.roughness = 1 -- 344
+			bm.metallic = 0 -- 345
+		end -- 345
+		backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf) -- 347
+		backdrop.angleX = -45 -- 350
+		backdrop.position = Vec3(0, 0, -BackdropDist) -- 351
+		root:addChild(backdrop) -- 352
+		backdropNode = backdrop -- 353
+	end -- 353
+	local function syncBodies(t) -- 357
+		for ____, p in ipairs(planets) do -- 358
+			local wp = ____exports.planeToWorld( -- 359
+				bodyPositionAt(p.def, t), -- 359
+				0 -- 359
+			) -- 359
+			p.body.position = wp -- 360
+			if p.ring ~= nil then -- 360
+				p.ring.position = wp -- 361
+			end -- 361
+		end -- 361
+	end -- 357
+	local function syncProbe(p) -- 365
+		probeNode.position = ____exports.planeToWorld(p, 0) -- 366
+		if antennaPivot ~= nil and options.home ~= nil then -- 366
+			local ex = (options.home.x - p.x) * PlaneToWorldX -- 372
+			local ez = (options.home.y - p.y) * PlaneToWorldZ -- 373
+			local dist = math.sqrt(ex * ex + ez * ez) -- 374
+			if dist > 0.0001 then -- 374
+				local tiltFactor = (dist - 0.5) / 3 -- 376
+				if tiltFactor < 0 then -- 376
+					tiltFactor = 0 -- 377
+				end -- 377
+				if tiltFactor > 1 then -- 377
+					tiltFactor = 1 -- 378
+				end -- 378
+				local tilt = 46 * tiltFactor -- 379
+				local phiWorld = math.atan(-ez, ex) * 180 / math.pi -- 380
+				antennaPivot.angleY = phiWorld - bodyYawDeg -- 381
+				antennaPivot.angleZ = -tilt -- 382
+			end -- 382
+		end -- 382
+	end -- 365
+	local function faceVelocity(v) -- 390
+		local wx = v.x * PlaneToWorldX -- 391
+		local wz = v.y * PlaneToWorldZ -- 392
+		if wx * wx + wz * wz < 1e-12 then -- 392
+			return -- 393
+		end -- 393
+		bodyYawDeg = math.atan(-wz, wx) * 180 / math.pi + ProbeYawOffsetDeg -- 394
+		probeNode.angleY = bodyYawDeg -- 395
+	end -- 390
+	local function syncBackdrop(eye, target) -- 399
+		if backdropNode == nil then -- 399
+			return -- 400
+		end -- 400
+		local dx = target.x - eye.x -- 401
+		local dy = target.y - eye.y -- 402
+		local dz = target.z - eye.z -- 403
+		local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 404
+		if len < 0.000001 then -- 404
+			return -- 405
+		end -- 405
+		local s = BackdropDist / len -- 406
+		backdropNode.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s) -- 407
+	end -- 399
+	syncBodies(0) -- 411
+	syncProbe(probeStart) -- 412
+	return { -- 414
+		syncBodies = syncBodies, -- 415
+		syncProbe = syncProbe, -- 416
+		faceVelocity = faceVelocity, -- 417
+		syncBackdrop = syncBackdrop, -- 418
+		probe = probeNode, -- 419
+		antenna = antennaModel, -- 420
+		planets = planets, -- 421
+		probeRadius = probeRadius -- 422
+	} -- 422
+end -- 176
+return ____exports -- 176

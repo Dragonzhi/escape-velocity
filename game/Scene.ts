@@ -160,6 +160,8 @@ export interface GameScene {
 	syncBackdrop(eye: Vec3.Type, target: Vec3.Type): void;
 	/** 当前探测器根节点（定位 + 朝速度方向）。 */
 	probe: Node3D.Type;
+	/** 天线模型（分体模式）；单体回退时为 undefined。 */
+	antenna?: Node3D.Type;
 	/** 行星节点表。 */
 	planets: PlanetNode[];
 	/** 探测器模型的**世界**外接半径，喂给相机取景（否则天线会被画面边缘切掉）。 */
@@ -409,5 +411,14 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 	syncBodies(0);
 	syncProbe(probeStart);
 
-	return { syncBodies, syncProbe, faceVelocity, syncBackdrop, probe: probeNode, planets, probeRadius };
+	return {
+		syncBodies,
+		syncProbe,
+		faceVelocity,
+		syncBackdrop,
+		probe: probeNode,
+		antenna: antennaModel,
+		planets,
+		probeRadius,
+	};
 }
