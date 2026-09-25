@@ -6,16 +6,19 @@
  * `game/Projection.ts`（误差 1 px，R4 已关闭）。
  *
  * 关键约束（手册 §5.5）：**预测线与真实尾迹必须用同一套采样数据**，
- * 否则会出现“看起来一样、其实不一样”。本模块把两种线的绘制
+ * 否则会出现"看起来一样、其实不一样"。本模块把两种线的绘制
  * 拆成两个函数，但都走同一个 `projectPolyline`。
  *
  * 为什么用 `DrawNode.drawSegment` 而不是 `Line`：
- * `Line` 的线宽不可控（约 1px），在 1080p 竖屏下太细、几乎看不见。
- * `drawSegment` 可以指定半径，才能做出手册要求的“发光轨迹”。
- * 代价是逐段绘制；已经在 `maxPoints` 里抽稀控制段数。
+ * `Line` 的线宽不可控（约 1px），且**逐段颜色/宽度不可控**。
+ * 2026-09-25 按用户反馈重画（会话 25）：
+ * - 预测线 = 愤怒小鸟式**虚线**（画一段空一段）+ **末端渐隐**（alpha 沿线衰减）；
+ * - 尾迹 = **彗星拖尾**：只保留最近若干采样点（不再全程显示一条线），
+ *   宽度与 alpha 从头部向尾部收窄，头部加一个亮点；
+ * - 两条线都垫一层低透明度宽光晕（加法混合）= 原 S3.2 计划的"发光"。
  *
- * 坐标系：投影输出是“中心原点、+Y 向下”；2D 覆盖层节点挂在 Director.ui
- * 下，也是中心原点但 +Y 向上，所以统一用 `-proj.y` 翻转。
+ * 坐标系：投影输出是"中心原点、+Y 向上"（S2 修正后），绘制层用显式
+ * `layerOriginX/Y` 换算（见 TrajectoryOptions 的实测说明）。
  */
 import { BlendFunc, BlendOp, Color, DrawNode, Node, Vec2, View } from 'Dora';
 import { CameraBasis, projectPrepared } from 'game/Projection';
@@ -50,7 +53,7 @@ export function projectPolyline(points: P2[], y: number, basis: CameraBasis, ori
 /** 预测线 + 尾迹的渲染句柄。 */
 export interface TrajectoryView {
 	/**
-	 * 重画预测线。
+	 * 重画预测线（虚线 + 末端渐隐 + 光晕）。
 	 *
 	 * 每帧调用（拖动瞄准时必须实时跟随）；点数多时靠 `maxPoints` 抽稀。
 	 * `basis` 是**当前帧**的相机基 —— 相机在动，所以不能缓存。
@@ -58,7 +61,7 @@ export interface TrajectoryView {
 	setPrediction(points: P2[], basis: CameraBasis): void;
 	/** 隐藏预测线（例如发射后不再需要）。 */
 	clearPrediction(): void;
-	/** 追加重画真实尾迹；`basis` 同样必须传当前帧的。 */
+	/** 重画彗星尾迹（只保留最近 `tailPoints` 个采样点）；`basis` 同样必须传当前帧的。 */
 	setTrail(points: P2[], basis: CameraBasis): void;
 	/** 清空尾迹（重试本关时调用）。 */
 	clearTrail(): void;
@@ -74,21 +77,37 @@ export interface TrajectoryOptions {
 	 *
 	 * ⚠️ 实测（标记点法）：本项目的轨迹画在 `levelLayers[i]` 上，该层的真实空间是
 	 * **左下原点绝对像素** `[0,W]×[0,H]`，所以偏移 = 半个视图。
-	 * 依据：在该层画 (0,0)/(W/2,H/2)，前者落在屏幕左下角、后者落在正中心；
-	 * 探测器投影值 (0,-530) 加半个视图后正好落在探测器模型上。
 	 */
 	layerOriginX: number;
 	layerOriginY: number;
 	/** 最多绘制多少个点（抽稀上限，防止移动端性能问题）。 */
 	maxPoints: number;
-	/** 预测线的粗细（像素）。 */
+	/** 预测线主线半径（像素；光晕层 = 本值 × glowRadiusFactor）。 */
 	predictRadius: number;
-	/** 尾迹的粗细（像素）。 */
-	trailRadius: number;
-	/** 预测线颜色（RGBA，0–255）。 */
-	predictColor: Color.Type;
-	/** 尾迹颜色（RGBA，0–255）。 */
-	trailColor: Color.Type;
+	/** 虚线的实段长度（像素）。 */
+	dashOn: number;
+	/** 虚线的空段长度（像素）。 */
+	dashOff: number;
+	/** 预测线末端残留 alpha（0–1）。不为 0：保留弹弓规划的远端信息，只是"淡出"。 */
+	predictFadeMin: number;
+	/** 光晕层半径 = 主半径 × glowRadiusFactor。 */
+	glowRadiusFactor: number;
+	/** 光晕层基础 alpha（0–1，加法混合下再乘沿线衰减）。 */
+	glowAlpha: number;
+	/** 尾迹保留最近多少个采样点（彗尾长度；播放 2x 下 ≈ 0.8 s）。 */
+	tailPoints: number;
+	/** 尾迹头部半径（像素）；尾部半径 = 尾迹头 × 0.15。 */
+	trailHeadRadius: number;
+	/** 尾迹头部 alpha（0–1）；尾部渐到 0。 */
+	trailHeadAlpha: number;
+	/** 预测线 RGB（0–255）。 */
+	predictR: number;
+	predictG: number;
+	predictB: number;
+	/** 尾迹 RGB（0–255）。 */
+	trailR: number;
+	trailG: number;
+	trailB: number;
 }
 
 export function defaultOptions(): TrajectoryOptions {
@@ -98,12 +117,22 @@ export function defaultOptions(): TrajectoryOptions {
 		layerOriginX: View.size.width / 2,
 		layerOriginY: View.size.height / 2,
 		maxPoints: 240,
-		predictRadius: 2.5,
-		trailRadius: 3.5,
-		// 预测线偏冷色；alpha 不能太低 —— 加法混合下行星亮面上会被洗掉（实测）
-		predictColor: Color(120, 200, 255, 180),
-		// 尾迹偏暖色且更实（已发生的路径）
-		trailColor: Color(255, 236, 170, 235),
+		predictRadius: 2.0,
+		// dashOff 要明显大于 2×(core+glow 半径)：圆头线帽会向间隙里延伸，间隙太小被桥接成实线（实测）
+		dashOn: 12,
+		dashOff: 9,
+		predictFadeMin: 0.10,
+		glowRadiusFactor: 1.9,
+		glowAlpha: 0.13,
+		tailPoints: 280,
+		trailHeadRadius: 3.4,
+		trailHeadAlpha: 0.85,
+		predictR: 120,
+		predictG: 200,
+		predictB: 255,
+		trailR: 255,
+		trailG: 236,
+		trailB: 170,
 	};
 }
 
@@ -123,6 +152,114 @@ export function decimate(points: P2[], maxPoints: number): P2[] {
 }
 
 /**
+ * 沿线 alpha 渐变（0 = 起点，1 = 末端）：平滑衰减，末端保留 `minA`。
+ * 幂次 1.35 让前半段基本保持实色、后半段加速变淡（愤怒小鸟的观感）。
+ */
+function fadeAlpha(t: number, minA: number): number {
+	const u = t < 0 ? 0 : (t > 1 ? 1 : t);
+	return minA + (1 - minA) * Math.pow(1 - u, 1.35);
+}
+
+interface RGB { r: number; g: number; b: number; }
+
+function segColor(rgb: RGB, alpha: number): Color.Type {
+	// ⚠️ 加法混合（BlendFunc(One, One)）下 color 的 **alpha 分量不参与混合**（实测：
+	// 首版把衰减写进 alpha，结果虚线/渐隐完全失效、整条线一样亮）。亮度必须**预乘进 RGB**。
+	const a = alpha < 0 ? 0 : (alpha > 1 ? 1 : alpha);
+	return Color(Math.round(rgb.r * a), Math.round(rgb.g * a), Math.round(rgb.b * a), 255);
+}
+
+/**
+ * 虚线 + 渐隐 + 光晕：沿折线按"实段/空段"节奏走笔，
+ * 每个实段按其中点的沿线比例取 alpha（光晕层同 alpha、更宽）。
+ */
+function drawDashed(
+	draw: DrawNode.Type,
+	verts: Vec2.Type[],
+	coreRadius: number,
+	rgb: RGB,
+	fadeMin: number,
+	glowRadiusFactor: number,
+	glowAlpha: number,
+	dashOn: number,
+	dashOff: number,
+): void {
+	draw.clear();
+	const n = verts.length;
+	if (n < 2) return;
+
+	// 逐段长度与总弧长（alpha 沿**弧长比例**衰减，而不是沿点序号）
+	const segLen: number[] = [];
+	let total = 0;
+	for (let i = 1; i < n; i++) {
+		const dx = verts[i].x - verts[i - 1].x;
+		const dy = verts[i].y - verts[i - 1].y;
+		const l = Math.sqrt(dx * dx + dy * dy);
+		segLen.push(l);
+		total += l;
+	}
+	if (total < 1e-3) return;
+
+	const cycle = dashOn + dashOff;
+	const glowRadius = coreRadius * glowRadiusFactor;
+	let pen = 0;
+	for (let i = 1; i < n; i++) {
+		const ax = verts[i - 1].x, ay = verts[i - 1].y;
+		const bx = verts[i].x, by = verts[i].y;
+		const len = segLen[i - 1];
+		if (len < 1e-3) continue;
+		let s = 0;
+		while (s < len - 1e-3) {
+			const c = pen % cycle;
+			const run = Math.min(cycle - c, len - s);
+			if (c < dashOn) {
+				const t0 = s / len;
+				const t1 = (s + run) / len;
+				const x0 = ax + (bx - ax) * t0;
+				const y0 = ay + (by - ay) * t0;
+				const x1 = ax + (bx - ax) * t1;
+				const y1 = ay + (by - ay) * t1;
+				const al = fadeAlpha((pen + run * 0.5) / total, fadeMin);
+				const p0 = Vec2(x0, y0);
+				const p1 = Vec2(x1, y1);
+				draw.drawSegment(p0, p1, glowRadius, segColor(rgb, glowAlpha * al));
+				draw.drawSegment(p0, p1, coreRadius, segColor(rgb, al));
+			}
+			pen += run;
+			s += run;
+		}
+	}
+}
+
+/** 彗星拖尾：宽度与 alpha 从头部向尾部收窄 + 光晕 + 头部亮点。 */
+function drawComet(
+	draw: DrawNode.Type,
+	verts: Vec2.Type[],
+	headRadius: number,
+	rgb: RGB,
+	headAlpha: number,
+	glowRadiusFactor: number,
+	glowAlpha: number,
+): void {
+	draw.clear();
+	const n = verts.length;
+	if (n < 2) return;
+	const tailRadius = headRadius * 0.15;
+	const glowRadius = headRadius * glowRadiusFactor;
+	for (let i = 1; i < n; i++) {
+		// u: 0 = 尾（最老）→ 1 = 头（最新）
+		const u = i / (n - 1);
+		const up = Math.pow(u, 1.2);
+		const r = tailRadius + (headRadius - tailRadius) * up;
+		const al = headAlpha * Math.pow(u, 1.6);
+		draw.drawSegment(verts[i - 1], verts[i], r * glowRadiusFactor, segColor(rgb, glowAlpha * al));
+		draw.drawSegment(verts[i - 1], verts[i], r, segColor(rgb, al));
+	}
+	// 头部亮点（当前探测器位置）
+	draw.drawDot(verts[n - 1], headRadius * 1.5, segColor(rgb, headAlpha));
+}
+
+/**
  * 创建轨迹视图。
  *
  * @param parent 挂载的父节点。必须是 **2D** 节点（通常是 `Director.ui`）——
@@ -134,7 +271,7 @@ export function createTrajectoryView(
 ): TrajectoryView {
 	const options = opts !== undefined ? opts : defaultOptions();
 
-	// 用一个不设定尺寸的 Node 作为根，保持“中心原点”坐标系。
+	// 用一个不设定尺寸的 Node 作为根，保持"中心原点"坐标系。
 	const root = Node();
 
 	// 两个独立的 DrawNode：尾迹在底层，预测线在上层。
@@ -149,43 +286,50 @@ export function createTrajectoryView(
 
 	parent.addChild(root);
 
-	let trailCount = 0;
-
-	/** 把投影后的顶点用圆头线段连成一条光滑折线。 */
-	function drawPolyline(draw: DrawNode.Type, verts: Vec2.Type[], radius: number, color: Color.Type): void {
-		draw.clear();
-		for (let i = 1; i < verts.length; i++) {
-			draw.drawSegment(verts[i - 1], verts[i], radius, color);
-		}
-		// 在关节处补圆点，消除折角缝隙（圆头效果）
-		for (const v of verts) {
-			draw.drawDot(v, radius, color);
-		}
-	}
+	const predictRGB: RGB = { r: options.predictR, g: options.predictG, b: options.predictB };
+	const trailRGB: RGB = { r: options.trailR, g: options.trailG, b: options.trailB };
 
 	return {
 		setPrediction(points: P2[], basis: CameraBasis): void {
 			const verts = projectPolyline(decimate(points, options.maxPoints), options.y, basis, options.layerOriginX, options.layerOriginY);
-			drawPolyline(predictDraw, verts, options.predictRadius, options.predictColor);
+			drawDashed(
+				predictDraw,
+				verts,
+				options.predictRadius,
+				predictRGB,
+				options.predictFadeMin,
+				options.glowRadiusFactor,
+				options.glowAlpha,
+				options.dashOn,
+				options.dashOff,
+			);
 		},
 		clearPrediction(): void {
 			predictDraw.clear();
 		},
 		setTrail(points: P2[], basis: CameraBasis): void {
+			// 彗尾 = 只保留最近 tailPoints 个点；**每帧都重画**（窗口在滑动，且相机在动），
+			// 旧的"点数不变就跳过"优化在固定长度尾迹下不再成立。
 			if (points.length < 2) {
 				trailDraw.clear();
-				trailCount = 0;
 				return;
 			}
-			// 尾迹只在新增点时才重画，减少开销
-			if (points.length === trailCount) return;
-			trailCount = points.length;
-			const verts = projectPolyline(decimate(points, options.maxPoints), options.y, basis, options.layerOriginX, options.layerOriginY);
-			drawPolyline(trailDraw, verts, options.trailRadius, options.trailColor);
+			const tail = points.length > options.tailPoints
+				? points.slice(points.length - options.tailPoints)
+				: points;
+			const verts = projectPolyline(decimate(tail, options.maxPoints), options.y, basis, options.layerOriginX, options.layerOriginY);
+			drawComet(
+				trailDraw,
+				verts,
+				options.trailHeadRadius,
+				trailRGB,
+				options.trailHeadAlpha,
+				options.glowRadiusFactor,
+				options.glowAlpha,
+			);
 		},
 		clearTrail(): void {
 			trailDraw.clear();
-			trailCount = 0;
 		},
 		root,
 	};

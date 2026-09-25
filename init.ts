@@ -18,7 +18,7 @@
  *   LevelSelect --选关--> Aiming（拖动矄准）→ 松手发射 → Flying → Result
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
-import { App, Camera3D, Director, Node, Node3D, Size, Vec2, View, threadLoop } from 'Dora';
+import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
 import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
@@ -55,7 +55,8 @@ if (levelTotal <= 0) {
 	let viewW = View.size.width;
 	let viewH = View.size.height; // 视口变化时会更新（见 relayoutForViewport）
 
-	Director.entry.setEnvironmentIntensity(0.35, 0.35, 1);
+	// 晨昏线（2026-09-25）：环境光从 0.35 压到 0.12——暗面沉下去，方向光的明暗界线才出得来
+	Director.entry.setEnvironmentIntensity(0.12, 0.12, 1);
 
 	// ---- 每关一个 2D 层 ----
 	// 这几个节点必须先于 UI 叠层创建，否则后建的轨迹线会画在面板上面。
@@ -113,6 +114,9 @@ if (levelTotal <= 0) {
 	const showOnlyLevel = (index: number): void => {
 		for (let i = 0; i < levelTotal; i++) {
 			const slot = slots[i];
+			// 2D 层也要切：轨迹 DrawNode 挂在 levelLayers[i] 上，不切的话
+			// 上一关画的预测线/尾迹会一直叠在当前关画面里（2026-09-25 截图实测）
+			levelLayers[i].visible = i === index;
 			if (slot.runtime === undefined) continue;
 			const active = i === index;
 			slot.runtime.world.visible = active;
@@ -158,6 +162,12 @@ if (levelTotal <= 0) {
 			spherePath: 'Assets/Model/Sphere.gltf',
 			ringPath: 'Assets/Model/Ring.gltf',
 			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
+			// 地球锚点（纯视觉）：出发点正下方 ≈4 格——大天线"回头指向"的目标
+			home: { x: level.probeStart.x, y: level.probeStart.y + 4.2 },
+			// 探测器分体（会话 25）：身体 + 天线。建模侧交付前这两个文件不存在，
+			// Model3D 返回 undefined → Scene 自动回退单体 Probe_Voyager_v1.glb（天线刚性）
+			probeBodyPath: 'Assets/Model/Probe_Body.glb',
+			probeAntennaPath: 'Assets/Model/Probe_Antenna.glb',
 		});
 		if (scene === undefined) {
 			print('[escape-velocity] FATAL: scene build failed for L' + (index + 1).toFixed(0));
@@ -224,6 +234,10 @@ if (levelTotal <= 0) {
 	const enterLevel = (index: number): void => {
 		const runtime = ensureLevel(index);
 		if (runtime === undefined) return;
+		// ⚠️ 隐藏选关面板必须在这里做，而不能只靠 onPick 回调——任何进入路径
+		// （自动进关钩子、S3.3 开场衔接）都必须保证面板不盖在关卡上
+		// （2026-09-25 实测：钩子直接进关时面板全程盖着，画面像隔了层毛玻璃）。
+		if (select !== undefined) select.hide();
 		activeIndex = index;
 		showOnlyLevel(index);
 		Director.pushCamera(runtime.camera);
@@ -335,11 +349,57 @@ if (levelTotal <= 0) {
 	// ---- 启动即进入关卡选择（Title/金唱片开场属 S3.3）----
 	buildPanels().show(progress.unlocked);
 
+	// 开发便利钩子（会话 25）：存在 .agent/test-results/enter-request.txt（内容 = 关卡号 N）时
+	// 自动进第 N 关。生产/Web 导出该文件不存在 => 零开销；验证脚本因此可以绕开
+	// 合成鼠标的选关坐标点击（2026-09-25 实测同一坐标两次进了 L6 而不是 L1，原因未查明）。
+	const enterReq = Path(Path(".", ".agent", "test-results"), "enter-request.txt");
+	// 内容格式："N"（只进关）或 "N@frames:vx:vy"（进关后第 frames 帧以 (vx,vy) 自动发射）
+	let autoLaunchAt = -1;
+	let autoFrame = 0;
+	let autoVX = 0;
+	let autoVY = 0;
+	if (Content.exist(enterReq)) {
+		const spec = Content.load(enterReq);
+		const at = spec.indexOf('@');
+		const n = tonumber(at < 0 ? spec : spec.substring(0, at));
+		if (n !== undefined && n >= 1 && n <= levelTotal) {
+			print('[escape-velocity] auto enter L' + n.toFixed(0) + ' (enter-request)');
+			enterLevel(n - 1);
+			if (at >= 0) {
+				const rest = spec.substring(at + 1);
+				const c1 = rest.indexOf(':');
+				const c2 = rest.indexOf(':', c1 + 1);
+				if (c1 > 0 && c2 > c1) {
+					const frames = tonumber(rest.substring(0, c1));
+					const vx = tonumber(rest.substring(c1 + 1, c2));
+					const vy = tonumber(rest.substring(c2 + 1));
+					if (frames !== undefined && vx !== undefined && vy !== undefined) {
+						autoLaunchAt = frames;
+						autoVX = vx;
+						autoVY = vy;
+						print('[escape-velocity] auto launch scheduled: frame ' + frames.toFixed(0) + ' v=(' + vx.toFixed(1) + ',' + vy.toFixed(1) + ')');
+					}
+				}
+			}
+		}
+	}
+
 	// ---- 单一主循环（手册 §4.3）：只驱动当前激活的关 ----
 	// ⚠️ threadLoop 回调没有参数，帧间隔用 App.deltaTime
 	threadLoop(() => {
 		const runtime = activeRuntime();
-		if (runtime !== undefined) runtime.game.update(App.deltaTime);
+		if (runtime !== undefined) {
+			runtime.game.update(App.deltaTime);
+			// 开发钩子的自动发射（见上方 enter-request 说明）
+			if (autoLaunchAt >= 0) {
+				autoFrame += 1;
+				if (autoFrame >= autoLaunchAt) {
+					autoLaunchAt = -1;
+					print('[escape-velocity] auto launch');
+					runtime.game.launch({ x: autoVX, y: autoVY });
+				}
+			}
+		}
 
 		return false; // false = 继续
 	});

@@ -30,7 +30,7 @@ const TRIS: Tri[] = [
 	{ name: 'Planet_Earth', tris: 80 }, { name: 'Planet_Mars', tris: 80 },
 	{ name: 'Planet_Venus', tris: 80 }, { name: 'Planet_Neptune', tris: 80 },
 	{ name: 'Planet_Jupiter', tris: 320 }, { name: 'Planet_Saturn', tris: 464 },
-	{ name: 'Probe_Voyager_v1', tris: 600 }, // 会话 22 期间该 .glb 被替换：21 mesh / 600 面（原 5/164）
+	{ name: 'Probe_Voyager_v1', tris: 764 }, // 会话 25 建模更新：28 mesh / 764 面（+天线分组 +推进器/RCS）
 	{ name: 'Sphere.gltf', tris: 120 }, { name: 'Ring.gltf', tris: 16 },
 	{ name: 'StarQuad.gltf', tris: 2 }, // 星空背板（方案 B，2026-09-25 起；替代 1940 面的星点壳）
 ];
@@ -85,6 +85,7 @@ for (let i = 0; i < total; i++) {
 	worlds.push(world);
 
 	// 期望三角面：行星模型 + 探测器 + 星空背板（旧 Ring 只在“没有 model 且 ring”时才会加）
+	// 地球锚点是纯视觉、不进 bodies，也不传 home ⇒ 不计入（与游戏取景点一致）。
 	let exp = triOf('Probe_Voyager_v1') + triOf('StarQuad.gltf');
 	const names: string[] = [];
 	for (let k = 0; k < def.visuals.length; k++) {
