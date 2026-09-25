@@ -155,107 +155,109 @@ function ____exports.createGame(level, deps) -- 229
 			deps.scene.probeRadius -- 256
 		) -- 256
 		deps.rig.apply(deps.camera, frame) -- 257
-		local basis = makeBasis(frame) -- 258
-		local pp = projectPrepared( -- 261
-			planeToWorld(level.probeStart, 0), -- 261
-			basis -- 261
-		) -- 261
-		if pp ~= nil then -- 261
-			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 262
-		end -- 262
-		local pred = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = core.aim.velocity.x, y = core.aim.velocity.y}}, level.bodies, {steps = PredictSteps, dt = core.dt, sampleEvery = 4, escapeRadius = level.escapeRadius}) -- 269
-		deps.trajectory:setPrediction(pred.points, basis) -- 274
-		deps.trajectory:clearTrail() -- 275
+		deps.scene.syncBackdrop(frame.eye, frame.target) -- 258
+		local basis = makeBasis(frame) -- 259
+		local pp = projectPrepared( -- 262
+			planeToWorld(level.probeStart, 0), -- 262
+			basis -- 262
+		) -- 262
+		if pp ~= nil then -- 262
+			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 263
+		end -- 263
+		local pred = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = core.aim.velocity.x, y = core.aim.velocity.y}}, level.bodies, {steps = PredictSteps, dt = core.dt, sampleEvery = 4, escapeRadius = level.escapeRadius}) -- 270
+		deps.trajectory:setPrediction(pred.points, basis) -- 275
+		deps.trajectory:clearTrail() -- 276
 	end -- 248
-	local function updateFlying(dt) -- 278
-		deps.aim:setEnabled(false) -- 279
-		local entered = ____exports.coreUpdate(core, dt) -- 280
-		if core.flight == nil then -- 280
-			return entered -- 281
-		end -- 281
-		local idx = ____exports.coreProbeIndex(core) -- 283
-		local pos = core.flight.points[idx + 1] -- 284
-		local t = core.flightTime -- 285
-		deps.scene.syncBodies(t) -- 287
-		deps.scene.syncProbe(pos) -- 288
-		if idx > 0 then -- 288
-			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 290
-		end -- 290
-		local planetPts = {} -- 293
-		for ____, p in ipairs(deps.scene.planets) do -- 294
-			planetPts[#planetPts + 1] = bodyPositionAt(p.def, t) -- 294
-		end -- 294
-		local frame = deps.rig.step( -- 296
-			{ -- 296
-				pos, -- 296
-				table.unpack(planetPts) -- 296
-			}, -- 296
-			deps.scene.probeRadius -- 296
-		) -- 296
-		deps.rig.apply(deps.camera, frame) -- 297
-		local basis = makeBasis(frame) -- 298
-		local trail = {} -- 301
-		do -- 301
-			local i = 0 -- 302
-			while i <= idx do -- 302
-				trail[#trail + 1] = core.flight.points[i + 1] -- 302
-				i = i + 1 -- 302
-			end -- 302
-		end -- 302
-		deps.trajectory:setTrail(trail, basis) -- 303
-		return entered -- 305
-	end -- 278
-	local function update(dt) -- 308
-		if core.phase == "Aiming" then -- 308
-			updateAiming() -- 310
-		elseif core.phase == "Flying" then -- 310
-			local entered = updateFlying(dt) -- 312
-			if entered and core.result ~= nil then -- 312
-				deps:onResult(core.result) -- 314
-				deps:onPhase("Result") -- 315
-			end -- 315
-		end -- 315
-	end -- 308
-	return { -- 321
-		phase = function() return core.phase end, -- 322
-		result = function() return core.result end, -- 323
-		onAimDrag = function(____, a) -- 324
-			core.aim = a -- 325
-		end, -- 324
-		launch = function(____, v) -- 327
-			if core.phase ~= "Aiming" then -- 327
-				return -- 328
-			end -- 328
-			____exports.coreLaunch(core, v, level) -- 329
-			deps.trajectory:clearPrediction() -- 330
-			deps:onPhase("Flying") -- 331
-		end, -- 327
-		retry = function() -- 333
-			if core.phase ~= "Result" then -- 333
-				return -- 334
-			end -- 334
-			____exports.coreRetry(core) -- 335
-			deps.trajectory:clearTrail() -- 336
-			deps.trajectory:clearPrediction() -- 337
-			deps:onPhase("Aiming") -- 338
-		end, -- 333
-		backToSelect = function() -- 340
-			if not ____exports.coreBackToSelect(core) then -- 340
-				return false -- 341
-			end -- 341
-			deps.aim:setEnabled(false) -- 343
-			deps.trajectory:clearTrail() -- 344
-			deps.trajectory:clearPrediction() -- 345
-			deps:onPhase("LevelSelect") -- 346
-			return true -- 347
-		end, -- 340
-		startLevel = function() -- 349
-			____exports.coreRetry(core) -- 352
-			deps.trajectory:clearTrail() -- 353
-			deps.trajectory:clearPrediction() -- 354
-			deps:onPhase("Aiming") -- 355
-		end, -- 349
-		update = function(____, frameDt) return update(frameDt) end -- 358
-	} -- 358
+	local function updateFlying(dt) -- 279
+		deps.aim:setEnabled(false) -- 280
+		local entered = ____exports.coreUpdate(core, dt) -- 281
+		if core.flight == nil then -- 281
+			return entered -- 282
+		end -- 282
+		local idx = ____exports.coreProbeIndex(core) -- 284
+		local pos = core.flight.points[idx + 1] -- 285
+		local t = core.flightTime -- 286
+		deps.scene.syncBodies(t) -- 288
+		deps.scene.syncProbe(pos) -- 289
+		if idx > 0 then -- 289
+			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 291
+		end -- 291
+		local planetPts = {} -- 294
+		for ____, p in ipairs(deps.scene.planets) do -- 295
+			planetPts[#planetPts + 1] = bodyPositionAt(p.def, t) -- 295
+		end -- 295
+		local frame = deps.rig.step( -- 297
+			{ -- 297
+				pos, -- 297
+				table.unpack(planetPts) -- 297
+			}, -- 297
+			deps.scene.probeRadius -- 297
+		) -- 297
+		deps.rig.apply(deps.camera, frame) -- 298
+		deps.scene.syncBackdrop(frame.eye, frame.target) -- 299
+		local basis = makeBasis(frame) -- 300
+		local trail = {} -- 303
+		do -- 303
+			local i = 0 -- 304
+			while i <= idx do -- 304
+				trail[#trail + 1] = core.flight.points[i + 1] -- 304
+				i = i + 1 -- 304
+			end -- 304
+		end -- 304
+		deps.trajectory:setTrail(trail, basis) -- 305
+		return entered -- 307
+	end -- 279
+	local function update(dt) -- 310
+		if core.phase == "Aiming" then -- 310
+			updateAiming() -- 312
+		elseif core.phase == "Flying" then -- 312
+			local entered = updateFlying(dt) -- 314
+			if entered and core.result ~= nil then -- 314
+				deps:onResult(core.result) -- 316
+				deps:onPhase("Result") -- 317
+			end -- 317
+		end -- 317
+	end -- 310
+	return { -- 323
+		phase = function() return core.phase end, -- 324
+		result = function() return core.result end, -- 325
+		onAimDrag = function(____, a) -- 326
+			core.aim = a -- 327
+		end, -- 326
+		launch = function(____, v) -- 329
+			if core.phase ~= "Aiming" then -- 329
+				return -- 330
+			end -- 330
+			____exports.coreLaunch(core, v, level) -- 331
+			deps.trajectory:clearPrediction() -- 332
+			deps:onPhase("Flying") -- 333
+		end, -- 329
+		retry = function() -- 335
+			if core.phase ~= "Result" then -- 335
+				return -- 336
+			end -- 336
+			____exports.coreRetry(core) -- 337
+			deps.trajectory:clearTrail() -- 338
+			deps.trajectory:clearPrediction() -- 339
+			deps:onPhase("Aiming") -- 340
+		end, -- 335
+		backToSelect = function() -- 342
+			if not ____exports.coreBackToSelect(core) then -- 342
+				return false -- 343
+			end -- 343
+			deps.aim:setEnabled(false) -- 345
+			deps.trajectory:clearTrail() -- 346
+			deps.trajectory:clearPrediction() -- 347
+			deps:onPhase("LevelSelect") -- 348
+			return true -- 349
+		end, -- 342
+		startLevel = function() -- 351
+			____exports.coreRetry(core) -- 354
+			deps.trajectory:clearTrail() -- 355
+			deps.trajectory:clearPrediction() -- 356
+			deps:onPhase("Aiming") -- 357
+		end, -- 351
+		update = function(____, frameDt) return update(frameDt) end -- 360
+	} -- 360
 end -- 229
 return ____exports -- 229

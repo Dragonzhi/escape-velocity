@@ -255,6 +255,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 		const frame = deps.rig.step([level.probeStart, ...planetPts], deps.scene.probeRadius);
 		deps.rig.apply(deps.camera, frame);
+		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
 
 		// 探测器屏幕位置（拖动方向的基准）
@@ -295,6 +296,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 		const frame = deps.rig.step([pos, ...planetPts], deps.scene.probeRadius);
 		deps.rig.apply(deps.camera, frame);
+		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
 
 		// 尾迹 = 已飞过的前缀

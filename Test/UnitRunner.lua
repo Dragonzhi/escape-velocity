@@ -16,17 +16,22 @@ local Dora = require("Dora")
 local Content = Dora.Content
 local Path = Dora.Path
 
+-- ⚠️ searchPaths 是 **0 基**的 tolua 数组（2026-09-25 两次实测：[0]=项目根，而 [1] 可能是引擎的
+--    Script 目录）—— 从 1 扫起会漏掉项目根、回退进引擎目录（FarPlaneProbe 踩过：标记文件写进引擎目录）。
+-- ⚠️ 只认 init.lua 会误中引擎自带的 Script\init.lua —— 必须再加项目独有文件 game/Scene.lua 判别。
 local searchPaths = Content.searchPaths
 local root = nil
-for i = 1, 8 do
+for i = 0, 8 do
   local p = searchPaths[i]
-  if p ~= nil and (Content:exist(Path(p, "init.lua")) or Content:exist(Path(p, "init.ts"))) then
+  if p ~= nil
+    and (Content:exist(Path(p, "init.lua")) or Content:exist(Path(p, "init.ts")))
+    and Content:exist(Path(p, "game", "Scene.lua")) then
     root = p
     break
   end
 end
 if root == nil then
-  root = searchPaths[1]
+  root = searchPaths[0]
 end
 
 local outDir = Path(root, ".agent/test-results")
@@ -36,7 +41,7 @@ end
 local marker = Path(outDir, "unit-summary.txt")
 
 local lines = { "root=" .. tostring(root) }
-for i = 1, 4 do
+for i = 0, 4 do
   if searchPaths[i] ~= nil then
     lines[#lines + 1] = "searchPath[" .. i .. "]=" .. tostring(searchPaths[i])
   end

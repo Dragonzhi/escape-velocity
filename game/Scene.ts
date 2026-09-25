@@ -17,9 +17,10 @@
  * - 尺度：scale = displayRadius / k，k = 模型在 scale=1 时的外接半径（实测见 MODEL_RADIUS）。
  * - 土星环：Planet_Saturn.glb **自带环**，所以只对“没有 model 且 ring=true”的行星才叠 Ring.gltf。
  * - 探测器：Probe_Voyager_v1.glb（21 mesh / 600 面）；朝向偏移见 ProbeYawOffsetDeg。
- * - 星空：两个“星点烤进网格”的壳（各 1 draw call、零贴图、天然在远景），见 buildScene 内注释。
+ * - 星空：一张程序化星图贴在贴着相机的四边形背板上（方案 B，2026-09-25 用户拍板；
+ *   每帧由 syncBackdrop 钉到视线前方），见 buildScene 内注释。
  */
-import { Color, Color3, DirectionalLight3D, Model3D, Node3D, Vec3 } from 'Dora';
+import { Color, Color3, DirectionalLight3D, Model3D, Node3D, Texture2D, Vec3 } from 'Dora';
 import { PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
 import { Body, P2, bodyPositionAt } from 'game/Gravity';
 
@@ -140,6 +141,8 @@ export interface GameScene {
 	syncProbe(p: P2): void;
 	/** 把探测器朝向对齐到速度方向（只看平面内方向）。 */
 	faceVelocity(v: P2): void;
+	/** 每帧把星空背板钉到「相机视线前方」（eye/target 来自相机机架的当前帧）。 */
+	syncBackdrop(eye: Vec3.Type, target: Vec3.Type): void;
 	/** 当前探测器节点（供相机读取世界位置）。 */
 	probe: Node3D.Type;
 	/** 行星节点表。 */
@@ -246,31 +249,39 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		print('[escape-velocity] probe bounds unavailable, using fallback radius ' + probeRadius.toFixed(2));
 	}
 
-	// ---- 星空壳（S3.2 选定方案 C2：星点烤进网格）----
-	// 1 draw call / 零贴图 / 深度天然正确（壳半径 120–380，远在行星与轨迹之后）。
-	// ⚠️ 星空**不吃光照**（用 emissive），否则方向光会让它变暗变色；
-	//    也**不要**放大 scale（实测距离 >400 的 Model3D 不可见）。
-	const shell = Model3D('Assets/Model/StarShell.gltf');
-	if (shell !== undefined) {
-		const sm = shell.getMaterial(0);
-		if (sm !== undefined) {
-			sm.baseColor = Color(255, 255, 255, 255);
-			sm.emissive = Color3(0xffffff);
-			sm.roughness = 1.0;
-			sm.metallic = 0.0;
-		}
-		root.addChild(shell);
-	}
-	const shellBright = Model3D('Assets/Model/StarShellBright.gltf');
-	if (shellBright !== undefined) {
-		const bm = shellBright.getMaterial(0);
-		if (bm !== undefined) {
+	// ---- 星空背板（2026-09-25 用户拍板：方案 B「程序化星图贴图」，放弃 C2 星点壳）----
+	// 素材全部由 Test/gen_star_assets.py 代码生成：Assets/Image/starfield.png（2048×1024）
+	// + Assets/Model/StarQuad.gltf（顶点 ±1 ⇒ **scale = 半边长**；材质自带 doubleSided）。
+	// 相比 C2：72 KB vs 180 KB、2 三角面 vs 1940、软圆点 vs 横屏下的白色方块/菱形。
+	// 项目约束相应放宽：「零贴图」→「素材全部由本仓库代码生成，不引入第三方素材」。
+	//
+	// 为什么每帧贴着相机放（见下方 syncBackdrop）：相机距离在 [25,100] 内随包围盒变化、注视点也会移动，
+	// 固定位置的背板会被移出画面或露出边缘；钉在「视线前方 600」相当于把星空放在无穷远（无视差），
+	// 任何距离/宽高比下都正好铺满（半边长 560 > 需求 600·tan(fov/2)·1.645 ≈ 490）。
+	// 远裁剪面实测 >2000（Test/FarPlaneProbe，2026-09-25；早前"z=-900 不可见"的结论是误报）。
+	const BackdropDist = 600;
+	const BackdropHalf = 560;
+	let backdropNode: Model3D.Type | undefined = undefined;
+	const backdrop = Model3D('Assets/Model/StarQuad.gltf');
+	if (backdrop !== undefined) {
+		const tex = Texture2D('Assets/Image/starfield.png');
+		const bm = backdrop.getMaterial(0);
+		if (bm !== undefined && tex !== undefined) {
+			// ⚠️ 星空**不吃光照**：双槽都给贴图 + emissive 白，否则方向光/环境光会把它抬亮变色
+			bm.setBaseColorTexture(tex);
+			bm.setEmissiveTexture(tex);
 			bm.baseColor = Color(255, 255, 255, 255);
-			bm.emissive = Color3(0xfff2d0);
+			bm.emissive = Color3(0xffffff);
 			bm.roughness = 1.0;
 			bm.metallic = 0.0;
 		}
-		root.addChild(shellBright);
+		backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf);
+		// 相机从斜上方俯视：把四边形绕 X 转到⊥视线。符号 -45 是按右手系推的——
+		// 首次截图必须确认背板真的铺满画面；若只见一条细缝就是转成了 90°，翻成 +45。
+		backdrop.angleX = -45;
+		backdrop.position = Vec3(0, 0, -BackdropDist);
+		root.addChild(backdrop);
+		backdropNode = backdrop;
 	}
 
 	// ---- 同步函数 ----
@@ -296,9 +307,21 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		probeNode.angleY = Math.atan2(-wz, wx) * 180 / Math.PI + ProbeYawOffsetDeg;
 	};
 
+	// 每帧把背板钉到「相机视线前方 BackdropDist」处（eye/target 来自机架当前帧；理由见上方背板注释）
+	const syncBackdrop = (eye: Vec3.Type, target: Vec3.Type): void => {
+		if (backdropNode === undefined) return;
+		const dx = target.x - eye.x;
+		const dy = target.y - eye.y;
+		const dz = target.z - eye.z;
+		const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+		if (len < 1e-6) return;
+		const s = BackdropDist / len;
+		backdropNode.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s);
+	};
+
 	// 初始化到 t=0 的姿态
 	syncBodies(0);
 	syncProbe(probeStart);
 
-	return { syncBodies, syncProbe, faceVelocity, probe: probeNode, planets, probeRadius };
+	return { syncBodies, syncProbe, faceVelocity, syncBackdrop, probe: probeNode, planets, probeRadius };
 }

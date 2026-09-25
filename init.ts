@@ -22,7 +22,7 @@ import { App, Camera3D, Director, Node, Node3D, Size, Vec2, View, threadLoop } f
 import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
-import { createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
+import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
 import { AimInput, AimResult, LevelSelect, ResultPanel, createAimInput, createLevelSelect, createResultPanel } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
 import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
@@ -37,6 +37,8 @@ interface LevelRuntime {
 	camera: Camera3D.Type;
 	game: Game;
 	aim: AimInput;
+	/** 本关的轨迹视图（预测线/尾迹的 DrawNode 挂在关卡 2D 层上）。 */
+	trajectory: TrajectoryView;
 }
 
 /** 关卡槽位：`built` 与 `runtime` 分开，避免出现带空洞的数组（手册 §7.2）。 */
@@ -203,13 +205,14 @@ if (levelTotal <= 0) {
 		aim.onDrag((a: AimResult): void => { game.onAimDrag(a); });
 		aim.onRelease((a: AimResult): void => { game.launch(a.velocity); });
 
-		const runtime: LevelRuntime = {
+			const runtime: LevelRuntime = {
 			index,
 			name: levelNames[index],
 			world,
 			camera,
 			game,
 			aim,
+			trajectory,
 		};
 		slot.built = true;
 		slot.runtime = runtime;
@@ -297,6 +300,10 @@ if (levelTotal <= 0) {
 			if (slot.runtime !== undefined) {
 				slot.runtime.world.visible = false;
 				slot.runtime.aim.setEnabled(false);
+				// ⚠️ 轨迹的 DrawNode 挂在**关卡 2D 层**上（不随 runtime 消失），不清的话
+				// 旧视口算出的线会残留到新视口（2026-09-25 横屏截图实测：画面左侧多出一段游离的旧预测线）
+				slot.runtime.trajectory.clearPrediction();
+				slot.runtime.trajectory.clearTrail();
 			}
 			slot.built = false;
 			slot.runtime = undefined;

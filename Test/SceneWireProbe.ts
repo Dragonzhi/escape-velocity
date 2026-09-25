@@ -2,7 +2,7 @@
  * S3.1 接线探针：用**真实关卡数据**逐关 buildScene，逐关读 view.stats。
  *
  * 为什么：截图只能证明“看起来对”，逐关三角面数能证明“这一关确实加载了这几个模型”
- * （期望值 = 该关各模型三角面 + 探测器 164 + 星空壳 1940）。
+ * （期望值 = 该关各模型三角面 + 探测器 600 + 星空背板 2）。
  *
  * 产出：.agent/test-results/s31-wire.txt（逐关 stats + 期望值对照）
  * 用法：作为入口 POST /run，{"file":"<proj>\\Test\\SceneWireProbe","asProj":false}
@@ -32,7 +32,7 @@ const TRIS: Tri[] = [
 	{ name: 'Planet_Jupiter', tris: 320 }, { name: 'Planet_Saturn', tris: 464 },
 	{ name: 'Probe_Voyager_v1', tris: 600 }, // 会话 22 期间该 .glb 被替换：21 mesh / 600 面（原 5/164）
 	{ name: 'Sphere.gltf', tris: 120 }, { name: 'Ring.gltf', tris: 16 },
-	{ name: 'StarShell.gltf', tris: 1800 }, { name: 'StarShellBright.gltf', tris: 140 },
+	{ name: 'StarQuad.gltf', tris: 2 }, // 星空背板（方案 B，2026-09-25 起；替代 1940 面的星点壳）
 ];
 
 function triOf(name: string): number {
@@ -84,8 +84,8 @@ for (let i = 0; i < total; i++) {
 	}
 	worlds.push(world);
 
-	// 期望三角面：行星模型 + 探测器 + 星空壳（旧 Ring 只在“没有 model 且 ring”时才会加）
-	let exp = triOf('Probe_Voyager_v1') + triOf('StarShell.gltf') + triOf('StarShellBright.gltf');
+	// 期望三角面：行星模型 + 探测器 + 星空背板（旧 Ring 只在“没有 model 且 ring”时才会加）
+	let exp = triOf('Probe_Voyager_v1') + triOf('StarQuad.gltf');
 	const names: string[] = [];
 	for (let k = 0; k < def.visuals.length; k++) {
 		const m = def.visuals[k].model;
@@ -105,8 +105,9 @@ for (let i = 0; i < total; i++) {
 	rigs.push({ index: i, poses: poses });
 	scene.syncBodies(0);
 	scene.syncProbe(def.probeStart);
-	const frame: RigFrame = rig.step([def.probeStart, ...poses]);
+	const frame: RigFrame = rig.step([def.probeStart, ...poses], 2.13);
 	rig.apply(camera, frame);
+	scene.syncBackdrop(frame.eye, frame.target); // 背板与游戏同款同步（钉到视线前方）
 }
 
 lines.push('worlds=' + worlds.length.toFixed(0) + '/' + total.toFixed(0));
@@ -115,7 +116,7 @@ Content.save(marker, lines.join('\n'));
 /** 逐个资产单独放一个场景：用来确认“每关固定多出来的三角面”是不是常数开销。 */
 const assetFiles: string[] = [
 	'Planet_Mars.glb', 'Planet_Venus.glb', 'Planet_Jupiter.glb', 'Planet_Saturn.glb', 'Planet_Neptune.glb',
-	'Probe_Voyager_v1.glb', 'Probe.gltf', 'Sphere.gltf', 'Ring.gltf', 'StarShell.gltf', 'StarShellBright.gltf',
+	'Probe_Voyager_v1.glb', 'Probe.gltf', 'Sphere.gltf', 'Ring.gltf', 'StarQuad.gltf',
 ];
 const assetNodes: Node3D.Type[] = [];
 for (let i = 0; i < assetFiles.length; i++) {

@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
-"""一次性资产生成器（Agent 侧运行，不进运行时）：S3 星空候选 B/C 的素材。
+"""星空资产生成器（Agent 侧运行，不进运行时）。
 
-产出：
-  Assets/Model/StarShell.gltf        单个网格烤进 N 个四边形（远处球壳，1 个 draw call）—— **已采用（方案 C2）**
-  Assets/Model/StarShellBright.gltf  同上，少量暖色亮星（再加 1 个 draw call）—— **已采用**
-  Test/starfield.png                 2048x1024 等距圆柱星点图（PIL 程序化绘制，零外部素材）
-  Test/white1x1.png                  1x1 纯白（自定义 shader 的兜底纹理）
-  Test/StarQuad.gltf                 自包含四边形（POSITION+NORMAL+TEXCOORD_0+uint16 索引，base64 data URI）
+**2026-09-25 用户拍板采用方案 B（程序化星空贴图）**，放弃 C2（星点烤进网格壳）：
+B 观感明显更好（软圆点 + 少量带十字光芒的亮星），且 70 KB / 2 三角面 / 1 draw call，
+比 C2（180 KB / 1940 面）更小更省；横屏下 C2 的星点是明显的白色方块/菱形（截图为证）。
+项目约束相应放宽：「零贴图」改为「**素材全部由本仓库代码生成，不引入第三方素材**」。
 
-后三项是**方案 B（把星空贴图贴到一个四边形上）**的素材：2026-09-24 的烟雾测试里 B 也能跑通
-（draws 4→5、三角面 260→262、58–70 KB），但当时选了 C2，所以它们不参与构建、只作为
-"想换 B 时一条命令就能生成"的备份留着。结论与数据见 .agent/test-results/s3-starfield.txt。
+产出（即运行时采用的全部星空素材）：
+  Assets/Image/starfield.png   2048x1024 等距圆柱星点图（PIL 程序化绘制）
+  Assets/Model/StarQuad.gltf   自包含四边形（POSITION+NORMAL+TEXCOORD_0+uint16 索引，base64 data URI）
+                               ⚠️ scale=1 时半边长就是 1（顶点 ±1），所以 **scale = 想要的半边长**
+
+方案 C2 的生成代码（make_shell）已删除；需要时从 git 历史找回（38733a9 版本的本文件）。
+烟雾测试结论与数据：.agent/test-results/s3-starfield.txt。
 
 用法：python Test/gen_star_assets.py
 """
@@ -25,7 +27,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 # ---------------------------------------------------------------- 星点贴图
-def make_starfield(path, w=2048, h=1024, stars=2600, seed=20260924):
+def make_starfield(path, w=1024, h=1024, stars=950, seed=20260924):
+    """程序化星图（贴在 StarQuad 背板上，2026-09-25 起为运行时正式素材）。
+
+    尺寸/密度按**游戏内截图**标定（.agent/test-results/s32-L1-aiming.png，会话 24）：
+    首版 2048x1024 / 2600 颗 / r 0.6-3.4 在游戏里是"雪崩"——满屏 4-10px 的星点互相打架。
+    贴图是 1:1 铺在方形背板上的：1 texel ≈ 2.3 屏幕像素（距离 600、fovY45、视高 1066），
+    所以这里的 r 直接决定屏幕观感：0.3-0.5 → 1-2px 的暗星，0.85-1.4 → 3-4px 的亮星。
+    """
     from PIL import Image, ImageDraw
 
     rng = random.Random(seed)
@@ -34,11 +43,11 @@ def make_starfield(path, w=2048, h=1024, stars=2600, seed=20260924):
 
     for i in range(stars):
         if i < stars * 0.62:
-            r, bright = rng.uniform(0.6, 1.1), rng.randint(60, 130)
+            r, bright = rng.uniform(0.3, 0.5), rng.randint(70, 140)
         elif i < stars * 0.92:
-            r, bright = rng.uniform(1.1, 2.0), rng.randint(130, 210)
+            r, bright = rng.uniform(0.5, 0.85), rng.randint(140, 210)
         else:
-            r, bright = rng.uniform(2.0, 3.4), rng.randint(210, 255)
+            r, bright = rng.uniform(0.85, 1.4), rng.randint(210, 255)
 
         x = rng.uniform(0, w)
         y = math.degrees(math.asin(rng.uniform(-1, 1)))   # 等距圆柱：两极不堆积
@@ -53,17 +62,12 @@ def make_starfield(path, w=2048, h=1024, stars=2600, seed=20260924):
             c = (bright, min(255, int(bright * 0.92)), min(255, int(bright * 0.80)))
 
         d.ellipse([x - r, y - r, x + r, y + r], fill=c)
-        if r > 2.6:  # 亮星带一点十字光芒
-            d.line([x - r * 2.2, y, x + r * 2.2, y], fill=c)
-            d.line([x, y - r * 2.2, x, y + r * 2.2], fill=c)
+        if r > 1.1:  # 少数亮星带十字光芒（首版阈值 2.6 是按 2 倍尺寸定的）
+            d.line([x - r * 2.4, y, x + r * 2.4, y], fill=c)
+            d.line([x, y - r * 2.4, x, y + r * 2.4], fill=c)
 
     img.save(path)
     return img.size
-
-
-def make_white(path):
-    from PIL import Image
-    Image.new("RGB", (1, 1), (255, 255, 255)).save(path)
 
 
 # ---------------------------------------------------------------- glTF
@@ -121,61 +125,8 @@ def make_quad(path):
     write_gltf(path, "StarQuad", positions, normals, uvs, [0, 1, 2, 0, 2, 3], (1.0, 1.0, 1.0))
 
 
-def make_shell(path, count=240, seed=20260924, rmin=200.0, rmax=380.0,
-               smin=1.2, smax=3.6, color=(1.0, 1.0, 1.0)):
-    """把 count 个四边形烤进**一个**网格：球壳分布、法线朝球心、单 draw call。"""
-    rng = random.Random(seed)
-    positions, normals, uvs, indices = [], [], [], []
-
-    for _ in range(count):
-        az = rng.uniform(0, 2 * math.pi)
-        el = math.asin(rng.uniform(-1, 1))
-        r = rng.uniform(rmin, rmax)
-        cx = r * math.cos(el) * math.cos(az)
-        cy = r * math.sin(el)
-        cz = r * math.cos(el) * math.sin(az)
-
-        # 朝球心：法线 n = -(c)/|c|，构造正交基
-        nx, ny, nz = -cx / r, -cy / r, -cz / r
-        upx, upy, upz = 0.0, 1.0, 0.0
-        tx = upy * nz - upz * ny
-        ty = upz * nx - upx * nz
-        tz = upx * ny - upy * nx
-        tl = math.sqrt(tx * tx + ty * ty + tz * tz)
-        if tl < 1e-4:
-            tx, ty, tz = 1.0, 0.0, 0.0
-        else:
-            tx, ty, tz = tx / tl, ty / tl, tz / tl
-        bx = ny * tz - nz * ty
-        by = nz * tx - nx * tz
-        bz = nx * ty - ny * tx
-
-        s = rng.uniform(smin, smax)
-        base = len(positions) // 3
-        for (su, sv) in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-            positions += [cx + (tx * su + bx * sv) * s,
-                          cy + (ty * su + by * sv) * s,
-                          cz + (tz * su + bz * sv) * s]
-            normals += [nx, ny, nz]
-        uvs += [0, 1, 1, 1, 1, 0, 0, 0]
-        indices += [base, base + 1, base + 2, base, base + 2, base + 3]
-
-    write_gltf(path, "StarShell", positions, normals, uvs, indices, color)
-
-
 if __name__ == "__main__":
-    print(make_starfield(os.path.join(HERE, "starfield.png")), "starfield.png")
-    make_white(os.path.join(HERE, "white1x1.png"))
-    print("white1x1.png 1x1")
-    make_quad(os.path.join(HERE, "StarQuad.gltf"))
-    # 星空壳（S3.2，烟雾测试选定 C2：把星点烤进一个网格 = 1 draw call、零贴图、深度天然正确）
-    # 尺寸要按"屏幕像素"反推：距离 r 处的 s 单位张角 ≈ s/r 弧度，视高 1066 px / FOV 45° 时
-    # s=0.30~0.85 @ r=150~380 约等于 1~4 像素 —— 看起来才是星点而不是方块（初版 s=1.2~3.6 约 24 像素，
-    # 截图上是明显的白方块，已按此修正）。
-    # 直接写进 Assets/Model/（模型资产的唯一位置；Test/ 下的副本已删除，避免两处不一致）
-    assets = os.path.join(HERE, "..", "Assets", "Model")
-    make_shell(os.path.join(assets, "StarShell.gltf"), count=900, rmin=150.0, rmax=380.0,
-               smin=0.30, smax=0.85, color=(0.86, 0.89, 1.0))
-    # 少量暖色亮星：给星空层次，代价只是多 1 个 draw call
-    make_shell(os.path.join(assets, "StarShellBright.gltf"), count=70, seed=7, rmin=120.0, rmax=340.0,
-               smin=0.9, smax=1.8, color=(1.0, 0.95, 0.82))
+    assets = os.path.join(HERE, "..", "Assets")
+    os.makedirs(os.path.join(assets, "Image"), exist_ok=True)
+    print(make_starfield(os.path.join(assets, "Image", "starfield.png")), "starfield.png")
+    make_quad(os.path.join(assets, "Model", "StarQuad.gltf"))

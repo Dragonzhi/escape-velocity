@@ -20,16 +20,19 @@ local Content = Dora.Content
 local Path = Dora.Path
 local threadLoop = Dora.threadLoop
 
+-- ⚠️ searchPaths 是 0 基数组、且引擎自带 Script\init.lua 会误中 —— 照 Test/UnitRunner.lua 的写法
 local searchPaths = Content.searchPaths
 local root = nil
-for i = 1, 8 do
+for i = 0, 8 do
   local p = searchPaths[i]
-  if p ~= nil and (Content:exist(Path(p, "init.lua")) or Content:exist(Path(p, "init.ts"))) then
+  if p ~= nil
+    and (Content:exist(Path(p, "init.lua")) or Content:exist(Path(p, "init.ts")))
+    and Content:exist(Path(p, "game", "Scene.lua")) then
     root = p
     break
   end
 end
-if root == nil then root = searchPaths[1] end
+if root == nil then root = searchPaths[0] end
 
 local outDir = Path(root, ".agent/test-results")
 if not Content:exist(outDir) then Content:mkdir(outDir) end

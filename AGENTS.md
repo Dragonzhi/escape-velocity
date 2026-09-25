@@ -28,9 +28,12 @@
    且只在该关 `Aiming` 时开启。子节点可独立命中（父节点不必开触摸）。
 5. **物理确定性**：`game/Gravity.ts` 是纯函数、零引擎依赖；预测线与真实轨迹共用同一个 `simulate`；
    不引入时钟/帧率依赖（固定步长 `Config.PhysicsStep`）。
-6. 不新增运行时依赖；`Assets/*` 由 `Test/gen_shapes.lua` 代码生成；除记忆维护任务外不要动 `.agent/main/*`。
+6. 不新增运行时依赖；`Assets/*` 由仓库内脚本代码生成（`Test/gen_shapes.lua` 几何 + `Test/gen_star_assets.py` 星空贴图，
+   **不引入第三方素材**）；除记忆维护任务外不要动 `.agent/main/*`。
 7. **全屏容器的 `anchor` 必须是 `(0,0)`**：子坐标原点 = 位置 − anchor×尺寸，取 `(0.5,0.5)` 会把整棵子树（含**触摸命中框**）推走半个屏幕 —— 踩过两次（预测线平移半屏、命中框只剩左下象限）。
 8. **不要只在启动时读 `View.size`**：手机浏览器的画布启动后还会变一次，视口变化必须整体重建（`Director.entry.onAppChange(name === 'Size')`）。
+   重建时**必须清掉旧运行时的预测线/尾迹**（`trajectory.clearPrediction/clearTrail`——DrawNode 挂在关卡 2D 层上，不随 runtime 消失；
+   横屏截图实测残留一段游离旧线）。
 9. **Windows PowerShell 脚本用 CRLF**（here-string 在纯 LF 下解析失败，`tools/input-inject/set-window.ps1` 踩过）。
 
 ## 验证纪律（写了代码 ≠ 通过）
@@ -56,12 +59,13 @@ python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"
 `client_x = view_x·(clientW/W)`、`client_y = (H−view_y)·(clientH/H)`（`set-window.ps1` 改窗口后 W/H 会变）。
 回归模板：点选关(674,191) → 拖动(674,600→690,320) → 日志应依次出现 `enter L1`、`phase -> Flying`、`result = ...`、`phase -> Aiming`（点重试 674,470）。
 真机多点触控/手势差异仍建议人工抽查；日志请用 `POST /log` 读（`log.txt` 有缓冲与轮转）。
-⚠️ **单文件入口的搜索根陷阱**：`POST /run {asProj:false}` 时引擎把**入口文件所在目录**当搜索根（`Content.searchPaths[0]` = `<proj>/Test`）——于是 `require("game.Scene")`、`Model3D("Assets/...")` 全部解析失败，标记文件也会落到 `Test/.agent/...`。**正确做法**：遍历 `Content.searchPaths` 找**含 `init.lua`** 的那一个当项目根（照 `Test/UnitRunner.lua`），并用绝对路径访问 Assets。
+⚠️ **单文件入口的搜索根陷阱**：`POST /run {asProj:false}` 时引擎把**入口文件所在目录**当搜索根（`Content.searchPaths[0]` = `<proj>/Test`）——于是 `require("game.Scene")`、`Model3D("Assets/...")` 全部解析失败，标记文件也会落到 `Test/.agent/...`。**正确做法**：遍历 `Content.searchPaths`（**0 基**数组，内容随引擎状态变化）找**同时含 `init.lua` 与 `game/Scene.lua`** 的那一个当项目根
+（照 `Test/UnitRunner.lua`）。从 1 扫起会漏掉 `[0]`；只认 `init.lua` 会误中引擎自带的 `Script\init.lua` —— 都实测踩过。并用绝对路径访问 Assets。
 
 ## 交付习惯
 
 - 完成一个小节 → 更新 `PROGRESS.md`（已实现 / 已验证的证据 / 未验证 / 下一步）→ 一次语义化 git 提交。
 - 提交前清理：不带入 `.agent/test-results/*`、临时日志、密钥或个人配置。
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
-- ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 48 个文件，
+- ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 39 个文件，
   以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=7 failed=0 total=7`（169 条断言）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。

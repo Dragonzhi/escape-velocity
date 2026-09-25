@@ -54,8 +54,7 @@ local TRIS = { -- 29
 	{name = "Probe_Voyager_v1", tris = 600}, -- 33
 	{name = "Sphere.gltf", tris = 120}, -- 34
 	{name = "Ring.gltf", tris = 16}, -- 34
-	{name = "StarShell.gltf", tris = 1800}, -- 35
-	{name = "StarShellBright.gltf", tris = 140} -- 35
+	{name = "StarQuad.gltf", tris = 2} -- 35
 } -- 35
 local function triOf(name) -- 38
 	do -- 38
@@ -115,7 +114,7 @@ do -- 61
 				goto __continue12 -- 83
 			end -- 83
 			worlds[#worlds + 1] = world -- 85
-			local exp = triOf("Probe_Voyager_v1") + triOf("StarShell.gltf") + triOf("StarShellBright.gltf") -- 88
+			local exp = triOf("Probe_Voyager_v1") + triOf("StarQuad.gltf") -- 88
 			local names = {} -- 89
 			do -- 89
 				local k = 0 -- 90
@@ -151,142 +150,145 @@ do -- 61
 			rigs[#rigs + 1] = {index = i, poses = poses} -- 105
 			scene.syncBodies(0) -- 106
 			scene.syncProbe(def.probeStart) -- 107
-			local frame = rig.step({ -- 108
-				def.probeStart, -- 108
-				table.unpack(poses) -- 108
-			}) -- 108
+			local frame = rig.step( -- 108
+				{ -- 108
+					def.probeStart, -- 108
+					table.unpack(poses) -- 108
+				}, -- 108
+				2.13 -- 108
+			) -- 108
 			rig.apply(camera, frame) -- 109
-		end -- 109
-		::__continue12:: -- 109
+			scene.syncBackdrop(frame.eye, frame.target) -- 110
+		end -- 110
+		::__continue12:: -- 110
 		i = i + 1 -- 63
 	end -- 63
 end -- 63
-lines[#lines + 1] = (("worlds=" .. __TS__NumberToFixed(#worlds, 0)) .. "/") .. __TS__NumberToFixed(total, 0) -- 112
-Content:save( -- 113
-	marker, -- 113
-	table.concat(lines, "\n") -- 113
-) -- 113
+lines[#lines + 1] = (("worlds=" .. __TS__NumberToFixed(#worlds, 0)) .. "/") .. __TS__NumberToFixed(total, 0) -- 113
+Content:save( -- 114
+	marker, -- 114
+	table.concat(lines, "\n") -- 114
+) -- 114
 --- 逐个资产单独放一个场景：用来确认“每关固定多出来的三角面”是不是常数开销。
-local assetFiles = { -- 116
-	"Planet_Mars.glb", -- 117
-	"Planet_Venus.glb", -- 117
-	"Planet_Jupiter.glb", -- 117
-	"Planet_Saturn.glb", -- 117
-	"Planet_Neptune.glb", -- 117
-	"Probe_Voyager_v1.glb", -- 118
-	"Probe.gltf", -- 118
-	"Sphere.gltf", -- 118
-	"Ring.gltf", -- 118
-	"StarShell.gltf", -- 118
-	"StarShellBright.gltf" -- 118
-} -- 118
-local assetNodes = {} -- 120
-do -- 120
-	local i = 0 -- 121
-	while i < #assetFiles do -- 121
-		do -- 121
-			local m = Model3D((string.find(assetFiles[i + 1], ".glb", nil, true) or 0) - 1 > 0 and "Assets/Model/" .. assetFiles[i + 1] or "Assets/Model/" .. assetFiles[i + 1]) -- 122
-			if m == nil then -- 122
-				lines[#lines + 1] = "ASSET_FAIL " .. assetFiles[i + 1] -- 123
-				goto __continue23 -- 123
-			end -- 123
-			m.visible = false -- 124
-			Director.entry:addChild(m) -- 125
-			assetNodes[#assetNodes + 1] = m -- 126
-		end -- 126
-		::__continue23:: -- 126
-		i = i + 1 -- 121
-	end -- 121
-end -- 121
-lines[#lines + 1] = (("assetNodes=" .. __TS__NumberToFixed(#assetNodes, 0)) .. "/") .. __TS__NumberToFixed(#assetFiles, 0) -- 128
-Content:save( -- 129
-	marker, -- 129
-	table.concat(lines, "\n") -- 129
-) -- 129
-local cursor = 0 -- 131
-local settle = 0 -- 132
-local settle2 = 0 -- 133
-local phase = 0 -- 134
-threadLoop(function() -- 136
-	if phase == 2 then -- 136
-		if settle2 == 0 then -- 136
-			do -- 136
-				local i = 0 -- 139
-				while i < #worlds do -- 139
-					worlds[i + 1].visible = false -- 139
-					i = i + 1 -- 139
-				end -- 139
-			end -- 139
-			do -- 139
+local assetFiles = { -- 117
+	"Planet_Mars.glb", -- 118
+	"Planet_Venus.glb", -- 118
+	"Planet_Jupiter.glb", -- 118
+	"Planet_Saturn.glb", -- 118
+	"Planet_Neptune.glb", -- 118
+	"Probe_Voyager_v1.glb", -- 119
+	"Probe.gltf", -- 119
+	"Sphere.gltf", -- 119
+	"Ring.gltf", -- 119
+	"StarQuad.gltf" -- 119
+} -- 119
+local assetNodes = {} -- 121
+do -- 121
+	local i = 0 -- 122
+	while i < #assetFiles do -- 122
+		do -- 122
+			local m = Model3D((string.find(assetFiles[i + 1], ".glb", nil, true) or 0) - 1 > 0 and "Assets/Model/" .. assetFiles[i + 1] or "Assets/Model/" .. assetFiles[i + 1]) -- 123
+			if m == nil then -- 123
+				lines[#lines + 1] = "ASSET_FAIL " .. assetFiles[i + 1] -- 124
+				goto __continue23 -- 124
+			end -- 124
+			m.visible = false -- 125
+			Director.entry:addChild(m) -- 126
+			assetNodes[#assetNodes + 1] = m -- 127
+		end -- 127
+		::__continue23:: -- 127
+		i = i + 1 -- 122
+	end -- 122
+end -- 122
+lines[#lines + 1] = (("assetNodes=" .. __TS__NumberToFixed(#assetNodes, 0)) .. "/") .. __TS__NumberToFixed(#assetFiles, 0) -- 129
+Content:save( -- 130
+	marker, -- 130
+	table.concat(lines, "\n") -- 130
+) -- 130
+local cursor = 0 -- 132
+local settle = 0 -- 133
+local settle2 = 0 -- 134
+local phase = 0 -- 135
+threadLoop(function() -- 137
+	if phase == 2 then -- 137
+		if settle2 == 0 then -- 137
+			do -- 137
 				local i = 0 -- 140
-				while i < #assetNodes do -- 140
-					assetNodes[i + 1].visible = i == cursor -- 140
+				while i < #worlds do -- 140
+					worlds[i + 1].visible = false -- 140
 					i = i + 1 -- 140
 				end -- 140
 			end -- 140
-			settle2 = 1 -- 141
-			return false -- 142
-		end -- 142
-		settle2 = settle2 + 1 -- 144
-		if settle2 < 15 then -- 144
-			return false -- 145
-		end -- 145
-		settle2 = 0 -- 146
-		local st2 = Director.entry.stats -- 147
-		local bare = __TS__StringReplace(assetFiles[cursor + 1], ".glb", "") -- 148
-		lines[#lines + 1] = (((((((("ASSET " .. assetFiles[cursor + 1]) .. "  measuredTris=") .. __TS__NumberToFixed(st2.triangles, 0)) .. "  expected=") .. __TS__NumberToFixed( -- 149
-			triOf(bare), -- 150
-			0 -- 150
-		)) .. "  draws=") .. __TS__NumberToFixed(st2.drawCalls, 0)) .. "  visible=") .. __TS__NumberToFixed(st2.visibleVisuals, 0) -- 150
-		Content:save( -- 152
-			marker, -- 152
-			table.concat(lines, "\n") -- 152
-		) -- 152
-		cursor = cursor + 1 -- 153
-		if cursor >= #assetNodes then -- 153
-			lines[#lines + 1] = "RESULT=PASS" -- 155
-			Content:save( -- 156
-				marker, -- 156
-				table.concat(lines, "\n") -- 156
-			) -- 156
-			return true -- 157
-		end -- 157
-		return false -- 159
-	end -- 159
-	if phase == 0 then -- 159
-		do -- 159
-			local i = 0 -- 162
-			while i < #worlds do -- 162
-				worlds[i + 1].visible = i == cursor -- 162
-				i = i + 1 -- 162
-			end -- 162
-		end -- 162
-		if cursor < #cams then -- 162
-			Director:pushCamera(cams[cursor + 1]) -- 164
-		end -- 164
-		phase = 1 -- 165
-		settle = 0 -- 166
-		return false -- 167
-	end -- 167
-	settle = settle + 1 -- 169
-	if settle < 30 then -- 169
-		return false -- 171
-	end -- 171
-	local stats = Director.entry.stats -- 172
-	local exp = expected[cursor + 1] -- 173
-	local got = stats.triangles -- 174
-	lines[#lines + 1] = (((((((((labels[cursor + 1] .. "  expected=") .. __TS__NumberToFixed(exp, 0)) .. "  measured=") .. __TS__NumberToFixed(got, 0)) .. "  draws=") .. __TS__NumberToFixed(stats.drawCalls, 0)) .. "  visible=") .. __TS__NumberToFixed(stats.visibleVisuals, 0)) .. "  match=") .. tostring(exp == got) -- 175
-	Content:save( -- 178
-		marker, -- 178
-		table.concat(lines, "\n") -- 178
-	) -- 178
-	cursor = cursor + 1 -- 179
-	if cursor >= #worlds then -- 179
-		phase = 2 -- 181
-		cursor = 0 -- 182
-		return false -- 183
-	end -- 183
-	phase = 0 -- 185
-	return false -- 186
-end) -- 136
-return ____exports -- 136
+			do -- 140
+				local i = 0 -- 141
+				while i < #assetNodes do -- 141
+					assetNodes[i + 1].visible = i == cursor -- 141
+					i = i + 1 -- 141
+				end -- 141
+			end -- 141
+			settle2 = 1 -- 142
+			return false -- 143
+		end -- 143
+		settle2 = settle2 + 1 -- 145
+		if settle2 < 15 then -- 145
+			return false -- 146
+		end -- 146
+		settle2 = 0 -- 147
+		local st2 = Director.entry.stats -- 148
+		local bare = __TS__StringReplace(assetFiles[cursor + 1], ".glb", "") -- 149
+		lines[#lines + 1] = (((((((("ASSET " .. assetFiles[cursor + 1]) .. "  measuredTris=") .. __TS__NumberToFixed(st2.triangles, 0)) .. "  expected=") .. __TS__NumberToFixed( -- 150
+			triOf(bare), -- 151
+			0 -- 151
+		)) .. "  draws=") .. __TS__NumberToFixed(st2.drawCalls, 0)) .. "  visible=") .. __TS__NumberToFixed(st2.visibleVisuals, 0) -- 151
+		Content:save( -- 153
+			marker, -- 153
+			table.concat(lines, "\n") -- 153
+		) -- 153
+		cursor = cursor + 1 -- 154
+		if cursor >= #assetNodes then -- 154
+			lines[#lines + 1] = "RESULT=PASS" -- 156
+			Content:save( -- 157
+				marker, -- 157
+				table.concat(lines, "\n") -- 157
+			) -- 157
+			return true -- 158
+		end -- 158
+		return false -- 160
+	end -- 160
+	if phase == 0 then -- 160
+		do -- 160
+			local i = 0 -- 163
+			while i < #worlds do -- 163
+				worlds[i + 1].visible = i == cursor -- 163
+				i = i + 1 -- 163
+			end -- 163
+		end -- 163
+		if cursor < #cams then -- 163
+			Director:pushCamera(cams[cursor + 1]) -- 165
+		end -- 165
+		phase = 1 -- 166
+		settle = 0 -- 167
+		return false -- 168
+	end -- 168
+	settle = settle + 1 -- 170
+	if settle < 30 then -- 170
+		return false -- 172
+	end -- 172
+	local stats = Director.entry.stats -- 173
+	local exp = expected[cursor + 1] -- 174
+	local got = stats.triangles -- 175
+	lines[#lines + 1] = (((((((((labels[cursor + 1] .. "  expected=") .. __TS__NumberToFixed(exp, 0)) .. "  measured=") .. __TS__NumberToFixed(got, 0)) .. "  draws=") .. __TS__NumberToFixed(stats.drawCalls, 0)) .. "  visible=") .. __TS__NumberToFixed(stats.visibleVisuals, 0)) .. "  match=") .. tostring(exp == got) -- 176
+	Content:save( -- 179
+		marker, -- 179
+		table.concat(lines, "\n") -- 179
+	) -- 179
+	cursor = cursor + 1 -- 180
+	if cursor >= #worlds then -- 180
+		phase = 2 -- 182
+		cursor = 0 -- 183
+		return false -- 184
+	end -- 184
+	phase = 0 -- 186
+	return false -- 187
+end) -- 137
+return ____exports -- 137
