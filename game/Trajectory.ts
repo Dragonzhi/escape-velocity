@@ -45,7 +45,16 @@ export function projectPolyline(points: P2[], y: number, basis: CameraBasis, ori
 		};
 		const proj = projectPrepared(world, basis);
 		if (proj === undefined) continue;
-		out.push(Vec2(proj.x + originX, proj.y + originY));
+		const x = proj.x + originX;
+		const yy = proj.y + originY;
+		// ⚠️ 相机 lerp 期间（重试/重进关卡）采样点可能掠过相机附近：vz→0 时投影坐标
+		//    会爆到 ±1e5 像素以上 ⇒ 虚线走笔卡死 + GPU 挂在巨型三角形上（2026-09-25 用户
+		//    卡死实测：帧率塌到 2fps 后引擎崩溃）。钳到屏幕最大边的 5 倍——远超屏外即可。
+		const limit = Math.max(View.size.width, View.size.height) * 5;
+		out.push(Vec2(
+			x > limit ? limit : (x < -limit ? -limit : x),
+			yy > limit ? limit : (yy < -limit ? -limit : yy),
+		));
 	}
 	return out;
 }
@@ -184,6 +193,10 @@ function drawDashed(
 	dashOn: number,
 	dashOff: number,
 ): void {
+	// 单段长度上限（像素）：超过即视为投影退化，跳过不画。
+	// ⚠️ 阈值必须紧（800px）：抽稀后正常段长只有 5-50px；阈值松了（如 3×对角线）时
+	//    lerp 期间几十个巨型段 × 每段数百次虚线迭代 = 每帧 8 万+ 顶点 => GPU TDR 引擎崩溃（实测）。
+	const maxSeg = 800;
 	draw.clear();
 	const n = verts.length;
 	if (n < 2) return;
@@ -207,7 +220,8 @@ function drawDashed(
 		const ax = verts[i - 1].x, ay = verts[i - 1].y;
 		const bx = verts[i].x, by = verts[i].y;
 		const len = segLen[i - 1];
-		if (len < 1e-3) continue;
+		// 退化段（点掠过相机附近）直接跳过：走笔要跑 len/周期 次迭代，巨型段 = 卡死
+		if (len < 1e-3 || len > maxSeg) continue;
 		let s = 0;
 		while (s < len - 1e-3) {
 			const c = pen % cycle;
@@ -246,12 +260,16 @@ function drawComet(
 	if (n < 2) return;
 	const tailRadius = headRadius * 0.15;
 	const glowRadius = headRadius * glowRadiusFactor;
+	const maxSeg = 800; // 同 drawDashed：阈值必须紧，见其注释
 	for (let i = 1; i < n; i++) {
 		// u: 0 = 尾（最老）→ 1 = 头（最新）
 		const u = i / (n - 1);
 		const up = Math.pow(u, 1.2);
 		const r = tailRadius + (headRadius - tailRadius) * up;
 		const al = headAlpha * Math.pow(u, 1.6);
+		const dxv = verts[i].x - verts[i - 1].x;
+		const dyv = verts[i].y - verts[i - 1].y;
+		if (dxv * dxv + dyv * dyv > maxSeg * maxSeg) continue; // 退化段跳过（同 drawDashed）
 		draw.drawSegment(verts[i - 1], verts[i], r * glowRadiusFactor, segColor(rgb, glowAlpha * al));
 		draw.drawSegment(verts[i - 1], verts[i], r, segColor(rgb, al));
 	}
