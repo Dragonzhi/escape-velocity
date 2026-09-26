@@ -24,7 +24,7 @@
  *   每帧由 syncBackdrop 钉到视线前方），见 buildScene 内注释。
  */
 import { Color, Color3, Content, DirectionalLight3D, Model3D, Node3D, Texture2D, Vec3 } from 'Dora';
-import { PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
+import { OrbitRingTintHex, PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
 import { Body, P2, bodyPositionAt } from 'game/Gravity';
 
 /** 平面坐标 → 世界坐标（y 恒为 0，黄道面水平）。 */
@@ -468,6 +468,32 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		}
 
 		planets.push({ body: bodyModel, ring: ringNode, def });
+	}
+
+	// ---- 行星轨道圈（S3.9）----
+	// 用户要求：行星会运动 ⇒ 得有轨道指示；"不起眼的灰就行"。
+	// ⚠️ 必须用 3D 网格而不是 2D 画线：2D 永远盖在 3D 之上，行星挡不住线（会话 27 的用户反馈）。
+	// 半径 = 世界单位、**不缩放**（缩放会把线宽一起放大）；资产由 Test/gen_level_orbits.py
+	// 从 game/LevelData.ts 的 ORBIT 表生成，所以改轨道半径后要重跑那个脚本。
+	for (let i = 0; i < bodies.length; i++) {
+		const def = bodies[i];
+		if (def.orbitRadius <= 0) continue;
+		const ringPath = 'Assets/Model/OrbitRing_' + def.orbitRadius.toFixed(0) + '.gltf';
+		// ⚠️ Model3D 遇到不存在的文件会**抛异常**（手册 §5 的坑），所以先存在性检查。
+		if (!Content.exist(ringPath)) continue;
+		const orbitNode = Model3D(ringPath);
+		if (orbitNode === undefined) continue;
+		let oi = 0;
+		while (oi < 8) {
+			const om = orbitNode.getMaterial(oi);
+			if (om === undefined) break;
+			// ⚠️ tstl：Lua 5.3+ 没有算术右移，`>>` 会直接编译失败（TS100026）—— 拆通道要用 `>>>`
+om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) & 0xff, OrbitRingTintHex & 0xff, 255);
+			oi += 1;
+		}
+		const oc = planeToWorld(def.orbitCenter, 0);
+		orbitNode.position = Vec3(oc.x, oc.y, oc.z);
+		root.addChild(orbitNode);
 	}
 
 	// ---- 地球（家园锚点，会话 25 用户需求“游戏里需要添加一个地球”）----

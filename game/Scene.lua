@@ -1,4 +1,6 @@
 -- [ts]: Scene.ts
+local ____lualib = require("lualib_bundle") -- 1
+local __TS__NumberToFixed = ____lualib.__TS__NumberToFixed -- 1
 local ____exports = {} -- 1
 local ____Dora = require("Dora") -- 26
 local Color = ____Dora.Color -- 26
@@ -10,6 +12,7 @@ local Node3D = ____Dora.Node3D -- 26
 local Texture2D = ____Dora.Texture2D -- 26
 local Vec3 = ____Dora.Vec3 -- 26
 local ____Config = require("game.Config") -- 27
+local OrbitRingTintHex = ____Config.OrbitRingTintHex -- 27
 local PlaneToWorldX = ____Config.PlaneToWorldX -- 27
 local PlaneToWorldZ = ____Config.PlaneToWorldZ -- 27
 local ____Gravity = require("game.Gravity") -- 28
@@ -291,78 +294,111 @@ function ____exports.buildScene(options) -- 401
 			i = i + 1 -- 418
 		end -- 418
 	end -- 418
-	if options.home ~= nil then -- 418
-		local earth = Model3D("Assets/Model/Planet_Earth.glb") -- 478
-		if earth ~= nil then -- 478
-			local ke = ____exports.modelRadius("Planet_Earth") -- 480
-			local hr = options.homeRadius ~= nil and options.homeRadius or 1.15 -- 481
-			local es = hr / ke -- 482
-			earth.scale = Vec3(es, es, es) -- 483
-			local emi = 0 -- 484
-			while emi < 64 do -- 484
-				local em = earth:getMaterial(emi) -- 486
-				if em == nil then -- 486
-					break -- 487
-				end -- 487
-				em.baseColor = Color(110, 170, 235, 255) -- 488
-				em.emissive = Color3(792098) -- 490
-				emi = emi + 1 -- 491
-			end -- 491
-			earth.position = ____exports.planeToWorld(options.home, 0) -- 493
-			root:addChild(earth) -- 494
-		end -- 494
-	end -- 494
-	local probe = ____exports.createProbe(root, {scale = options.probeScale, probePath = options.probePath, bodyPath = options.probeBodyPath, antennaPath = options.probeAntennaPath}) -- 504
-	if probe == nil then -- 504
-		return nil -- 510
-	end -- 510
-	local probeNode = probe.node -- 511
-	local antennaModel = probe.antenna -- 512
-	local probeRadius = probe.radius -- 513
-	local bodyYawDeg = 0 -- 516
-	local backdrop = ____exports.createStarBackdrop(root) -- 520
-	local function syncBodies(t) -- 523
-		for ____, p in ipairs(planets) do -- 524
-			local wp = ____exports.planeToWorld( -- 525
-				bodyPositionAt(p.def, t), -- 525
-				0 -- 525
-			) -- 525
-			p.body.position = wp -- 526
-			if p.ring ~= nil then -- 526
-				p.ring.position = wp -- 527
-			end -- 527
-		end -- 527
-	end -- 523
-	local function syncProbe(p) -- 531
-		probeNode.position = ____exports.planeToWorld(p, 0) -- 532
-		if antennaModel ~= nil and options.home ~= nil then -- 532
-			____exports.pointAntenna(antennaModel, p, options.home, bodyYawDeg) -- 538
-		end -- 538
-	end -- 531
-	local function faceVelocity(v) -- 545
-		local yaw = ____exports.probeYawForVelocity(v) -- 546
-		if yaw == nil then -- 546
-			return -- 547
-		end -- 547
-		bodyYawDeg = yaw -- 548
-		probeNode.angleY = bodyYawDeg -- 549
-	end -- 545
-	local function syncBackdrop(eye, target) -- 553
-		if backdrop ~= nil then -- 553
-			backdrop:sync(eye, target) -- 554
-		end -- 554
-	end -- 553
-	syncBodies(0) -- 558
-	syncProbe(probeStart) -- 559
-	return { -- 561
-		syncBodies = syncBodies, -- 562
-		syncProbe = syncProbe, -- 563
-		faceVelocity = faceVelocity, -- 564
-		syncBackdrop = syncBackdrop, -- 565
-		probe = probeNode, -- 566
-		antenna = antennaModel, -- 567
-		planets = planets, -- 568
-		probeRadius = probeRadius -- 569
-	} -- 569
+	do -- 418
+		local i = 0 -- 478
+		while i < #bodies do -- 478
+			do -- 478
+				local def = bodies[i + 1] -- 479
+				if def.orbitRadius <= 0 then -- 479
+					goto __continue40 -- 480
+				end -- 480
+				local ringPath = ("Assets/Model/OrbitRing_" .. __TS__NumberToFixed(def.orbitRadius, 0)) .. ".gltf" -- 481
+				if not Content:exist(ringPath) then -- 481
+					goto __continue40 -- 483
+				end -- 483
+				local orbitNode = Model3D(ringPath) -- 484
+				if orbitNode == nil then -- 484
+					goto __continue40 -- 485
+				end -- 485
+				local oi = 0 -- 486
+				while oi < 8 do -- 486
+					local om = orbitNode:getMaterial(oi) -- 488
+					if om == nil then -- 488
+						break -- 489
+					end -- 489
+					om.baseColor = Color((OrbitRingTintHex & 4294967295) >> 16 & 255, (OrbitRingTintHex & 4294967295) >> 8 & 255, OrbitRingTintHex & 255, 255) -- 491
+					oi = oi + 1 -- 492
+				end -- 492
+				local oc = ____exports.planeToWorld(def.orbitCenter, 0) -- 494
+				orbitNode.position = Vec3(oc.x, oc.y, oc.z) -- 495
+				root:addChild(orbitNode) -- 496
+			end -- 496
+			::__continue40:: -- 496
+			i = i + 1 -- 478
+		end -- 478
+	end -- 478
+	if options.home ~= nil then -- 478
+		local earth = Model3D("Assets/Model/Planet_Earth.glb") -- 504
+		if earth ~= nil then -- 504
+			local ke = ____exports.modelRadius("Planet_Earth") -- 506
+			local hr = options.homeRadius ~= nil and options.homeRadius or 1.15 -- 507
+			local es = hr / ke -- 508
+			earth.scale = Vec3(es, es, es) -- 509
+			local emi = 0 -- 510
+			while emi < 64 do -- 510
+				local em = earth:getMaterial(emi) -- 512
+				if em == nil then -- 512
+					break -- 513
+				end -- 513
+				em.baseColor = Color(110, 170, 235, 255) -- 514
+				em.emissive = Color3(792098) -- 516
+				emi = emi + 1 -- 517
+			end -- 517
+			earth.position = ____exports.planeToWorld(options.home, 0) -- 519
+			root:addChild(earth) -- 520
+		end -- 520
+	end -- 520
+	local probe = ____exports.createProbe(root, {scale = options.probeScale, probePath = options.probePath, bodyPath = options.probeBodyPath, antennaPath = options.probeAntennaPath}) -- 530
+	if probe == nil then -- 530
+		return nil -- 536
+	end -- 536
+	local probeNode = probe.node -- 537
+	local antennaModel = probe.antenna -- 538
+	local probeRadius = probe.radius -- 539
+	local bodyYawDeg = 0 -- 542
+	local backdrop = ____exports.createStarBackdrop(root) -- 546
+	local function syncBodies(t) -- 549
+		for ____, p in ipairs(planets) do -- 550
+			local wp = ____exports.planeToWorld( -- 551
+				bodyPositionAt(p.def, t), -- 551
+				0 -- 551
+			) -- 551
+			p.body.position = wp -- 552
+			if p.ring ~= nil then -- 552
+				p.ring.position = wp -- 553
+			end -- 553
+		end -- 553
+	end -- 549
+	local function syncProbe(p) -- 557
+		probeNode.position = ____exports.planeToWorld(p, 0) -- 558
+		if antennaModel ~= nil and options.home ~= nil then -- 558
+			____exports.pointAntenna(antennaModel, p, options.home, bodyYawDeg) -- 564
+		end -- 564
+	end -- 557
+	local function faceVelocity(v) -- 571
+		local yaw = ____exports.probeYawForVelocity(v) -- 572
+		if yaw == nil then -- 572
+			return -- 573
+		end -- 573
+		bodyYawDeg = yaw -- 574
+		probeNode.angleY = bodyYawDeg -- 575
+	end -- 571
+	local function syncBackdrop(eye, target) -- 579
+		if backdrop ~= nil then -- 579
+			backdrop:sync(eye, target) -- 580
+		end -- 580
+	end -- 579
+	syncBodies(0) -- 584
+	syncProbe(probeStart) -- 585
+	return { -- 587
+		syncBodies = syncBodies, -- 588
+		syncProbe = syncProbe, -- 589
+		faceVelocity = faceVelocity, -- 590
+		syncBackdrop = syncBackdrop, -- 591
+		probe = probeNode, -- 592
+		antenna = antennaModel, -- 593
+		planets = planets, -- 594
+		probeRadius = probeRadius -- 595
+	} -- 595
 end -- 401
 return ____exports -- 401

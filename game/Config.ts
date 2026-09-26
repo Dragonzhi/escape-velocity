@@ -29,6 +29,12 @@ export const PlaneToWorldX = 1;
 /** 平面纵向坐标 v 映射到世界 Z 的系数。 */
 export const PlaneToWorldZ = 1;
 
+/**
+ * 关卡轨道圈的着色（S3.9）：用户要求"行星要动，所以要有轨道指示，不起眼的灰就行"。
+ * 开场用的是 0x3f5f88（偏蓝、更亮），关卡里要更沉 —— 它是背景参考线，不是 UI。
+ */
+export const OrbitRingTintHex = 0x36404d;
+
 /** 固定物理步长（秒）。固定步长是"同一输入结果一致"的前提。 */
 export const PhysicsStep = 1 / 120;
 
