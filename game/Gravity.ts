@@ -108,6 +108,14 @@ export interface SimResult {
 	outcome: Outcome;
 	/** 采样点（含起点与终点），用于绘制轨迹。 */
 	points: P2[];
+	/**
+	 * 与 `points` 一一对应的**速度向量**（S3.9.2）：载具判据（捕获入轨要算"相对行星的速度"）
+	 * 与 HUD 的读数都需要它。
+	 *
+	 * ⚠️ 为什么不是"让调用方用位置差分去估"：撞毁时推演会在那一帧**截断**，最后一个采样点只跨了
+	 * 半步，差分出来的速度明显偏小 —— 实测把"一头撞进行星"判成了"成功入轨"（rel=34.7 vs 阈值 43.1）。
+	 */
+	velocities: P2[];
 	/** 推演结束时的状态。 */
 	state: ProbeState;
 	/** 撞毁的行星索引；-1 表示未撞毁。 */
@@ -213,6 +221,7 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 	};
 
 	const points: P2[] = [{ x: s.pos.x, y: s.pos.y }];
+	const velocities: P2[] = [{ x: s.vel.x, y: s.vel.y }];
 	let outcome: Outcome = 'running';
 	let hitIndex = -1;
 	let stepsRun = 0;
@@ -248,21 +257,24 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 			outcome = 'crashed';
 			hitIndex = hit;
 			points.push({ x: s.pos.x, y: s.pos.y });
+			velocities.push({ x: s.vel.x, y: s.vel.y });
 			break;
 		}
 
 		if (escape2 > 0 && s.pos.x * s.pos.x + s.pos.y * s.pos.y > escape2) {
 			outcome = 'escaped';
 			points.push({ x: s.pos.x, y: s.pos.y });
+			velocities.push({ x: s.vel.x, y: s.vel.y });
 			break;
 		}
 
 		if (i % sampleEvery === 0) {
 			points.push({ x: s.pos.x, y: s.pos.y });
+			velocities.push({ x: s.vel.x, y: s.vel.y });
 		}
 	}
 
-	return { outcome, points, state: s, hitIndex, stepsRun };
+	return { outcome, points, velocities, state: s, hitIndex, stepsRun };
 }
 
 /**

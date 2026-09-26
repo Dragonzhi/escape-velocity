@@ -6,8 +6,8 @@
  *
  * 输出格式：首行为 `passed` 或 `failed`。
  */
-import { P2, simulate } from 'game/Gravity';
-import { GoalSpec, findGoalIndex, getLevel, levelCount, scaledPlanets } from 'game/LevelData';
+import { Body, P2, distance, simulate } from 'game/Gravity';
+import { GoalSpec, captureThreshold, findGoalIndex, getLevel, goalWaypoints, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
 import { AimMaxSpeed, AimMinSpeed, BrakeShare, PhysicsStep } from 'game/Config';
 import { resolveResult } from 'game/Game';
 
@@ -100,6 +100,54 @@ function testFindGoalIndex(): void {
 	}
 }
 
+
+/** 4) 捕获入轨（S3.9.2）：进环还不够，还得"慢到能被抓住"。 */
+function testCapture(): void {
+	const bodies: Body[] = [
+		{ gm: 4000, radius: 4, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
+	];
+	const goal: GoalSpec = {
+		kind: 'planet', planetIndex: 0, tolerance: 30,
+		chain: [{ planetIndex: 0, tolerance: 30, capture: true }],
+	};
+	const every = 4;
+	const pass = (speed: number, steps: number): number => {
+		const sim = simulate(
+			{ pos: { x: 0, y: 60 }, vel: { x: 0, y: -speed } },
+			bodies,
+			{ steps, dt: PhysicsStep, sampleEvery: every, escapeRadius: 0 },
+		);
+		return findGoalIndex(sim.points, bodies, goal, PhysicsStep * every, 0, sim.velocities);
+	};
+	// 诊断（失败明细里会打出来）：手工走一遍与判据**相同**的规则，报告「模块 vs 手工」
+	const fastIdx = pass(40, 900);
+	const manualWalk = (speed: number, steps: number): string => {
+		const sim = simulate(
+			{ pos: { x: 0, y: 60 }, vel: { x: 0, y: -speed } },
+			bodies,
+			{ steps, dt: PhysicsStep, sampleEvery: every, escapeRadius: 0 },
+		);
+		const limit = sim.points.length - 1;
+		const st = waypointProgress(sim.points, bodies, goal, PhysicsStep * every, 0, undefined, sim.velocities);
+		let best = -1;
+		let bestRel = 0;
+		let bestThr = 0;
+		for (let i = 0; i <= limit; i++) {
+			const d = distance(sim.points[i], { x: 0, y: 0 });
+			if (d < 30) {
+				const rel = relativeSpeedAt(sim.points, i, bodies[0], PhysicsStep * every, 0, limit, sim.velocities);
+				const thr = captureThreshold(bodies[0], d, 1.4142135623730951);
+				if (d <= bodies[0].radius) continue; // 撞上去不叫入轨（与判据同一条规则）
+				if (rel <= thr) { best = i; bestRel = rel; bestThr = thr; break; }
+			}
+		}
+		return `模块 passed=${st.passed} lastIndex=${st.lastIndex}；手工可捕获点=${best}（rel=${bestRel.toFixed(1)} thr=${bestThr.toFixed(1)}）`;
+	};
+	check('capture-rejects-fast', fastIdx === -1, `快速掠过不应该算捕获：idx=${fastIdx} ${manualWalk(40, 900)}`);
+	// 慢：3 单位/秒飘进去 ⇒ 被束缚住 ⇒ 算捕获
+	check('capture-accepts-slow', pass(3, 2400) >= 0, '远低于逃逸速度的接近应该算捕获');
+}
+
 /** 扫掠统计（返回值给「时间轴确实有影响」那条判据复用）。 */
 interface SweepStat {
 	solutions: number;
@@ -175,7 +223,7 @@ function sweepLevel(lv: ReturnType<typeof getLevel>, dirCount: number, powerCoun
 			);
 			// ⚠️ 有效步长必须是 sampleEvery · dt：传 PhysicsStep 会让移动目标的时间轴错位
 			// （采样点 i 的真实时刻是 t0 + i · sampleEvery · dt）。
-			const gi = findGoalIndex(sim.points, bodies, lv.goal, PhysicsStep * sampleEvery, t0);
+			const gi = findGoalIndex(sim.points, bodies, lv.goal, PhysicsStep * sampleEvery, t0, sim.velocities);
 			stat.total += 1;
 			if (resolveResult(sim.outcome, gi, lv.goal) === 'success') {
 				stat.solutions += 1;
@@ -255,6 +303,7 @@ export function runTests(): string {
 	testFindGoalIndex();
 	const stats = testReachability();
 	testTimeWindow(stats);
+	testCapture();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

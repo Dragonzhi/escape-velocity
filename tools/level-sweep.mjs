@@ -124,7 +124,7 @@ function sweepLevel(lv) {
 					bodies,
 					{ steps: lv.maxSteps, dt: PhysicsStep, sampleEvery: every, escapeRadius: lv.escapeRadius, t0, brake },
 				);
-				const gi = findGoalIndex(sim.points, bodies, lv.goal, PhysicsStep * every, t0);
+				const gi = findGoalIndex(sim.points, bodies, lv.goal, PhysicsStep * every, t0, sim.velocities);
 				const kind = resolveResult(sim.outcome, gi, lv.goal);
 				const speedOut = Math.hypot(sim.state.vel.x, sim.state.vel.y);
 				let peak = Math.hypot(sim.state.pos.x, sim.state.pos.y);

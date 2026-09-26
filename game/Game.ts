@@ -153,7 +153,7 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel): void {
 		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0, brake: motion.brake },
 	);
 	core.flight = flight;
-	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0);
+	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
 	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
 	core.flightTime = 0;
 	core.phase = 'Flying';
@@ -303,7 +303,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (wps.length === 0) return [];
 		let passed = 0;
 		if (upto !== undefined && core.flight !== undefined) {
-			passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, upto).passed;
+			passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, upto, core.flight.velocities).passed;
 		}
 		// 只画**下一个**航点的环（S3.9 用户反馈："行星旁边的蓝色虚线圈是什么？"）。
 		// 四个航点同时亮四个圈，加上灰色的行星轨道圈，看起来像两套轨道 —— 目标环的语义只有"下一站"，

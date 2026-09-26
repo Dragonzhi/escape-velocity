@@ -54,6 +54,14 @@ export interface WaypointSpec {
 	tolerance: number;
 	/** 航点名（HUD/简报用，例如 '木星'）。 */
 	label?: string;
+	/**
+	 * 要求**捕获入轨**（S3.9.2，用户："后半段减速的时候，就可以尝试进入某个行星的轨道"）：
+	 * 除了进环，还要求**相对行星**的速度 ≤ captureFactor × 该处圆轨道速度。
+	 * 中间航点不设（掠过即可）；终点站才设 —— 通常配合「刹车」剖面使用。
+	 */
+	capture?: boolean;
+	/** 捕获的速度上限系数（默认 √2 = 该处**逃逸速度**，即"真的被行星束缚住"）。 */
+	captureFactor?: number;
 }
 
 /** 目标规格。 */
@@ -167,6 +175,17 @@ const FLYBY_PAD = 13;
  * `dt` 必须是**采样点之间的有效步长**（采样间隔 N 步时传 `N * PhysicsStep`）。
  * 返回 -1 表示未到达。
  */
+/**
+ * 行星自身在时刻 t 的速度（圆轨道 = 位置的导数）。
+ * 捕获判据要的是"**相对**行星的速度" —— 行星自己也在跑（虽然慢）。
+ */
+export function bodyVelocityAt(b: Body, t: number): P2 {
+	if (b.orbitPeriod === 0 || b.orbitRadius <= 0) return { x: 0, y: 0 };
+	const angle = b.phase0 + b.orbitDirection * (2 * Math.PI) * (t / b.orbitPeriod);
+	const w = (b.orbitDirection * 2 * Math.PI) / b.orbitPeriod;
+	return { x: -Math.sin(angle) * b.orbitRadius * w, y: Math.cos(angle) * b.orbitRadius * w };
+}
+
 export function goalWaypoints(goal: GoalSpec): WaypointSpec[] {
 	if (goal.chain !== undefined) return goal.chain;
 	if (goal.kind === 'planet') return [{ planetIndex: goal.planetIndex, tolerance: goal.tolerance }];
@@ -179,6 +198,42 @@ export function goalWaypoints(goal: GoalSpec): WaypointSpec[] {
  * 一次线性扫描：航点必须按顺序命中，且后一个必须出现在更晚的采样点上
  * （"先到土星再路过木星"不算数）。upto 用于飞行中查询"到哪一段了"（画环的明暗）。
  */
+/**
+ * 采样点 i 处、相对某天体的速度（捕获判据与诊断共用同一份实现）。
+ *
+ * points 里只有位置 ⇒ 用相邻采样点差分；`dt` 是**相邻采样点之间的有效步长**。
+ * `limit` 是最后一个有效采样点索引（末端夹紧用）。
+ */
+export function relativeSpeedAt(points: P2[], i: number, body: Body, dt: number, t0: number, limit: number, velocities?: P2[]): number {
+	let vx = 0;
+	let vy = 0;
+	if (velocities !== undefined && velocities[i] !== undefined) {
+		// 首选：模拟给出的**精确**速度（S3.9.2 加进 SimResult）
+		vx = velocities[i].x;
+		vy = velocities[i].y;
+	} else {
+		// 退路：位置差分。⚠️ 撞毁时推演在那一帧截断，最后一点只跨半步 ⇒ 速度会被低估
+		// （实测把"撞进行星"判成"入轨"）。所以**调用方应尽量传 velocities**。
+		const j1 = i + 1 <= limit ? i + 1 : i;
+		const j0 = i > 0 ? i - 1 : i;
+		const spanT = (j1 - j0) * dt;
+		if (spanT > 0) {
+			vx = (points[j1].x - points[j0].x) / spanT;
+			vy = (points[j1].y - points[j0].y) / spanT;
+		}
+	}
+	const pv = bodyVelocityAt(body, t0);
+	const rx = vx - pv.x;
+	const ry = vy - pv.y;
+	return Math.sqrt(rx * rx + ry * ry);
+}
+
+/** 捕获阈值：该处逃逸速度（圆轨道速度 × 系数 k，k 默认 √2）。 */
+export function captureThreshold(body: Body, d: number, k: number): number {
+	if (body.gm <= 0 || d <= 1e-6) return 1e9;
+	return k * Math.sqrt(body.gm / d);
+}
+
 export function waypointProgress(
 	points: P2[],
 	bodies: Body[],
@@ -186,6 +241,8 @@ export function waypointProgress(
 	dt: number,
 	t0?: number,
 	upto?: number,
+	/** 与 points 一一对应的速度序列（模拟给的精确值；省略则退回位置差分）。 */
+	velocities?: P2[],
 ): { passed: number; lastIndex: number } {
 	const wps = goalWaypoints(goal);
 	const start = t0 !== undefined ? t0 : 0;
@@ -199,6 +256,19 @@ export function waypointProgress(
 		if (body === undefined) return { passed: 0, lastIndex: -1 };
 		const gp = bodyPositionAt(body, start + i * dt);
 		if (distance(points[i], gp) < w.tolerance) {
+			// 捕获（S3.9.2）：进环还不够，还得"慢到能被抓住"。太快 ⇒ 不算，继续扫后面的采样点。
+			if (w.capture === true) {
+				// 默认 √2：相对速度低于**逃逸速度**（= 圆轨道速度 × √2）⇒ 真的被这颗行星束缚住。
+				// 比"圆轨道速度"更宽松，也正是"捕获"在物理上的定义（用户选的宽松档 ⇒ 用这条）。
+				const k = w.captureFactor !== undefined ? w.captureFactor : 1.4142135623730951;
+				const d = distance(points[i], gp);
+				// ⚠️ 撞上去不叫入轨：`simulate` 撞毁时会在那一帧截断，最后一个采样点的"差分速度"
+				// 会明显偏小（残段），于是"一头撞进行星"反而被判成捕获（实测踩到：rel=34.7 而阈值=43.1）。
+				// 判据上直接排除本体半径以内 —— 物理上也正是如此：要留在轨道上就得先别撞上。
+				if (d <= body.radius) continue;
+				const rel = relativeSpeedAt(points, i, body, dt, start + i * dt, limit, velocities);
+				if (rel > captureThreshold(body, d, k)) continue;
+			}
 			next += 1;
 			lastIndex = i;
 		}
@@ -206,10 +276,10 @@ export function waypointProgress(
 	return { passed: next, lastIndex: lastIndex };
 }
 
-export function findGoalIndex(points: P2[], bodies: Body[], goal: GoalSpec, dt: number, t0?: number): number {
+export function findGoalIndex(points: P2[], bodies: Body[], goal: GoalSpec, dt: number, t0?: number, velocities?: P2[]): number {
 	const wps = goalWaypoints(goal);
 	if (wps.length === 0) return -1;
-	const st = waypointProgress(points, bodies, goal, dt, t0);
+	const st = waypointProgress(points, bodies, goal, dt, t0, undefined, velocities);
 	return st.passed >= wps.length ? st.lastIndex : -1;
 }
 
@@ -299,7 +369,8 @@ const LEVELS: LevelDef[] = [
 			// 相位来自"设计航线"数值解（tools/level-sweep 的思路：先积出一条好弧线，再把行星摆到穿越点上）。
 			orbiter(4000, R_JUPITER, ORBIT.jupiter, 195.5),
 			// 土星：目标（无引力，掠过即可）。
-			orbiter(0, R_SATURN, ORBIT.saturn, 198),
+			// 土星：终点站，有引力（捕获要算相对速度）
+			orbiter(12000, R_SATURN, ORBIT.saturn, 198),
 		],
 		visuals: [
 			sunVisual(),
@@ -308,9 +379,11 @@ const LEVELS: LevelDef[] = [
 		],
 		// 顺序航线（S3.7）：先**贴近**掠过木星（容差只有本体 +6 ⇒ "贴得越近甩得越狠"），再到土星。
 		goal: {
-			kind: 'planet', planetIndex: 1, tolerance: R_JUPITER + 8,
+			kind: 'planet', planetIndex: 1, tolerance: R_JUPITER + 22,
 			chain: [
-				{ planetIndex: 1, tolerance: R_JUPITER + 8, label: '木星' },
+				{ planetIndex: 1, tolerance: R_JUPITER + 22, label: '木星' },
+				// ⚠️ 这一关**不做捕获**：L3 的决策是「方向性 / 加速」（从木星背后抄过去），再叠一个「减速入轨」就成两件事了。
+				// 捕获从 L4「窗口」开始 —— 而它正是「选对日期才慢得下来」的那一关（设计上配套）。
 				{ planetIndex: 2, tolerance: R_SATURN + 45, label: '土星' },
 			],
 		},
@@ -328,7 +401,7 @@ const LEVELS: LevelDef[] = [
 			sun(),
 			// t0=0 时两颗**故意错位**（设计航线要 195.5° / 198°）：必须拖日期把它们拨到航线上。
 			orbiter(2500, R_JUPITER, ORBIT.jupiter, 315.5),
-			orbiter(0, R_SATURN, ORBIT.saturn, 288),
+			orbiter(12000, R_SATURN, ORBIT.saturn, 288),
 		],
 		visuals: [
 			sunVisual(),
@@ -340,7 +413,7 @@ const LEVELS: LevelDef[] = [
 			kind: 'planet', planetIndex: 1, tolerance: R_JUPITER + FLYBY_PAD,
 			chain: [
 				{ planetIndex: 1, tolerance: R_JUPITER + 22, label: '木星' },
-				{ planetIndex: 2, tolerance: R_SATURN + 30, label: '土星' },
+				{ planetIndex: 2, tolerance: R_SATURN + 30, label: '土星', capture: true },
 			],
 		},
 		dvBudget: 50,
@@ -363,7 +436,7 @@ const LEVELS: LevelDef[] = [
 			orbiter(2500, R_JUPITER, ORBIT.jupiter, 195.5),
 			orbiter(2000, R_SATURN, ORBIT.saturn, 203.1),
 			orbiter(1200, R_URANUS, ORBIT.uranus, 209.7),
-			orbiter(800, R_NEPTUNE, ORBIT.neptune, 216.4),
+			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 216.4),
 		],
 		visuals: [
 			sunVisual(),
@@ -379,7 +452,7 @@ const LEVELS: LevelDef[] = [
 				{ planetIndex: 1, tolerance: R_JUPITER + 22, label: '木星' },
 				{ planetIndex: 2, tolerance: R_SATURN + 26, label: '土星' },
 				{ planetIndex: 3, tolerance: R_URANUS + 30, label: '天王星' },
-				{ planetIndex: 4, tolerance: R_NEPTUNE + 34, label: '海王星' },
+				{ planetIndex: 4, tolerance: R_NEPTUNE + 34, label: '海王星', capture: true },
 			],
 		},
 		dvBudget: 55,

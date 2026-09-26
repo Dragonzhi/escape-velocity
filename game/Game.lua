@@ -93,7 +93,8 @@ function ____exports.coreLaunch(core, burn, level) -- 147
 		level.bodies, -- 156
 		level.goal, -- 156
 		core.dt, -- 156
-		core.t0 -- 156
+		core.t0, -- 156
+		flight.velocities -- 156
 	) -- 156
 	core.result = ____exports.resolveResult(flight.outcome, core.goalIndex, level.goal) -- 157
 	core.flightTime = 0 -- 158
@@ -193,7 +194,8 @@ function ____exports.createGame(level, deps) -- 272
 				level.goal, -- 306
 				core.dt, -- 306
 				core.t0, -- 306
-				upto -- 306
+				upto, -- 306
+				core.flight.velocities -- 306
 			).passed -- 306
 		end -- 306
 		if passed >= #wps then -- 306
