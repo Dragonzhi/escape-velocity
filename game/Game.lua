@@ -1,6 +1,5 @@
 -- [ts]: Game.ts
 local ____lualib = require("lualib_bundle") -- 1
-local __TS__ArraySlice = ____lualib.__TS__ArraySlice -- 1
 local __TS__NumberToFixed = ____lualib.__TS__NumberToFixed -- 1
 local ____exports = {} -- 1
 local ____Dora = require("Dora") -- 26
@@ -255,316 +254,323 @@ function ____exports.createGame(level, deps) -- 371
 	--- 时间流量程（秒）：世界时钟夹在 [0, span]；0 = 不限制。
 	local warpSpan = 0 -- 415
 	local idlePath = nil -- 416
+	--- 玩家**是否已经瞄过**（S3.12）。
+	-- 
+	-- 用户原话：「预览线有时候调整好了又会变回初始状态，比如第一关，默认就不要显示预览线，
+	-- 调整过了再显示」。所以规则是：
+	--   - 进关时**一条线都不画**（不管有没有待机轨迹）；
+	--   - 玩家在探测器附近拖过一次之后，线就属于"他瞄的这一发"，松手（Armed）也**保持**，
+	--     直到发射 / 重试 / 退出关卡才清掉。
+	-- 从前那套"没在拖就把待机轨道画成预测线"会让玩家调好的线被覆盖成初始状态。
+	local aimed = false -- 427
 	--- 探测器**此刻**在哪 / 以什么速度前进（待机会绕着地球走，所以不能写死 probeStart）。
-	local probePos = {x = level.probeStart.x, y = level.probeStart.y} -- 418
-	local probeVel = level.probeVel0 ~= nil and level.probeVel0 or ({x = 0, y = 0}) -- 419
-	local function prepareIdle() -- 420
-		clock = 0 -- 422
-		core.t0 = 0 -- 423
-		if level.probeVel0 == nil then -- 423
-			idlePath = nil -- 425
-			return -- 426
-		end -- 426
-		local idleSteps = level.maxSteps -- 434
-		local v0x = level.probeVel0.x -- 435
-		local v0y = level.probeVel0.y -- 436
-		local v0 = math.sqrt(v0x * v0x + v0y * v0y) -- 437
-		if v0 > 0.000001 then -- 437
-			local bestD = 1000000000 -- 439
-			for ____, b in ipairs(level.bodies) do -- 440
-				do -- 440
-					if b.gm <= 0 then -- 440
-						goto __continue33 -- 441
-					end -- 441
-					local dx = b.orbitCenter.x - level.probeStart.x -- 442
-					local dy = b.orbitCenter.y - level.probeStart.y -- 443
-					local d = math.sqrt(dx * dx + dy * dy) -- 444
-					if d < bestD then -- 444
-						bestD = d -- 445
-					end -- 445
-				end -- 445
-				::__continue33:: -- 445
-			end -- 445
-			if bestD > 0.000001 and bestD < 100000000 then -- 445
-				local n = math.floor(2 * math.pi * bestD / v0 / core.dt + 0.5) -- 448
-				if n > 60 and n < 40000 then -- 448
-					idleSteps = n -- 449
-				end -- 449
-			end -- 449
-		end -- 449
-		idlePath = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = level.probeVel0.x, y = level.probeVel0.y}}, level.bodies, { -- 452
-			steps = idleSteps, -- 455
-			dt = core.dt, -- 455
-			sampleEvery = 1, -- 455
-			escapeRadius = level.escapeRadius, -- 455
-			t0 = core.t0 -- 455
-		}) -- 455
-	end -- 420
-	local function idleIndex() -- 458
-		if idlePath == nil then -- 458
-			return 0 -- 459
-		end -- 459
-		local n = #idlePath.points -- 460
-		if n <= 1 then -- 460
-			return 0 -- 461
-		end -- 461
-		local i = math.floor(orbitClock / core.dt) % n -- 462
-		if i < 0 then -- 462
-			i = 0 -- 463
-		end -- 463
-		return i -- 464
-	end -- 458
-	--- 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。
-	local function goalRingsAt(t, upto) -- 468
-		local wps = goalWaypoints(level.goal) -- 469
-		if #wps == 0 then -- 469
-			return {} -- 470
+	local probePos = {x = level.probeStart.x, y = level.probeStart.y} -- 429
+	local probeVel = level.probeVel0 ~= nil and level.probeVel0 or ({x = 0, y = 0}) -- 430
+	local function prepareIdle() -- 431
+		clock = 0 -- 433
+		core.t0 = 0 -- 434
+		if level.probeVel0 == nil then -- 434
+			idlePath = nil -- 436
+			return -- 437
+		end -- 437
+		local idleSteps = level.maxSteps -- 445
+		local v0x = level.probeVel0.x -- 446
+		local v0y = level.probeVel0.y -- 447
+		local v0 = math.sqrt(v0x * v0x + v0y * v0y) -- 448
+		if v0 > 0.000001 then -- 448
+			local bestD = 1000000000 -- 450
+			for ____, b in ipairs(level.bodies) do -- 451
+				do -- 451
+					if b.gm <= 0 then -- 451
+						goto __continue33 -- 452
+					end -- 452
+					local dx = b.orbitCenter.x - level.probeStart.x -- 453
+					local dy = b.orbitCenter.y - level.probeStart.y -- 454
+					local d = math.sqrt(dx * dx + dy * dy) -- 455
+					if d < bestD then -- 455
+						bestD = d -- 456
+					end -- 456
+				end -- 456
+				::__continue33:: -- 456
+			end -- 456
+			if bestD > 0.000001 and bestD < 100000000 then -- 456
+				local n = math.floor(2 * math.pi * bestD / v0 / core.dt + 0.5) -- 459
+				if n > 60 and n < 40000 then -- 459
+					idleSteps = n -- 460
+				end -- 460
+			end -- 460
+		end -- 460
+		idlePath = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = level.probeVel0.x, y = level.probeVel0.y}}, level.bodies, { -- 463
+			steps = idleSteps, -- 466
+			dt = core.dt, -- 466
+			sampleEvery = 1, -- 466
+			escapeRadius = level.escapeRadius, -- 466
+			t0 = core.t0 -- 466
+		}) -- 466
+	end -- 431
+	local function idleIndex() -- 469
+		if idlePath == nil then -- 469
+			return 0 -- 470
 		end -- 470
-		local passed = 0 -- 471
-		if upto ~= nil and core.flight ~= nil then -- 471
-			passed = waypointProgress( -- 473
-				core.flight.points, -- 473
-				level.bodies, -- 473
-				level.goal, -- 473
-				core.dt, -- 473
-				core.t0, -- 473
-				upto, -- 473
-				core.flight.velocities -- 473
-			).passed -- 473
-		end -- 473
-		if passed >= #wps then -- 473
-			return {} -- 478
-		end -- 478
-		local nextWp = wps[passed + 1] -- 479
-		local body = level.bodies[nextWp.planetIndex + 1] -- 480
-		if body == nil then -- 480
+		local n = #idlePath.points -- 471
+		if n <= 1 then -- 471
+			return 0 -- 472
+		end -- 472
+		local i = math.floor(orbitClock / core.dt) % n -- 473
+		if i < 0 then -- 473
+			i = 0 -- 474
+		end -- 474
+		return i -- 475
+	end -- 469
+	--- 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。
+	local function goalRingsAt(t, upto) -- 479
+		local wps = goalWaypoints(level.goal) -- 480
+		if #wps == 0 then -- 480
 			return {} -- 481
 		end -- 481
-		return {{ -- 482
-			center = bodyPositionAt(body, t), -- 482
-			radius = nextWp.tolerance, -- 482
-			passed = false -- 482
-		}} -- 482
-	end -- 468
+		local passed = 0 -- 482
+		if upto ~= nil and core.flight ~= nil then -- 482
+			passed = waypointProgress( -- 484
+				core.flight.points, -- 484
+				level.bodies, -- 484
+				level.goal, -- 484
+				core.dt, -- 484
+				core.t0, -- 484
+				upto, -- 484
+				core.flight.velocities -- 484
+			).passed -- 484
+		end -- 484
+		if passed >= #wps then -- 484
+			return {} -- 489
+		end -- 489
+		local nextWp = wps[passed + 1] -- 490
+		local body = level.bodies[nextWp.planetIndex + 1] -- 491
+		if body == nil then -- 491
+			return {} -- 492
+		end -- 492
+		return {{ -- 493
+			center = bodyPositionAt(body, t), -- 493
+			radius = nextWp.tolerance, -- 493
+			passed = false -- 493
+		}} -- 493
+	end -- 479
 	--- 把自动取景按观察参数改写成"玩家的机位"（绕 target 转 + 缩放）。
-	local function applyObserve(f) -- 486
-		if obsYawDeg == 0 and obsPitchDeg == 0 and obsZoom == 1 then -- 486
-			return f -- 487
-		end -- 487
-		local dx = f.eye.x - f.target.x -- 488
-		local dy = f.eye.y - f.target.y -- 489
-		local dz = f.eye.z - f.target.z -- 490
-		local r = math.sqrt(dx * dx + dy * dy + dz * dz) * obsZoom -- 491
-		local yaw = math.atan(dx, dz) + obsYawDeg * math.pi / 180 -- 492
-		local pitch = math.asin(dy / (r > 0.000001 and r / obsZoom or 1)) + obsPitchDeg * math.pi / 180 -- 493
-		local lo = CameraTiltMin * math.pi / 180 -- 494
-		local hi = CameraTiltMax * math.pi / 180 -- 495
-		if pitch < lo then -- 495
-			pitch = lo -- 496
-		end -- 496
-		if pitch > hi then -- 496
-			pitch = hi -- 497
-		end -- 497
-		local cp = math.cos(pitch) -- 498
-		return { -- 499
-			target = f.target, -- 500
-			eye = Vec3( -- 501
-				f.target.x + r * cp * math.sin(yaw), -- 502
-				f.target.y + r * math.sin(pitch), -- 503
-				f.target.z + r * cp * math.cos(yaw) -- 504
-			) -- 504
-		} -- 504
-	end -- 486
-	local function updateAiming(dt) -- 509
-		deps.aim:setEnabled(true) -- 510
-		local dragging = deps.aim:isDragging() -- 512
-		if core.phase == "Aiming" and not dragging and idlePath ~= nil then -- 512
-			clock = clock + dt -- 515
-			orbitClock = orbitClock + dt -- 516
-		end -- 516
-		local idx = idleIndex() -- 518
-		probePos = idlePath ~= nil and idlePath.points[idx + 1] or level.probeStart -- 519
-		probeVel = idlePath ~= nil and idlePath.velocities[idx + 1] or (level.probeVel0 ~= nil and level.probeVel0 or ({x = 0, y = 0})) -- 520
-		local tNow = core.t0 + clock -- 523
-		deps.scene.syncBodies(tNow) -- 525
-		deps.scene.syncProbe(probePos) -- 526
-		if idlePath ~= nil and idx > 0 then -- 526
-			deps.scene.faceVelocity(sub(probePos, idlePath.points[idx])) -- 527
+	local function applyObserve(f) -- 497
+		if obsYawDeg == 0 and obsPitchDeg == 0 and obsZoom == 1 then -- 497
+			return f -- 498
+		end -- 498
+		local dx = f.eye.x - f.target.x -- 499
+		local dy = f.eye.y - f.target.y -- 500
+		local dz = f.eye.z - f.target.z -- 501
+		local r = math.sqrt(dx * dx + dy * dy + dz * dz) * obsZoom -- 502
+		local yaw = math.atan(dx, dz) + obsYawDeg * math.pi / 180 -- 503
+		local pitch = math.asin(dy / (r > 0.000001 and r / obsZoom or 1)) + obsPitchDeg * math.pi / 180 -- 504
+		local lo = CameraTiltMin * math.pi / 180 -- 505
+		local hi = CameraTiltMax * math.pi / 180 -- 506
+		if pitch < lo then -- 506
+			pitch = lo -- 507
+		end -- 507
+		if pitch > hi then -- 507
+			pitch = hi -- 508
+		end -- 508
+		local cp = math.cos(pitch) -- 509
+		return { -- 510
+			target = f.target, -- 511
+			eye = Vec3( -- 512
+				f.target.x + r * cp * math.sin(yaw), -- 513
+				f.target.y + r * math.sin(pitch), -- 514
+				f.target.z + r * cp * math.cos(yaw) -- 515
+			) -- 515
+		} -- 515
+	end -- 497
+	local function updateAiming(dt) -- 520
+		deps.aim:setEnabled(true) -- 521
+		local dragging = deps.aim:isDragging() -- 523
+		if core.phase == "Aiming" and not dragging and idlePath ~= nil then -- 523
+			clock = clock + dt -- 526
+			orbitClock = orbitClock + dt -- 527
 		end -- 527
-		local planetPts = {} -- 529
-		for ____, p in ipairs(deps.scene.planets) do -- 530
-			planetPts[#planetPts + 1] = bodyPositionAt(p.def, tNow) -- 530
-		end -- 530
-		local frame = deps.rig.step( -- 532
-			{ -- 532
-				probePos, -- 532
-				table.unpack(planetPts) -- 532
-			}, -- 532
-			deps.scene.probeRadius -- 532
-		) -- 532
-		if introT < IntroDurationSec then -- 532
-			introT = introT + dt -- 536
-			local k = introT / IntroDurationSec -- 537
-			if k > 1 then -- 537
-				k = 1 -- 538
-			end -- 538
-			if k >= 1 and not introLogged then -- 538
-				introLogged = true -- 540
-				print("[escape-velocity] intro camera done") -- 541
-			end -- 541
-			local wps0 = goalWaypoints(level.goal) -- 543
-			local wpBody = #wps0 > 0 and level.bodies[wps0[1].planetIndex + 1] or nil -- 544
-			local wide = frame -- 545
-			local from = wide -- 546
-			local to = wide -- 547
-			local e = 0 -- 548
-			if k < 0.35 then -- 548
-				local pw = planeToWorld(probePos, 0) -- 550
-				local dx = wide.eye.x - wide.target.x -- 551
-				local dy = wide.eye.y - wide.target.y -- 552
-				local dz = wide.eye.z - wide.target.z -- 553
-				local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 554
-				if len > 0.000001 then -- 554
-					local s = IntroCloseDist / len -- 556
-					dx = dx * s -- 557
-					dy = dy * s -- 557
-					dz = dz * s -- 557
-				end -- 557
-				from = { -- 559
-					target = Vec3(pw.x, pw.y, pw.z), -- 559
-					eye = Vec3(pw.x + dx, pw.y + dy, pw.z + dz) -- 559
-				} -- 559
-				e = k / 0.35 -- 560
-			elseif k < 0.72 and wpBody ~= nil then -- 560
-				local c = planeToWorld( -- 563
-					bodyPositionAt(wpBody, tNow), -- 563
-					0 -- 563
-				) -- 563
-				local dx = wide.eye.x - wide.target.x -- 564
-				local dy = wide.eye.y - wide.target.y -- 565
-				local dz = wide.eye.z - wide.target.z -- 566
-				local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 567
-				local want = math.max(24, wpBody.radius * 6) -- 568
-				if len > 0.000001 then -- 568
-					local s = want / len -- 570
-					dx = dx * s -- 571
-					dy = dy * s -- 571
-					dz = dz * s -- 571
-				end -- 571
-				to = { -- 573
-					target = Vec3(c.x, c.y, c.z), -- 573
-					eye = Vec3(c.x + dx, c.y + dy, c.z + dz) -- 573
-				} -- 573
-				e = (k - 0.35) / 0.37 -- 574
-			elseif wpBody ~= nil then -- 574
-				local c = planeToWorld( -- 577
-					bodyPositionAt(wpBody, tNow), -- 577
-					0 -- 577
-				) -- 577
-				local dx = wide.eye.x - wide.target.x -- 578
-				local dy = wide.eye.y - wide.target.y -- 579
-				local dz = wide.eye.z - wide.target.z -- 580
-				local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 581
-				local want = math.max(24, wpBody.radius * 6) -- 582
-				if len > 0.000001 then -- 582
-					local s = want / len -- 584
-					dx = dx * s -- 585
-					dy = dy * s -- 585
-					dz = dz * s -- 585
-				end -- 585
-				from = { -- 587
-					target = Vec3(c.x, c.y, c.z), -- 587
-					eye = Vec3(c.x + dx, c.y + dy, c.z + dz) -- 587
-				} -- 587
-				e = (k - 0.72) / 0.28 -- 588
-			end -- 588
-			local ease = 1 - (1 - e) * (1 - e) * (1 - e) -- 590
-			frame = { -- 591
-				target = Vec3(from.target.x + (to.target.x - from.target.x) * ease, from.target.y + (to.target.y - from.target.y) * ease, from.target.z + (to.target.z - from.target.z) * ease), -- 592
-				eye = Vec3(from.eye.x + (to.eye.x - from.eye.x) * ease, from.eye.y + (to.eye.y - from.eye.y) * ease, from.eye.z + (to.eye.z - from.eye.z) * ease) -- 597
-			} -- 597
-		end -- 597
-		frame = applyObserve(frame) -- 605
-		deps.rig.apply(deps.camera, frame) -- 606
-		deps.scene.syncBackdrop(frame.eye, frame.target) -- 607
-		local basis = makeBasis(frame) -- 608
-		local pp = projectPrepared( -- 611
-			planeToWorld(probePos, 0), -- 611
-			basis -- 611
-		) -- 611
-		if pp ~= nil then -- 611
-			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 612
-		end -- 612
-		if not dragging and idlePath ~= nil then -- 612
-			deps.trajectory:setPrediction( -- 622
-				__TS__ArraySlice(idlePath.points, idx), -- 622
-				basis -- 622
-			) -- 622
-		else -- 622
-			local key = (((((((__TS__NumberToFixed(core.aim.velocity.x, 3) .. "|") .. __TS__NumberToFixed(core.aim.velocity.y, 3)) .. "|") .. __TS__NumberToFixed(core.t0, 3)) .. "|") .. (core.brakeMode and "B" or "C")) .. "|") .. __TS__NumberToFixed(idx, 0) -- 624
-			if key ~= predKey then -- 624
-				predKey = key -- 627
-				local motion = ____exports.burnToMotion(core.aim.velocity, probeVel, core.brakeMode, level.maxSteps) -- 630
-				predPoints = simulate({pos = {x = probePos.x, y = probePos.y}, vel = motion.init}, level.bodies, { -- 631
-					steps = PredictSteps, -- 634
-					dt = core.dt, -- 634
-					sampleEvery = 4, -- 634
-					escapeRadius = level.escapeRadius, -- 634
-					t0 = tNow, -- 634
-					brake = motion.brake -- 634
-				}).points -- 634
-			end -- 634
-			deps.trajectory:setPrediction(predPoints, basis) -- 637
-		end -- 637
-		deps.trajectory:setGoalRings( -- 639
-			goalRingsAt(tNow), -- 639
-			basis -- 639
-		) -- 639
-		deps.trajectory:clearTrail() -- 640
-	end -- 509
-	local function updateFlying(dt) -- 643
-		deps.aim:setEnabled(false) -- 644
-		local entered = ____exports.coreUpdate(core, dt) -- 645
-		if core.flight == nil then -- 645
-			return entered -- 646
-		end -- 646
-		local idx = ____exports.coreProbeIndex(core) -- 648
-		local pos = core.flight.points[idx + 1] -- 649
-		local tWorld = core.t0 + core.flightTime -- 653
-		deps.scene.syncBodies(tWorld) -- 655
-		deps.scene.syncProbe(pos) -- 656
-		if idx > 0 then -- 656
-			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 658
-		end -- 658
-		local planetPts = {} -- 661
-		for ____, p in ipairs(deps.scene.planets) do -- 662
-			planetPts[#planetPts + 1] = bodyPositionAt(p.def, tWorld) -- 662
-		end -- 662
-		local frame = deps.rig.step( -- 664
-			{ -- 664
-				pos, -- 664
-				table.unpack(planetPts) -- 664
-			}, -- 664
-			deps.scene.probeRadius -- 664
-		) -- 664
-		deps.rig.apply(deps.camera, frame) -- 665
-		deps.scene.syncBackdrop(frame.eye, frame.target) -- 666
-		local basis = makeBasis(frame) -- 667
-		local trail = {} -- 670
-		do -- 670
-			local i = 0 -- 671
-			while i <= idx do -- 671
-				trail[#trail + 1] = core.flight.points[i + 1] -- 671
-				i = i + 1 -- 671
-			end -- 671
-		end -- 671
-		deps.trajectory:setTrail(trail, basis) -- 672
-		deps.trajectory:setGoalRings( -- 673
-			goalRingsAt(tWorld, idx), -- 673
-			basis -- 673
-		) -- 673
-		return entered -- 675
-	end -- 643
+		local idx = idleIndex() -- 529
+		probePos = idlePath ~= nil and idlePath.points[idx + 1] or level.probeStart -- 530
+		probeVel = idlePath ~= nil and idlePath.velocities[idx + 1] or (level.probeVel0 ~= nil and level.probeVel0 or ({x = 0, y = 0})) -- 531
+		local tNow = core.t0 + clock -- 534
+		deps.scene.syncBodies(tNow) -- 536
+		deps.scene.syncProbe(probePos) -- 537
+		if idlePath ~= nil and idx > 0 then -- 537
+			deps.scene.faceVelocity(sub(probePos, idlePath.points[idx])) -- 538
+		end -- 538
+		local planetPts = {} -- 540
+		for ____, p in ipairs(deps.scene.planets) do -- 541
+			planetPts[#planetPts + 1] = bodyPositionAt(p.def, tNow) -- 541
+		end -- 541
+		local frame = deps.rig.step( -- 543
+			{ -- 543
+				probePos, -- 543
+				table.unpack(planetPts) -- 543
+			}, -- 543
+			deps.scene.probeRadius -- 543
+		) -- 543
+		if introT < IntroDurationSec then -- 543
+			introT = introT + dt -- 547
+			local k = introT / IntroDurationSec -- 548
+			if k > 1 then -- 548
+				k = 1 -- 549
+			end -- 549
+			if k >= 1 and not introLogged then -- 549
+				introLogged = true -- 551
+				print("[escape-velocity] intro camera done") -- 552
+			end -- 552
+			local wps0 = goalWaypoints(level.goal) -- 554
+			local wpBody = #wps0 > 0 and level.bodies[wps0[1].planetIndex + 1] or nil -- 555
+			local wide = frame -- 556
+			local from = wide -- 557
+			local to = wide -- 558
+			local e = 0 -- 559
+			if k < 0.35 then -- 559
+				local pw = planeToWorld(probePos, 0) -- 561
+				local dx = wide.eye.x - wide.target.x -- 562
+				local dy = wide.eye.y - wide.target.y -- 563
+				local dz = wide.eye.z - wide.target.z -- 564
+				local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 565
+				if len > 0.000001 then -- 565
+					local s = IntroCloseDist / len -- 567
+					dx = dx * s -- 568
+					dy = dy * s -- 568
+					dz = dz * s -- 568
+				end -- 568
+				from = { -- 570
+					target = Vec3(pw.x, pw.y, pw.z), -- 570
+					eye = Vec3(pw.x + dx, pw.y + dy, pw.z + dz) -- 570
+				} -- 570
+				e = k / 0.35 -- 571
+			elseif k < 0.72 and wpBody ~= nil then -- 571
+				local c = planeToWorld( -- 574
+					bodyPositionAt(wpBody, tNow), -- 574
+					0 -- 574
+				) -- 574
+				local dx = wide.eye.x - wide.target.x -- 575
+				local dy = wide.eye.y - wide.target.y -- 576
+				local dz = wide.eye.z - wide.target.z -- 577
+				local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 578
+				local want = math.max(24, wpBody.radius * 6) -- 579
+				if len > 0.000001 then -- 579
+					local s = want / len -- 581
+					dx = dx * s -- 582
+					dy = dy * s -- 582
+					dz = dz * s -- 582
+				end -- 582
+				to = { -- 584
+					target = Vec3(c.x, c.y, c.z), -- 584
+					eye = Vec3(c.x + dx, c.y + dy, c.z + dz) -- 584
+				} -- 584
+				e = (k - 0.35) / 0.37 -- 585
+			elseif wpBody ~= nil then -- 585
+				local c = planeToWorld( -- 588
+					bodyPositionAt(wpBody, tNow), -- 588
+					0 -- 588
+				) -- 588
+				local dx = wide.eye.x - wide.target.x -- 589
+				local dy = wide.eye.y - wide.target.y -- 590
+				local dz = wide.eye.z - wide.target.z -- 591
+				local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 592
+				local want = math.max(24, wpBody.radius * 6) -- 593
+				if len > 0.000001 then -- 593
+					local s = want / len -- 595
+					dx = dx * s -- 596
+					dy = dy * s -- 596
+					dz = dz * s -- 596
+				end -- 596
+				from = { -- 598
+					target = Vec3(c.x, c.y, c.z), -- 598
+					eye = Vec3(c.x + dx, c.y + dy, c.z + dz) -- 598
+				} -- 598
+				e = (k - 0.72) / 0.28 -- 599
+			end -- 599
+			local ease = 1 - (1 - e) * (1 - e) * (1 - e) -- 601
+			frame = { -- 602
+				target = Vec3(from.target.x + (to.target.x - from.target.x) * ease, from.target.y + (to.target.y - from.target.y) * ease, from.target.z + (to.target.z - from.target.z) * ease), -- 603
+				eye = Vec3(from.eye.x + (to.eye.x - from.eye.x) * ease, from.eye.y + (to.eye.y - from.eye.y) * ease, from.eye.z + (to.eye.z - from.eye.z) * ease) -- 608
+			} -- 608
+		end -- 608
+		frame = applyObserve(frame) -- 616
+		deps.rig.apply(deps.camera, frame) -- 617
+		deps.scene.syncBackdrop(frame.eye, frame.target) -- 618
+		local basis = makeBasis(frame) -- 619
+		local pp = projectPrepared( -- 622
+			planeToWorld(probePos, 0), -- 622
+			basis -- 622
+		) -- 622
+		if pp ~= nil then -- 622
+			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 623
+		end -- 623
+		if not aimed then -- 623
+			deps.trajectory:clearPrediction() -- 635
+			predKey = "" -- 636
+		else -- 636
+			local key = (((((((((((__TS__NumberToFixed(core.aim.velocity.x, 3) .. "|") .. __TS__NumberToFixed(core.aim.velocity.y, 3)) .. "|") .. __TS__NumberToFixed(tNow, 2)) .. "|") .. __TS__NumberToFixed(probePos.x, 2)) .. ",") .. __TS__NumberToFixed(probePos.y, 2)) .. "|") .. (core.brakeMode and "B" or "C")) .. "|") .. __TS__NumberToFixed(idx, 0) -- 640
+			if key ~= predKey then -- 640
+				predKey = key -- 644
+				local motion = ____exports.burnToMotion(core.aim.velocity, probeVel, core.brakeMode, level.maxSteps) -- 647
+				predPoints = simulate({pos = {x = probePos.x, y = probePos.y}, vel = motion.init}, level.bodies, { -- 648
+					steps = PredictSteps, -- 651
+					dt = core.dt, -- 651
+					sampleEvery = 4, -- 651
+					escapeRadius = level.escapeRadius, -- 651
+					t0 = tNow, -- 651
+					brake = motion.brake -- 651
+				}).points -- 651
+			end -- 651
+			deps.trajectory:setPrediction(predPoints, basis) -- 654
+		end -- 654
+		deps.trajectory:setGoalRings( -- 656
+			goalRingsAt(tNow), -- 656
+			basis -- 656
+		) -- 656
+		deps.trajectory:clearTrail() -- 657
+	end -- 520
+	local function updateFlying(dt) -- 660
+		deps.aim:setEnabled(false) -- 661
+		local entered = ____exports.coreUpdate(core, dt) -- 662
+		if core.flight == nil then -- 662
+			return entered -- 663
+		end -- 663
+		local idx = ____exports.coreProbeIndex(core) -- 665
+		local pos = core.flight.points[idx + 1] -- 666
+		local tWorld = core.t0 + core.flightTime -- 670
+		deps.scene.syncBodies(tWorld) -- 672
+		deps.scene.syncProbe(pos) -- 673
+		if idx > 0 then -- 673
+			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 675
+		end -- 675
+		local planetPts = {} -- 678
+		for ____, p in ipairs(deps.scene.planets) do -- 679
+			planetPts[#planetPts + 1] = bodyPositionAt(p.def, tWorld) -- 679
+		end -- 679
+		local frame = deps.rig.step( -- 681
+			{ -- 681
+				pos, -- 681
+				table.unpack(planetPts) -- 681
+			}, -- 681
+			deps.scene.probeRadius -- 681
+		) -- 681
+		deps.rig.apply(deps.camera, frame) -- 682
+		deps.scene.syncBackdrop(frame.eye, frame.target) -- 683
+		local basis = makeBasis(frame) -- 684
+		local trail = {} -- 687
+		do -- 687
+			local i = 0 -- 688
+			while i <= idx do -- 688
+				trail[#trail + 1] = core.flight.points[i + 1] -- 688
+				i = i + 1 -- 688
+			end -- 688
+		end -- 688
+		deps.trajectory:setTrail(trail, basis) -- 689
+		deps.trajectory:setGoalRings( -- 690
+			goalRingsAt(tWorld, idx), -- 690
+			basis -- 690
+		) -- 690
+		return entered -- 692
+	end -- 660
 	--- **发射日期交棒**（S3.12 修 bug：发射瞬间行星跳回原位）。
 	-- 
 	-- 事实来源只有一个：tWorld = core.t0 + core.flightTime（AGENTS 硬约束 7）。
@@ -574,141 +580,144 @@ function ____exports.createGame(level, deps) -- 371
 	-- 
 	-- toT0 = true：发射时 clock → t0（dateNow() 与瞄准期的 tNow 都不变，画面不跳）；
 	-- toT0 = false：重试时 t0 → clock（**保留玩家挑好的日期**，L4 才能就着这个日期继续调）。
-	local function handoffDate(toT0) -- 689
-		local next = ____exports.coreHandoffDate(core.t0, clock, toT0) -- 690
-		core.t0 = next.t0 -- 691
-		clock = next.clock -- 692
-		print((((("[escape-velocity] date handoff " .. (toT0 and "clock->t0" or "t0->clock")) .. " t0=") .. __TS__NumberToFixed(core.t0, 1)) .. " clock=") .. __TS__NumberToFixed(clock, 1)) -- 693
-	end -- 689
-	local function update(dt) -- 696
-		if core.phase == "Aiming" or core.phase == "Armed" then -- 696
-			updateAiming(dt) -- 698
-		elseif core.phase == "Flying" then -- 698
-			local entered = updateFlying(dt) -- 700
-			if entered and core.result ~= nil then -- 700
-				deps:onResult(core.result) -- 702
-				deps:onPhase("Result") -- 703
-			end -- 703
-		end -- 703
-	end -- 696
-	return { -- 709
-		phase = function() return core.phase end, -- 710
-		result = function() return core.result end, -- 711
-		onAimDrag = function(____, a) -- 712
-			core.aim = a -- 713
-			introT = IntroDurationSec -- 714
-		end, -- 712
-		aimReady = function() -- 716
-			if not ____exports.coreArm(core) then -- 716
-				return -- 717
-			end -- 717
-			deps:onPhase("Armed") -- 718
-		end, -- 716
-		launchArmed = function() -- 720
-			if core.phase ~= "Armed" then -- 720
-				return -- 722
-			end -- 722
-			handoffDate(true) -- 723
-			____exports.coreLaunch( -- 724
-				core, -- 724
-				core.aim.velocity, -- 724
-				level, -- 724
-				probePos, -- 724
-				probeVel -- 724
-			) -- 724
-			deps.trajectory:clearPrediction() -- 725
-			deps:onPhase("Flying") -- 726
-		end, -- 720
-		armed = function() return core.phase == "Armed" end, -- 728
-		observeDrag = function(____, dx, dy) -- 729
-			introT = IntroDurationSec -- 730
-			print((((("[escape-velocity] observe drag dx=" .. __TS__NumberToFixed(dx, 0)) .. " dy=") .. __TS__NumberToFixed(dy, 0)) .. " yaw=") .. __TS__NumberToFixed(obsYawDeg, 0)) -- 731
-			obsYawDeg = obsYawDeg + dx * 0.35 -- 732
-			obsPitchDeg = obsPitchDeg + dy * 0.25 -- 733
-			if obsPitchDeg > 40 then -- 733
-				obsPitchDeg = 40 -- 734
-			end -- 734
-			if obsPitchDeg < -40 then -- 734
-				obsPitchDeg = -40 -- 735
-			end -- 735
+	local function handoffDate(toT0) -- 706
+		local next = ____exports.coreHandoffDate(core.t0, clock, toT0) -- 707
+		core.t0 = next.t0 -- 708
+		clock = next.clock -- 709
+		print((((("[escape-velocity] date handoff " .. (toT0 and "clock->t0" or "t0->clock")) .. " t0=") .. __TS__NumberToFixed(core.t0, 1)) .. " clock=") .. __TS__NumberToFixed(clock, 1)) -- 710
+	end -- 706
+	local function update(dt) -- 713
+		if core.phase == "Aiming" or core.phase == "Armed" then -- 713
+			updateAiming(dt) -- 715
+		elseif core.phase == "Flying" then -- 715
+			local entered = updateFlying(dt) -- 717
+			if entered and core.result ~= nil then -- 717
+				deps:onResult(core.result) -- 719
+				deps:onPhase("Result") -- 720
+			end -- 720
+		end -- 720
+	end -- 713
+	return { -- 726
+		phase = function() return core.phase end, -- 727
+		result = function() return core.result end, -- 728
+		onAimDrag = function(____, a) -- 729
+			core.aim = a -- 730
+			aimed = true -- 731
+			introT = IntroDurationSec -- 732
 		end, -- 729
-		observeZoom = function(____, deltaDist) -- 737
-			obsZoom = obsZoom * (1 + deltaDist * 0.002) -- 738
-			if obsZoom < 0.4 then -- 738
-				obsZoom = 0.4 -- 739
-			end -- 739
-			if obsZoom > 1.8 then -- 739
-				obsZoom = 1.8 -- 740
+		aimReady = function() -- 734
+			if not ____exports.coreArm(core) then -- 734
+				return -- 735
+			end -- 735
+			deps:onPhase("Armed") -- 736
+		end, -- 734
+		launchArmed = function() -- 738
+			if core.phase ~= "Armed" then -- 738
+				return -- 740
 			end -- 740
-		end, -- 737
-		launch = function(____, v) -- 742
-			if core.phase ~= "Aiming" and core.phase ~= "Armed" then -- 742
-				return -- 743
-			end -- 743
-			handoffDate(true) -- 744
-			____exports.coreLaunch( -- 746
-				core, -- 746
-				v, -- 746
-				level, -- 746
-				probePos, -- 746
-				probeVel -- 746
-			) -- 746
-			deps.trajectory:clearPrediction() -- 747
-			deps:onPhase("Flying") -- 748
-		end, -- 742
-		retry = function() -- 750
-			if core.phase ~= "Result" then -- 750
-				return -- 751
-			end -- 751
-			handoffDate(false) -- 752
-			____exports.coreRetry(core) -- 753
-			deps.trajectory:clearTrail() -- 754
-			deps.trajectory:clearPrediction() -- 755
-			deps.trajectory:clearGoalRings() -- 756
-			deps:onPhase("Aiming") -- 757
-		end, -- 750
-		backToSelect = function() -- 759
-			if not ____exports.coreBackToSelect(core) then -- 759
-				return false -- 760
-			end -- 760
-			deps.aim:setEnabled(false) -- 762
-			deps.trajectory:clearTrail() -- 763
-			deps.trajectory:clearPrediction() -- 764
-			deps.trajectory:clearGoalRings() -- 765
-			deps:onPhase("LevelSelect") -- 766
-			return true -- 767
-		end, -- 759
-		startLevel = function() -- 769
+			handoffDate(true) -- 741
+			____exports.coreLaunch( -- 742
+				core, -- 742
+				core.aim.velocity, -- 742
+				level, -- 742
+				probePos, -- 742
+				probeVel -- 742
+			) -- 742
+			deps.trajectory:clearPrediction() -- 743
+			deps:onPhase("Flying") -- 744
+		end, -- 738
+		armed = function() return core.phase == "Armed" end, -- 746
+		observeDrag = function(____, dx, dy) -- 747
+			introT = IntroDurationSec -- 748
+			print((((("[escape-velocity] observe drag dx=" .. __TS__NumberToFixed(dx, 0)) .. " dy=") .. __TS__NumberToFixed(dy, 0)) .. " yaw=") .. __TS__NumberToFixed(obsYawDeg, 0)) -- 749
+			obsYawDeg = obsYawDeg + dx * 0.35 -- 750
+			obsPitchDeg = obsPitchDeg + dy * 0.25 -- 751
+			if obsPitchDeg > 40 then -- 751
+				obsPitchDeg = 40 -- 752
+			end -- 752
+			if obsPitchDeg < -40 then -- 752
+				obsPitchDeg = -40 -- 753
+			end -- 753
+		end, -- 747
+		observeZoom = function(____, deltaDist) -- 755
+			obsZoom = obsZoom * (1 + deltaDist * 0.002) -- 756
+			if obsZoom < 0.4 then -- 756
+				obsZoom = 0.4 -- 757
+			end -- 757
+			if obsZoom > 1.8 then -- 757
+				obsZoom = 1.8 -- 758
+			end -- 758
+		end, -- 755
+		launch = function(____, v) -- 760
+			if core.phase ~= "Aiming" and core.phase ~= "Armed" then -- 760
+				return -- 761
+			end -- 761
+			handoffDate(true) -- 762
+			____exports.coreLaunch( -- 764
+				core, -- 764
+				v, -- 764
+				level, -- 764
+				probePos, -- 764
+				probeVel -- 764
+			) -- 764
+			deps.trajectory:clearPrediction() -- 765
+			deps:onPhase("Flying") -- 766
+		end, -- 760
+		retry = function() -- 768
+			if core.phase ~= "Result" then -- 768
+				return -- 769
+			end -- 769
+			handoffDate(false) -- 770
+			aimed = false -- 771
 			____exports.coreRetry(core) -- 772
-			introT = 0 -- 773
-			introLogged = false -- 774
-			prepareIdle() -- 775
-			deps.trajectory:clearTrail() -- 776
-			deps.trajectory:clearPrediction() -- 777
-			deps.trajectory:clearGoalRings() -- 778
-			deps:onPhase("Aiming") -- 779
-		end, -- 769
-		stepTime = function(____, dir, span) -- 781
-			if not ____exports.coreTimeWarpAllowed(core) then -- 781
-				print(("[escape-velocity] stepTime ignored (phase=" .. core.phase) .. ")") -- 785
-				return -- 786
-			end -- 786
-			local span0 = span > 0 and span or 0 -- 788
-			clock = clock + dir * TimeWarpStep -- 789
-			if clock < 0 then -- 789
-				clock = 0 -- 790
-			end -- 790
-			if span0 > 0 and clock > span0 then -- 790
-				clock = span0 -- 791
-			end -- 791
-			print((("[escape-velocity] stepTime dir=" .. __TS__NumberToFixed(dir, 0)) .. " clock=") .. __TS__NumberToFixed(clock, 0)) -- 793
-		end, -- 781
-		dateNow = function() return core.t0 + clock end, -- 795
-		setBrakeMode = function(____, on) -- 796
-			core.brakeMode = on -- 797
-		end, -- 796
-		brakeMode = function() return core.brakeMode end, -- 800
-		update = function(____, frameDt) return update(frameDt) end -- 802
-	} -- 802
+			deps.trajectory:clearTrail() -- 773
+			deps.trajectory:clearPrediction() -- 774
+			deps.trajectory:clearGoalRings() -- 775
+			deps:onPhase("Aiming") -- 776
+		end, -- 768
+		backToSelect = function() -- 778
+			if not ____exports.coreBackToSelect(core) then -- 778
+				return false -- 779
+			end -- 779
+			deps.aim:setEnabled(false) -- 781
+			deps.trajectory:clearTrail() -- 782
+			deps.trajectory:clearPrediction() -- 783
+			deps.trajectory:clearGoalRings() -- 784
+			deps:onPhase("LevelSelect") -- 785
+			return true -- 786
+		end, -- 778
+		startLevel = function() -- 788
+			aimed = false -- 791
+			____exports.coreRetry(core) -- 792
+			introT = 0 -- 793
+			introLogged = false -- 794
+			prepareIdle() -- 795
+			deps.trajectory:clearTrail() -- 796
+			deps.trajectory:clearPrediction() -- 797
+			deps.trajectory:clearGoalRings() -- 798
+			deps:onPhase("Aiming") -- 799
+		end, -- 788
+		stepTime = function(____, dir, span) -- 801
+			if not ____exports.coreTimeWarpAllowed(core) then -- 801
+				print(("[escape-velocity] stepTime ignored (phase=" .. core.phase) .. ")") -- 805
+				return -- 806
+			end -- 806
+			local span0 = span > 0 and span or 0 -- 808
+			clock = clock + dir * TimeWarpStep -- 809
+			if clock < 0 then -- 809
+				clock = 0 -- 810
+			end -- 810
+			if span0 > 0 and clock > span0 then -- 810
+				clock = span0 -- 811
+			end -- 811
+			print((("[escape-velocity] stepTime dir=" .. __TS__NumberToFixed(dir, 0)) .. " clock=") .. __TS__NumberToFixed(clock, 0)) -- 813
+		end, -- 801
+		dateNow = function() return core.t0 + clock end, -- 815
+		setBrakeMode = function(____, on) -- 816
+			core.brakeMode = on -- 817
+		end, -- 816
+		brakeMode = function() return core.brakeMode end, -- 820
+		update = function(____, frameDt) return update(frameDt) end -- 822
+	} -- 822
 end -- 371
 return ____exports -- 371

@@ -414,6 +414,17 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	/** 时间流量程（秒）：世界时钟夹在 [0, span]；0 = 不限制。 */
 	let warpSpan = 0;
 	let idlePath: SimResult | undefined = undefined;
+	/**
+	 * 玩家**是否已经瞄过**（S3.12）。
+	 *
+	 * 用户原话：「预览线有时候调整好了又会变回初始状态，比如第一关，默认就不要显示预览线，
+	 * 调整过了再显示」。所以规则是：
+	 *   - 进关时**一条线都不画**（不管有没有待机轨迹）；
+	 *   - 玩家在探测器附近拖过一次之后，线就属于"他瞄的这一发"，松手（Armed）也**保持**，
+	 *     直到发射 / 重试 / 退出关卡才清掉。
+	 * 从前那套"没在拖就把待机轨道画成预测线"会让玩家调好的线被覆盖成初始状态。
+	 */
+	let aimed = false;
 	/** 探测器**此刻**在哪 / 以什么速度前进（待机会绕着地球走，所以不能写死 probeStart）。 */
 	let probePos: P2 = { x: level.probeStart.x, y: level.probeStart.y };
 	let probeVel: P2 = level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 };
@@ -617,11 +628,17 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 看起来“不是从探测器出发”（实测踩过）。
 		// 代价：每帧 600 步 simulate + ~150 点投影，可忽略。
 		// 只在瞄准/日期变化时重算（同一次拖动里每帧都算一遍是浪费；投影仍然每帧做）。
-		if (!dragging && idlePath !== undefined) {
-			// 待机：预测线 = "什么都不做会飞到哪" = 待机轨迹的**后半段**（不必重算）
-			deps.trajectory.setPrediction(idlePath.points.slice(idx), basis);
+		if (!aimed) {
+			// 还没瞄过：**不画预测线**（用户 S3.12 明确要求"默认不要显示预览线"）。
+			// 从前这里画的是"什么都不做会飞到哪"（待机轨道），既不是玩家的意图，
+			// 又会在玩家松手后把他的线**覆盖**掉。
+			deps.trajectory.clearPrediction();
+			predKey = '';
 		} else {
-			const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + core.t0.toFixed(3) +
+			// ⚠️ 缓存键必须带上**日期**与**探测器此刻的位置**：行星位置随日期变、L1 的探测器自己在动，
+			//    漏掉任何一项都会留下一条"对不上此刻物理"的旧线（看到的 ≠ 飞到的）。
+			const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + tNow.toFixed(2) +
+				'|' + probePos.x.toFixed(2) + ',' + probePos.y.toFixed(2) +
 				'|' + (core.brakeMode ? 'B' : 'C') + '|' + idx.toFixed(0);
 			if (key !== predKey) {
 				predKey = key;
@@ -711,6 +728,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		result: (): ResultKind | undefined => core.result,
 		onAimDrag: (a: AimResult): void => {
 			core.aim = a;
+			aimed = true; // 玩家动过手了 ⇒ 从他拖动的那一刻起，预测线才属于他（S3.12）
 			introT = IntroDurationSec; // 玩家一动手就跳过进关镜头（操作权优先）
 		},
 		aimReady: (): void => {
@@ -750,6 +768,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		retry: (): void => {
 			if (core.phase !== 'Result') return;
 			handoffDate(false); // 把日期从 t0 拿回 clock：重试保留玩家挑好的时机
+			aimed = false;      // 重新瞄准：预测线回到"还没瞄过"的状态
 			coreRetry(core);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
@@ -769,6 +788,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		startLevel: (): void => {
 			// 复用 coreRetry 的“清空一切回到 Aiming”：它对相态没有守卫，
 			// 正好当作“重置本关”用（coreRetry 本身不改）。
+			aimed = false;
 			coreRetry(core);
 			introT = 0; // 从选关进来才放一遍进关镜头（重试不重放）
 			introLogged = false;

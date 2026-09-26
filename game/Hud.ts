@@ -511,8 +511,10 @@ export function createAimInput(
 
 	// ---- 「发射」按钮（S3.10，右下角拇指区；只在 Armed 态出现）----
 	// ⚠️ 用户已定：按钮之后都要换成**图标**（竖屏文字太占地方）。这里是文字占位。
-	const LaunchButtonW = 200;
-	const LaunchButtonH = 96;
+	// S3.12：命中区 200×96 → **220×112**（触屏目标只许变大）；并且 \`fireOn: 'press'\` ——
+	// 「发射」是一次性动作，挂在"松手"上时，手指划出按钮的那一下会整个丢掉（用户反馈"点了没反应"）。
+	const LaunchButtonW = 220;
+	const LaunchButtonH = 112;
 	const launchButton = createButton(root, {
 		w: LaunchButtonW,
 		h: LaunchButtonH,
@@ -521,8 +523,10 @@ export function createAimInput(
 		bgHex: ResultButtonBgHex,
 		fgHex: ResultButtonFgHex,
 		borderHex: ResultButtonBorderHex,
+		fireOn: 'press',
 		onTap: (): void => {
 			// 防抖在 Ui.createButton 里（0.5 秒）；这里再加一道状态守卫（见 Game.launchArmed）
+			print('[escape-velocity] launch button fire (press)');
 			if (launchHandler !== undefined) launchHandler();
 		},
 	});
@@ -792,6 +796,7 @@ export function createResultPanel(
 		bgHex: ResultButtonBgHex,
 		fgHex: ResultButtonFgHex,
 		borderHex: ResultButtonBorderHex,
+		fireOn: 'press',
 		onTap: opts.onRetry,
 	});
 	retryButton.root.position = Vec2(padX, cursor);
@@ -805,6 +810,7 @@ export function createResultPanel(
 		bgHex: ResultButtonAltBgHex,
 		fgHex: ResultButtonFgHex,
 		borderHex: ResultButtonBorderHex,
+		fireOn: 'press',
 		onTap: opts.onBackToSelect,
 	});
 	backButton.root.position = Vec2(padX, cursor);
@@ -917,6 +923,8 @@ export function createLevelSelect(
 			bgHex: SelectLockedBgHex,
 			fgHex: SelectLockedFgHex,
 			borderHex: SelectBorderHex,
+			// 一次性动作：按下即选（"点了没反应"的老毛病在选关按钮上同样出现过）
+			fireOn: 'press',
 			onTap: (): void => opts.onPick(index),
 		});
 		const col = index % cols;
@@ -940,6 +948,7 @@ export function createLevelSelect(
 			bgHex: SelectLockedBgHex,
 			fgHex: SelectSubtitleHex,
 			borderHex: SelectBorderHex,
+			fireOn: 'press',
 			onTap: (): void => {
 				if (opts.onReplayIntro !== undefined) opts.onReplayIntro();
 			},

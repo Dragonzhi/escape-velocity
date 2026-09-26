@@ -173,8 +173,20 @@ export interface ButtonOptions {
 	bgHex: number;
 	fgHex: number;
 	borderHex?: number;
-	/** 点击（松手）回调。⚠️ 带 0.5 秒防抖（见 createButton 里的说明）。 */
+	/** 点击回调。⚠️ 带 0.5 秒防抖（见 createButton 里的说明）。 */
 	onTap: () => void;
+	/**
+	 * 什么时候触发 `onTap`（S3.12）：
+	 * - `'release'`（默认）：松手时触发，历史行为；
+	 * - `'press'`：**按下即触发** —— 给"点火 / 重试 / 返回"这类**一次性**动作。
+	 *
+	 * 为什么需要它：Dora 的 `onTap` 挂在 `onTapEnded` 上，而引擎**会丢事件**、
+	 * 也**没有"触摸取消"回调** —— 手指按下后划出按钮再松开，那一下可能落到别的节点上，
+	 * 表现就是"按了没反应"（用户会话 44：「有的时候还是会出现按钮点击了没有反应，比如发射按钮」）。
+	 * 一次性动作挂在按下那一刻，就与"松手落在哪"无关了。
+	 * 幂等由调用方保证（本项目里：发射后相态立刻离开 Armed，重试后面板立刻收起）。
+	 */
+	fireOn?: 'release' | 'press';
 	/**
 	 * 按下（还没松手）回调。给"按住即走"这类需要**按下/松手两个时刻**的按钮用。
 	 *
@@ -242,26 +254,32 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 		setLabelColor(label, fgHex);
 	};
 
+	// ⚠️ 实测（2026-09-26，合成点击点「刹车」按钮）：**一次点击会被投递两次** ——
+	//    引擎的鼠标与触摸两条路都会走到回调，切换型按钮因此"开了又立刻关"。
+	//    0.5 秒防抖：双投递是同一瞬间，而人不可能 0.5 秒内在同一按钮上点两次。
+	//    （fireOn='press' 时同样吃这条防抖：重复投递由幂等守卫 + 这里一起挡掉。）
+	const fireTap = (): void => {
+		const now = App.elapsedTime;
+		if (lastTapAt >= 0 && now - lastTapAt < 0.5) return;
+		lastTapAt = now;
+		opts.onTap();
+	};
 	root.onTapBegan(() => {
 		if (!enabled) return;
 		pressed = true;
 		repaint();
 		if (opts.onPressBegan !== undefined) opts.onPressBegan();
+		// S3.12：一次性动作在**按下**那一刻就做（见 ButtonOptions.fireOn 的说明）
+		if (opts.fireOn === 'press') fireTap();
 	});
 	root.onTapEnded(() => {
 		if (!enabled) return;
 		pressed = false;
 		repaint();
-		// ⚠️ 松手这条**不走下面的 0.5 秒防抖**：防抖是给 `onTap`（同一瞬间双投递）的，
+		// ⚠️ 松手这条**不走 0.5 秒防抖**：防抖是给 `onTap`（同一瞬间双投递）的，
 		//    而"按住即走"必须在真的松手时立刻停 —— 幂等由调用方保证。
 		if (opts.onPressEnded !== undefined) opts.onPressEnded();
-		// ⚠️ 实测（2026-09-26，合成点击点「刹车」按钮）：**一次点击会被投递两次** ——
-		//    引擎的鼠标与触摸两条路都会走到 onTapEnded，切换型按钮因此"开了又立刻关"。
-		//    0.5 秒防抖：双投递是同一瞬间，而人不可能 0.5 秒内在同一按钮上点两次。
-		const now = App.elapsedTime;
-		if (lastTapAt >= 0 && now - lastTapAt < 0.5) return;
-		lastTapAt = now;
-		opts.onTap();
+		if (opts.fireOn !== 'press') fireTap();
 	});
 
 	repaint();

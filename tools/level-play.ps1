@@ -28,6 +28,11 @@ param(
   [int]$AutoArmFrame = -1,
   [double]$VX = 0,
   [double]$VY = 0,
+  # 瞄准拖动（View 坐标，左下原点）：DragX1 < 0 = 不拖。用于"拖一次 ⇒ 出预测线"这类验收
+  [int]$DragX1 = -1,
+  [int]$DragY1 = -1,
+  [int]$DragX2 = -1,
+  [int]$DragY2 = -1,
   # 按住「加速 ▶」多久（毫秒）；<=0 = 不按
   [int]$HoldWarpMs = 0,
   # 连点：View 坐标（左下原点）。TapX < 0 = 不点
@@ -123,6 +128,15 @@ function To-Client([double]$vx, [double]$vy) {
 $runStart = (Get-Date).AddSeconds(-3)
 $prefix = if ($ShotName -ne "") { $ShotName } else { "play-L$Level" }
 
+# ---- 2b) 瞄准拖动（如果给了坐标）----
+if ($DragX1 -ge 0 -and $DragX2 -ge 0) {
+  $c1 = To-Client $DragX1 $DragY1
+  $c2 = To-Client $DragX2 $DragY2
+  Write-Output ("瞄准拖动 view=(" + $DragX1 + "," + $DragY1 + ") -> (" + $DragX2 + "," + $DragY2 + ") client=(" + $c1[0] + "," + $c1[1] + ")->(" + $c2[0] + "," + $c2[1] + ")")
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $mc -Action drag -StartX $c1[0] -StartY $c1[1] -EndX $c2[0] -EndY $c2[1] -Steps 10 -StepMs 40 | Out-Null
+  Start-Sleep -Milliseconds 600
+}
+
 # ---- 3) 按住「加速 ▶」----
 if ($HoldWarpMs -gt 0) {
   $warpX = $viewW - 260 + 116 + 8 + 58
@@ -140,8 +154,9 @@ if ($ShotBeforeTaps) { Take-Shot ($prefix + "-before") }
 
 # ---- 5) 连点（默认目标是「发射」按钮的中心）----
 if ($Taps -gt 0) {
-  $tx = if ($TapX -ge 0) { $TapX } else { $viewW - 124 }      # 「发射」按钮中心 x
-  $ty = if ($TapY -ge 0) { $TapY } else { 144 }               # 「发射」按钮中心 y
+  # 「发射」按钮：220×112、左下角 (viewW-244, 96) ⇒ 中心 (viewW-134, 152)
+  $tx = if ($TapX -ge 0) { $TapX } else { $viewW - 134 }
+  $ty = if ($TapY -ge 0) { $TapY } else { 152 }
   $c = To-Client $tx $ty
   Write-Output ("连点 " + $Taps + " 次于 view=(" + $tx + "," + $ty + ") client=(" + $c[0] + "," + $c[1] + ") 间隔 " + $TapIntervalMs + " ms")
   for ($k = 0; $k -lt $Taps; $k++) {

@@ -64,11 +64,13 @@ node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
 node tools/level-phases.mjs 5                       # 解 L5：最佳相位 + "有多少条路线"
 node tools/level-phases.mjs 4 --t0 180              # 解"第 180 秒才对齐"的相位（L4/L6 用）
 
-# ⑤ 合成鼠标"玩一关"（按住/连按/相态守卫这类**时序**行为，逐关截图证明不了）
+# ⑤ 合成鼠标"玩一关"（按住/连按/相态守卫/按钮命中这类**时序**行为，逐关截图证明不了）
 pwsh tools/level-play.ps1 -Level 4 -HoldWarpMs 2500
+# 自动进 Armed（enter-request 的 N@arm:<frames>）→ 连点「发射」→ 同时抓"发射前/后"两帧做 A/B
+pwsh tools/level-play.ps1 -Level 4 -AutoArmFrame 120 -HoldWarpMs 2500 -Taps 1 -ShotBeforeTaps
 ```
 
-单测基线：`SUMMARY passed=8 failed=0 total=8`（**247 条断言**）→ `.agent/test-results/unit-summary.txt`。
+单测基线：`SUMMARY passed=8 failed=0 total=8`（**253 条断言**）→ `.agent/test-results/unit-summary.txt`。
 引擎 API（8866）需要引擎设置里「访问验证 / Auth Required」为关闭；`/ts/build` 还要求 Web IDE 浏览器已连接
 （TS 编译实际发生在浏览器里 —— 本地构建用 `tools/dora-build/` 即可，不要依赖它）。
 截图是未压缩 TGA，转 PNG：`python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"`。
@@ -109,6 +111,22 @@ pwsh tools/level-play.ps1 -Level 4 -HoldWarpMs 2500
    ⚠️ 这条同时提醒：**真机上的"点了没反应"可能根本不在游戏逻辑里**。区分办法：每次点按都打一行带状态的日志
    （本项目现在是 `[escape-velocity] tap: retry (resultIndex=0 phase=Result)`），有行 = 事件到了、没行 = 事件没到。
 
+⚠️ **会话 44 的三条新坑**：
+
+9. **一次性按钮必须"按下即动作"**（`ButtonOptions.fireOn: 'press'`；用户原话：「有的时候还是会出现
+   按钮点击了没有反应的情况，比如发射按钮」）。Dora 的 `onTap` 挂在 **`onTapEnded`（松手）**上，
+   而引擎**会丢事件**、也**没有"触摸取消"回调** —— 按下后划出按钮再松开，那一下可能落到别的节点上。
+   用 `'press'` 的：「发射」「重试本关 / 返回关卡选择」、选关按钮、「重看开场」；
+   状态型按钮（时间流 ◀/▶、惯性/刹车）保持 `'release'`。共用同一条 0.5 秒防抖，**幂等由调用方保证**。
+   每次动作都打一行日志（`launch button fire (press)`）—— 有行 = 事件到了。
+10. **世界时刻只有一个事实来源**：`tWorld = core.t0 + core.flightTime`。而且 `core.t0` 在
+   **发射瞬间由发射日期交棒而来**（`coreHandoffDate`：发射 `clock→t0`、重试 `t0→clock`、进关都归零）。
+   踩过的现象：L4/L6"调好时间一按发射，行星跳回原位"（`core.t0` 永远是 0，只有 `clock` 在变）。
+   交棒必须保证 **`t0 + clock` 守恒**（画面不跳），单测 `handoff-*` 守着。
+11. **预测线只在"玩家瞄过"之后才存在**（`aimed` 标志）：进关**一条线都不画**，
+   松手进 `Armed` 后**保持**玩家那条线（别拿待机轨道去覆盖它）；重算的缓存键必须含
+   **日期 + 探测器此刻位置**（行星随日期动、L1 的探测器自己在动）。
+
 ✅ **触摸可以自动验收（Windows 桌面）**：`Touch` 是私有构造，探针注入不了，
 但 Dora 的触摸事件**同时代表鼠标点击** —— 用 `tools/input-inject/mousectl.ps1` 合成鼠标事件即可驱动真实命中判定与状态机。
 坐标换算：`View.size`（W×H，用 `Test/SizeProbe.lua` 读，**不要写死** —— 横屏 2024×1230 / 竖屏 601×1066）是逻辑坐标，窗口客户区是缩放显示，
@@ -124,4 +142,4 @@ pwsh tools/level-play.ps1 -Level 4 -HoldWarpMs 2500
 - 提交前清理：不带入 `.agent/test-results/*`、临时日志、密钥或个人配置。
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
 - ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 41 个文件，
-  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**247 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
+  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**253 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
