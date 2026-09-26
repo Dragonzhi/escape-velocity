@@ -116,6 +116,8 @@ interface SweepStat {
  * 时间轴关还要再乘 t0 档数，为控制引擎内耗时退回 12×4（× 24 档 t0 仍然有 1152 个样本）。
  */
 let levelDvTop = AimMaxSpeed;
+/** 出发时已有的速度（S3.9.3，L1 = 绕地球的圆轨道）；扫掠的初速度 = 它 + 这一次点火。 */
+let levelVel0: P2 = { x: 0, y: 0 };
 
 function grid(dirCount: number, powerCount: number): P2[] {
 	const out: P2[] = [];
@@ -127,7 +129,7 @@ function grid(dirCount: number, powerCount: number): P2[] {
 			const p = powerCount === 4 ? [0.35, 0.6, 0.85, 1.0][k] : (powerCount === 1 ? 1 : 0.35 + (0.65 * k) / (powerCount - 1));
 			// ⚠️ 上限要跟着**这一关的 Δv 预算**走，否则扫掠会给出玩家根本打不出来的解（S3.9.2b）
 			const speed = AimMinSpeed + (levelDvTop - AimMinSpeed) * p;
-			out.push({ x: Math.cos(angle) * speed, y: Math.sin(angle) * speed });
+			out.push({ x: Math.cos(angle) * speed + levelVel0.x, y: Math.sin(angle) * speed + levelVel0.y });
 		}
 	}
 	return out;
@@ -187,6 +189,7 @@ function testReachability(): SweepStat[] {
 		// 时间轴关的 t0 要采密一点：L4 的"两颗巨行星同时在航线上"的窗口只有几十秒宽
 		const t0Count = lv.timeWindow !== undefined ? 24 : 1;
 		levelDvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
+		levelVel0 = lv.probeVel0 !== undefined ? lv.probeVel0 : { x: 0, y: 0 };
 		let stat = sweepLevel(lv, 12, 4, t0Count);
 		if (stat.solutions === 0) {
 			stat = sweepLevel(lv, 24, 6, lv.timeWindow !== undefined ? 24 : 1);

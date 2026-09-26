@@ -155,6 +155,8 @@ if (levelTotal <= 0) {
 		const level: GameLevel = {
 			bodies,
 			probeStart: def.probeStart,
+			// S3.9.3：出发时已有的速度（L1 = 绕地球的圆轨道速度）—— 玩家拖出来的是点火 Δv，落在它上面。
+			probeVel0: def.probeVel0,
 			goal: def.goal,
 			escapeRadius: def.escapeRadius,
 			maxSteps: def.maxSteps,
@@ -179,7 +181,8 @@ if (levelTotal <= 0) {
 			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
 			// 地球锚点（纯视觉）：出发点正下方 ≈4 格——大天线"回头指向"的目标。
 			// homeRadius 逐关变小（S3.6.1 尺寸层次）：越飞越远，回头时它越小。
-			home: { x: level.probeStart.x, y: level.probeStart.y + 4.2 },
+			// ⚠️ L1 的地球已经是**真天体**（S3.9.3）⇒ 那里 homeAnchor = false，否则会叠两个地球。
+			home: def.homeAnchor === false ? undefined : { x: level.probeStart.x, y: level.probeStart.y + 4.2 },
 			homeRadius: def.homeRadius,
 			// [二分测试 C：临时禁用分体]
 			probeBodyPath: 'Assets/Model/Probe_Body.glb',

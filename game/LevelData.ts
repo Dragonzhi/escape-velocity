@@ -80,6 +80,16 @@ export interface LevelDef {
 	/** 关间"航行日志"体简报：我在哪 / 下一站 / 为什么。 */
 	brief: string;
 	probeStart: P2;
+	/**
+	 * 出发时探测器**已经有的速度**（S3.9.3）：L1 用它表达"你正在绕地球飞"。
+	 * 玩家拖出来的那一下是 **Δv（点火）**，落在它上面：总速度 = probeVel0 + 点火。省略 = 静止出发。
+	 */
+	probeVel0?: P2;
+	/**
+	 * 是否还要那个纯视觉的"家园锚点"（地球）。
+	 * L1 的地球已经是真天体（有引力、会挡住 1 号候选）⇒ 那里必须置 false，否则叠两个地球。
+	 */
+	homeAnchor?: boolean;
 	planets: Body[];
 	visuals: PlanetVisualDef[];
 	goal: GoalSpec;
@@ -235,15 +245,25 @@ const LEVELS: LevelDef[] = [
 		title: '出发',
 		brief: '航行日志 · 第 1 天：离开地球。这一段路很干净，没有大天体捣乱 —— 先把拖拽瞄准练熟。月球在正前方。',
 		probeStart: { x: 0, y: 40 },
+		// S3.9.3：出发时探测器**已经在绕地球飞**（用户："飞行器也是一开始在运动的，围绕地球"）。
+		// 地球在这一关是**真天体**（有引力）：圆轨道速度 = sqrt(gm / 距离) = sqrt(4320 / 30) ≈ 12 单位/秒，
+		// 方向 +x（切向）⇒ 预测线一上来就是一条弧线，玩家拖出来的那一下是"点火"。
+		probeVel0: { x: 12, y: 0 },
+		homeAnchor: false, // 地球已经在 planets[0]，别再叠一个纯视觉锚点
 		planets: [
-			// 月球方向：无引力的纯靶子（Sphere 单位球染灰代用）。
+			// 地球（真天体）：探测器在它上方 30 单位处绕行。
+			// gm 2600（不是 4320）：教学关不希望地球太"黏" —— 逃离速度 sqrt(2·2600/30) ≈ 13，一次像样的点火就能走。
+			{ gm: 2600, radius: R_EARTH, orbitCenter: { x: 0, y: 70 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
+			// 月球：无引力的纯靶子（Sphere 单位球染灰代用）。
 			{ gm: 0, radius: R_MOON, orbitCenter: { x: 0, y: -70 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
 		],
 		visuals: [
+			{ r: 0.42, g: 0.62, b: 0.85, displayRadius: R_EARTH, ring: false, model: 'Planet_Earth' },
 			{ r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false },
 		],
-		goal: { kind: 'planet', planetIndex: 0, tolerance: 14 },
-		dvBudget: 40,
+		// 教学关要宽容：环放宽到 18（月球半径 1.0，等于是"飞到月球附近就算"）
+		goal: { kind: 'planet', planetIndex: 1, tolerance: 24 },
+		dvBudget: 45,
 		escapeRadius: 700,
 		maxSteps: 1200,
 		homeRadius: 1.75,

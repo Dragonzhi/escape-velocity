@@ -156,189 +156,192 @@ end -- 60
 -- 12 方向太粗会漏掉窄解（实测 L3/L5 的解在斜向速度上），所以非时间轴关用 24×6；
 -- 时间轴关还要再乘 t0 档数，为控制引擎内耗时退回 12×4（× 24 档 t0 仍然有 1152 个样本）。
 local levelDvTop = AimMaxSpeed -- 118
-local function grid(dirCount, powerCount) -- 120
-	local out = {} -- 121
-	do -- 121
-		local d = 0 -- 122
-		while d < dirCount do -- 122
-			local angle = d * 2 * math.pi / dirCount -- 123
-			do -- 123
-				local k = 0 -- 124
-				while k < powerCount do -- 124
-					local p = powerCount == 4 and ({0.35, 0.6, 0.85, 1})[k + 1] or (powerCount == 1 and 1 or 0.35 + 0.65 * k / (powerCount - 1)) -- 127
-					local speed = AimMinSpeed + (levelDvTop - AimMinSpeed) * p -- 129
-					out[#out + 1] = { -- 130
-						x = math.cos(angle) * speed, -- 130
-						y = math.sin(angle) * speed -- 130
-					} -- 130
-					k = k + 1 -- 124
-				end -- 124
-			end -- 124
-			d = d + 1 -- 122
-		end -- 122
-	end -- 122
-	return out -- 133
-end -- 120
+--- 出发时已有的速度（S3.9.3，L1 = 绕地球的圆轨道）；扫掠的初速度 = 它 + 这一次点火。
+local levelVel0 = {x = 0, y = 0} -- 120
+local function grid(dirCount, powerCount) -- 122
+	local out = {} -- 123
+	do -- 123
+		local d = 0 -- 124
+		while d < dirCount do -- 124
+			local angle = d * 2 * math.pi / dirCount -- 125
+			do -- 125
+				local k = 0 -- 126
+				while k < powerCount do -- 126
+					local p = powerCount == 4 and ({0.35, 0.6, 0.85, 1})[k + 1] or (powerCount == 1 and 1 or 0.35 + 0.65 * k / (powerCount - 1)) -- 129
+					local speed = AimMinSpeed + (levelDvTop - AimMinSpeed) * p -- 131
+					out[#out + 1] = { -- 132
+						x = math.cos(angle) * speed + levelVel0.x, -- 132
+						y = math.sin(angle) * speed + levelVel0.y -- 132
+					} -- 132
+					k = k + 1 -- 126
+				end -- 126
+			end -- 126
+			d = d + 1 -- 124
+		end -- 124
+	end -- 124
+	return out -- 135
+end -- 122
 --- 3) 可玩性扫掠：每关至少一个速度向量能达成目标。
-local function sweepLevel(lv, dirCount, powerCount, t0Count) -- 137
-	local stat = { -- 138
-		solutions = 0, -- 138
-		total = 0, -- 138
-		perT0 = {}, -- 138
-		t0s = {}, -- 138
-		best = "" -- 138
-	} -- 138
-	if lv == nil then -- 138
-		return stat -- 139
-	end -- 139
-	local bodies = scaledPlanets(lv) -- 140
-	local sampleEvery = 4 -- 141
-	local t0s = {} -- 142
-	if lv.timeWindow ~= nil then -- 142
-		do -- 142
-			local i = 0 -- 144
-			while i < t0Count do -- 144
-				t0s[#t0s + 1] = lv.timeWindow.span * i / t0Count -- 144
-				i = i + 1 -- 144
-			end -- 144
-		end -- 144
-	else -- 144
-		t0s[#t0s + 1] = 0 -- 146
-	end -- 146
-	local vs = grid(dirCount, powerCount) -- 148
-	do -- 148
-		local ti = 0 -- 150
-		while ti < #t0s do -- 150
-			local t0 = t0s[ti + 1] -- 151
-			local ____stat_t0s_0 = stat.t0s -- 151
-			____stat_t0s_0[#____stat_t0s_0 + 1] = t0 -- 152
-			local hits = 0 -- 153
-			for ____, v in ipairs(vs) do -- 154
-				local sim = simulate({pos = {x = lv.probeStart.x, y = lv.probeStart.y}, vel = v}, bodies, { -- 155
-					steps = lv.maxSteps, -- 158
-					dt = PhysicsStep, -- 158
-					sampleEvery = sampleEvery, -- 158
-					escapeRadius = lv.escapeRadius, -- 158
-					t0 = t0 -- 158
-				}) -- 158
-				local gi = findGoalIndex( -- 162
-					sim.points, -- 162
-					bodies, -- 162
-					lv.goal, -- 162
-					PhysicsStep * sampleEvery, -- 162
-					t0 -- 162
-				) -- 162
-				stat.total = stat.total + 1 -- 163
-				if resolveResult(sim.outcome, gi, lv.goal) == "success" then -- 163
-					stat.solutions = stat.solutions + 1 -- 165
-					hits = hits + 1 -- 166
-					if stat.best == "" then -- 166
-						local angle = math.atan(v.y, v.x) * 180 / math.pi -- 168
-						stat.best = (((("dir=" .. __TS__NumberToFixed(angle, 0)) .. "deg v=") .. __TS__NumberToFixed( -- 169
-							math.sqrt(v.x * v.x + v.y * v.y), -- 169
-							1 -- 169
-						)) .. " t0=") .. __TS__NumberToFixed(t0, 1) -- 169
-					end -- 169
-				end -- 169
-			end -- 169
-			local ____stat_perT0_1 = stat.perT0 -- 169
-			____stat_perT0_1[#____stat_perT0_1 + 1] = hits -- 173
-			ti = ti + 1 -- 150
-		end -- 150
-	end -- 150
-	return stat -- 175
-end -- 137
-local function testReachability() -- 178
-	local n = levelCount() -- 179
-	local out = {} -- 180
-	do -- 180
-		local i = 0 -- 184
-		while i < n do -- 184
-			do -- 184
-				local lv = getLevel(i) -- 185
-				if lv == nil then -- 185
-					out[#out + 1] = sweepLevel(lv, 12, 4, 1) -- 186
-					goto __continue37 -- 186
-				end -- 186
-				local t0Count = lv.timeWindow ~= nil and 24 or 1 -- 188
-				levelDvTop = lv.dvBudget ~= nil and lv.dvBudget < AimMaxSpeed and lv.dvBudget or AimMaxSpeed -- 189
-				local stat = sweepLevel(lv, 12, 4, t0Count) -- 190
-				if stat.solutions == 0 then -- 190
-					stat = sweepLevel(lv, 24, 6, lv.timeWindow ~= nil and 24 or 1) -- 192
-				end -- 192
-				out[#out + 1] = stat -- 194
-				check( -- 195
-					("lv" .. tostring(lv.id)) .. "-reachable", -- 195
-					stat.solutions > 0, -- 195
-					(((((("每关至少要有一个可行解（" .. lv.title) .. "）：") .. tostring(stat.solutions)) .. "/") .. tostring(stat.total)) .. " ") .. stat.best -- 195
-				) -- 195
-			end -- 195
-			::__continue37:: -- 195
-			i = i + 1 -- 184
-		end -- 184
-	end -- 184
-	return out -- 198
-end -- 178
+local function sweepLevel(lv, dirCount, powerCount, t0Count) -- 139
+	local stat = { -- 140
+		solutions = 0, -- 140
+		total = 0, -- 140
+		perT0 = {}, -- 140
+		t0s = {}, -- 140
+		best = "" -- 140
+	} -- 140
+	if lv == nil then -- 140
+		return stat -- 141
+	end -- 141
+	local bodies = scaledPlanets(lv) -- 142
+	local sampleEvery = 4 -- 143
+	local t0s = {} -- 144
+	if lv.timeWindow ~= nil then -- 144
+		do -- 144
+			local i = 0 -- 146
+			while i < t0Count do -- 146
+				t0s[#t0s + 1] = lv.timeWindow.span * i / t0Count -- 146
+				i = i + 1 -- 146
+			end -- 146
+		end -- 146
+	else -- 146
+		t0s[#t0s + 1] = 0 -- 148
+	end -- 148
+	local vs = grid(dirCount, powerCount) -- 150
+	do -- 150
+		local ti = 0 -- 152
+		while ti < #t0s do -- 152
+			local t0 = t0s[ti + 1] -- 153
+			local ____stat_t0s_0 = stat.t0s -- 153
+			____stat_t0s_0[#____stat_t0s_0 + 1] = t0 -- 154
+			local hits = 0 -- 155
+			for ____, v in ipairs(vs) do -- 156
+				local sim = simulate({pos = {x = lv.probeStart.x, y = lv.probeStart.y}, vel = v}, bodies, { -- 157
+					steps = lv.maxSteps, -- 160
+					dt = PhysicsStep, -- 160
+					sampleEvery = sampleEvery, -- 160
+					escapeRadius = lv.escapeRadius, -- 160
+					t0 = t0 -- 160
+				}) -- 160
+				local gi = findGoalIndex( -- 164
+					sim.points, -- 164
+					bodies, -- 164
+					lv.goal, -- 164
+					PhysicsStep * sampleEvery, -- 164
+					t0 -- 164
+				) -- 164
+				stat.total = stat.total + 1 -- 165
+				if resolveResult(sim.outcome, gi, lv.goal) == "success" then -- 165
+					stat.solutions = stat.solutions + 1 -- 167
+					hits = hits + 1 -- 168
+					if stat.best == "" then -- 168
+						local angle = math.atan(v.y, v.x) * 180 / math.pi -- 170
+						stat.best = (((("dir=" .. __TS__NumberToFixed(angle, 0)) .. "deg v=") .. __TS__NumberToFixed( -- 171
+							math.sqrt(v.x * v.x + v.y * v.y), -- 171
+							1 -- 171
+						)) .. " t0=") .. __TS__NumberToFixed(t0, 1) -- 171
+					end -- 171
+				end -- 171
+			end -- 171
+			local ____stat_perT0_1 = stat.perT0 -- 171
+			____stat_perT0_1[#____stat_perT0_1 + 1] = hits -- 175
+			ti = ti + 1 -- 152
+		end -- 152
+	end -- 152
+	return stat -- 177
+end -- 139
+local function testReachability() -- 180
+	local n = levelCount() -- 181
+	local out = {} -- 182
+	do -- 182
+		local i = 0 -- 186
+		while i < n do -- 186
+			do -- 186
+				local lv = getLevel(i) -- 187
+				if lv == nil then -- 187
+					out[#out + 1] = sweepLevel(lv, 12, 4, 1) -- 188
+					goto __continue37 -- 188
+				end -- 188
+				local t0Count = lv.timeWindow ~= nil and 24 or 1 -- 190
+				levelDvTop = lv.dvBudget ~= nil and lv.dvBudget < AimMaxSpeed and lv.dvBudget or AimMaxSpeed -- 191
+				levelVel0 = lv.probeVel0 ~= nil and lv.probeVel0 or ({x = 0, y = 0}) -- 192
+				local stat = sweepLevel(lv, 12, 4, t0Count) -- 193
+				if stat.solutions == 0 then -- 193
+					stat = sweepLevel(lv, 24, 6, lv.timeWindow ~= nil and 24 or 1) -- 195
+				end -- 195
+				out[#out + 1] = stat -- 197
+				check( -- 198
+					("lv" .. tostring(lv.id)) .. "-reachable", -- 198
+					stat.solutions > 0, -- 198
+					(((((("每关至少要有一个可行解（" .. lv.title) .. "）：") .. tostring(stat.solutions)) .. "/") .. tostring(stat.total)) .. " ") .. stat.best -- 198
+				) -- 198
+			end -- 198
+			::__continue37:: -- 198
+			i = i + 1 -- 186
+		end -- 186
+	end -- 186
+	return out -- 201
+end -- 180
 --- 4) 时间轴（S3.6.4 的数据侧判据）：窗口必须**真的会关**。
 -- 
 -- PLAN 原来写的是「t0=0 无解」，实测做不到 —— 场里自由度太多，任何时机都能蒙中一条线
 -- （证据：24×6×24 的密网格下每个 t0 都有解）。所以判据改成**可观测的三条**：
 --  ① 有 t0 档零解（窗口确实会关）；② 有解的 t0 档 ≥ 6；③ 该关总解数 ≥ 3。
-local function testTimeWindow(stats) -- 207
-	local n = levelCount() -- 208
-	local withWindow = 0 -- 209
-	do -- 209
-		local i = 0 -- 210
-		while i < n do -- 210
-			do -- 210
-				local lv = getLevel(i) -- 211
-				if lv == nil or lv.timeWindow == nil then -- 211
-					goto __continue42 -- 212
-				end -- 212
-				withWindow = withWindow + 1 -- 213
-				local st = stats[i + 1] -- 214
-				local dead = 0 -- 215
-				local alive = 0 -- 216
-				for ____, h in ipairs(st.perT0) do -- 217
-					if h == 0 then -- 217
-						dead = dead + 1 -- 218
-					else -- 218
-						alive = alive + 1 -- 218
-					end -- 218
-				end -- 218
-				check( -- 220
-					("lv" .. tostring(lv.id)) .. "-window-closes", -- 220
-					dead >= 1, -- 220
-					(("时间轴关必须有「发射了也没用」的时机：dead=" .. tostring(dead)) .. "/") .. tostring(#st.perT0) -- 220
-				) -- 220
+local function testTimeWindow(stats) -- 210
+	local n = levelCount() -- 211
+	local withWindow = 0 -- 212
+	do -- 212
+		local i = 0 -- 213
+		while i < n do -- 213
+			do -- 213
+				local lv = getLevel(i) -- 214
+				if lv == nil or lv.timeWindow == nil then -- 214
+					goto __continue42 -- 215
+				end -- 215
+				withWindow = withWindow + 1 -- 216
+				local st = stats[i + 1] -- 217
+				local dead = 0 -- 218
+				local alive = 0 -- 219
+				for ____, h in ipairs(st.perT0) do -- 220
+					if h == 0 then -- 220
+						dead = dead + 1 -- 221
+					else -- 221
+						alive = alive + 1 -- 221
+					end -- 221
+				end -- 221
 				check( -- 223
-					("lv" .. tostring(lv.id)) .. "-window-open", -- 223
-					alive >= 3 and st.solutions >= 3, -- 223
-					(("时间轴必须有能落进去的窗口：alive=" .. tostring(alive)) .. " solutions=") .. tostring(st.solutions) -- 223
+					("lv" .. tostring(lv.id)) .. "-window-closes", -- 223
+					dead >= 1, -- 223
+					(("时间轴关必须有「发射了也没用」的时机：dead=" .. tostring(dead)) .. "/") .. tostring(#st.perT0) -- 223
 				) -- 223
-			end -- 223
-			::__continue42:: -- 223
-			i = i + 1 -- 210
-		end -- 210
-	end -- 210
-	check("time-window-exists", withWindow >= 1, "至少有一关带时间轴（L4 窗口）") -- 226
-end -- 207
-function ____exports.runTests() -- 229
-	testValidity() -- 230
-	testFindGoalIndex() -- 231
-	local stats = testReachability() -- 232
-	testTimeWindow(stats) -- 233
-	local lines = {} -- 235
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 236
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 237
-	local limit = #failures < 12 and #failures or 12 -- 238
-	do -- 238
-		local i = 0 -- 239
-		while i < limit do -- 239
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 240
-			i = i + 1 -- 239
-		end -- 239
-	end -- 239
-	return table.concat(lines, "\n") -- 242
-end -- 229
-return ____exports -- 229
+				check( -- 226
+					("lv" .. tostring(lv.id)) .. "-window-open", -- 226
+					alive >= 3 and st.solutions >= 3, -- 226
+					(("时间轴必须有能落进去的窗口：alive=" .. tostring(alive)) .. " solutions=") .. tostring(st.solutions) -- 226
+				) -- 226
+			end -- 226
+			::__continue42:: -- 226
+			i = i + 1 -- 213
+		end -- 213
+	end -- 213
+	check("time-window-exists", withWindow >= 1, "至少有一关带时间轴（L4 窗口）") -- 229
+end -- 210
+function ____exports.runTests() -- 232
+	testValidity() -- 233
+	testFindGoalIndex() -- 234
+	local stats = testReachability() -- 235
+	testTimeWindow(stats) -- 236
+	local lines = {} -- 238
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 239
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 240
+	local limit = #failures < 12 and #failures or 12 -- 241
+	do -- 241
+		local i = 0 -- 242
+		while i < limit do -- 242
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 243
+			i = i + 1 -- 242
+		end -- 242
+	end -- 242
+	return table.concat(lines, "\n") -- 245
+end -- 232
+return ____exports -- 232

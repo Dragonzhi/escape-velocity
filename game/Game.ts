@@ -63,6 +63,8 @@ export function resolveResult(outcome: Outcome, goalIndex: number, goal: GoalSpe
 export interface GameLevel {
 	bodies: Body[];
 	probeStart: P2;
+	/** 出发时已有的速度（S3.9.3，L1 = 绕地球的圆轨道）；省略 = 静止出发。 */
+	probeVel0?: P2;
 	goal: GoalSpec;
 	escapeRadius: number;
 	maxSteps: number;
@@ -235,6 +237,15 @@ export interface Game {
 export function createGame(level: GameLevel, deps: GameDeps): Game {
 	const core = createCore();
 
+	/**
+	 * 玩家的点火（Δv）落在"出发时已有的速度"上 = 真正的初始速度（S3.9.3）。
+	 * L1 的 probeVel0 = 绕地球的圆轨道速度；其余关卡省略 = 静止出发（与旧行为逐位一致）。
+	 */
+	const launchVelocity = (burn: P2): P2 => {
+		const v0 = level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 };
+		return { x: burn.x + v0.x, y: burn.y + v0.y };
+	};
+
 	const makeBasis = (frame: { eye: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } }): CameraBasis => {
 		return prepareCamera(
 			{
@@ -333,7 +344,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (key !== predKey) {
 			predKey = key;
 			predPoints = simulate(
-				{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: core.aim.velocity.x, y: core.aim.velocity.y } },
+				{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: launchVelocity(core.aim.velocity) },
 				level.bodies,
 				{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: core.t0 },
 			).points;
@@ -397,7 +408,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		launch: (v: P2): void => {
 			if (core.phase !== 'Aiming') return;
-			coreLaunch(core, v, level);
+			coreLaunch(core, launchVelocity(v), level);
 			deps.trajectory.clearPrediction();
 			deps.onPhase('Flying');
 		},
