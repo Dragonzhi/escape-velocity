@@ -118,7 +118,9 @@ function sweepLevel(lv) {
 				const speedOut = Math.hypot(sim.state.vel.x, sim.state.vel.y);
 				let peak = Math.hypot(sim.state.pos.x, sim.state.pos.y);
 				for (const q of sim.points) { const s = Math.hypot(q.x, q.y); if (s > peak) peak = s; }
-				samples.push({ t0, dir: (angle * 180) / Math.PI, power: p, kind, outcome: sim.outcome, gi, speedOut, peak, steps: sim.stepsRun });
+				// tHit = 命中时刻（秒）；gi 是采样点索引 ⇒ 要乘采样间隔
+				const tHit = gi >= 0 ? (gi * every * PhysicsStep) : -1;
+				samples.push({ t0, dir: (angle * 180) / Math.PI, power: p, kind, outcome: sim.outcome, gi, speedOut, peak, steps: sim.stepsRun, tHit });
 			}
 		}
 	}
@@ -160,7 +162,16 @@ for (const r of results) {
 		if (s.peak > peakDist) peakDist = s.peak;
 		if (s.speedOut > speedMax) speedMax = s.speedOut;
 	}
-	const scan = "peakMax=" + peakDist.toFixed(0) + " vMax=" + speedMax.toFixed(1);
+	let tMin = 1e9;
+	let tMax = -1;
+	for (const s of ok) {
+		if (s.tHit > 0) {
+			if (s.tHit < tMin) tMin = s.tHit;
+			if (s.tHit > tMax) tMax = s.tHit;
+		}
+	}
+	const flight = tMax > 0 ? " tHit=" + tMin.toFixed(1) + "-" + tMax.toFixed(1) + "s" : "";
+	const scan = "peakMax=" + peakDist.toFixed(0) + " vMax=" + speedMax.toFixed(1) + flight;
 	console.log(label, String(ok.length + "/" + r.samples.length).padEnd(10), rate.padEnd(8), best.padEnd(26), exit.padEnd(14), scan);
 	if (r.lv.timeWindow) {
 		const perT0 = [];

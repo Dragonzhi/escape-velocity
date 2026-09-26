@@ -59,9 +59,12 @@ function testDistanceMonotonic(): void {
 		dists.push(Math.sqrt(dx * dx + dy * dy + dz * dz));
 	}
 
+	// ⚠️ 容差 1e-3 而不是 1e-9：相机的 eye/target 是 **float32** 的 Vec3（手册 §5 的实测坑），
+	//    夹紧在 CameraMinDistance（S3.7 起 = 60）上的几档距离会带 ~1e-5 的噪声，
+	//    严格单调在夹紧区里站不住 —— 要判的是"单调不减"，不是"逐位变大"。
 	let monotonic = true;
 	for (let i = 1; i < dists.length; i++) {
-		if (dists[i] < dists[i - 1] - 1e-9) {
+		if (dists[i] < dists[i - 1] - 1e-3) {
 			monotonic = false;
 			break;
 		}

@@ -348,6 +348,8 @@ if (levelTotal <= 0) {
 				// 旧视口算出的线会残留到新视口（2026-09-25 横屏截图实测：画面左侧多出一段游离的旧预测线）
 				slot.runtime.trajectory.clearPrediction();
 				slot.runtime.trajectory.clearTrail();
+				// S3.7：到达环也挂在关卡 2D 层上 —— 不 clearing 会留下旧视口算出的椭圆
+				slot.runtime.trajectory.clearGoalRings();
 			}
 			slot.built = false;
 			slot.runtime = undefined;

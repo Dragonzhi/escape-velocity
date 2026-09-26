@@ -28,9 +28,9 @@ import { AimInput, AimResult } from 'game/Hud';
 import { Body, Outcome, P2, SimResult, bodyPositionAt, simulate, sub } from 'game/Gravity';
 import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
-import { TrajectoryView } from 'game/Trajectory';
+import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
-import { GoalSpec, findGoalIndex } from 'game/LevelData';
+import { GoalSpec, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
 import { AimMinSpeed, FlightPlayback, PhysicsStep, PredictSteps } from 'game/Config';
 
 /**
@@ -79,6 +79,11 @@ export interface GameCore {
 	flight: SimResult | undefined;
 	/** 物理步长（回放索引用）。 */
 	dt: number;
+	/**
+	 * 发射时刻（秒）= S3.6.4 时间轴上的"发射日期"。
+	 * 行星位置、预测线、真实飞行**必须**用同一个 t0（否则又变成"看到的 ≠ 飞到的"）。
+	 */
+	t0: number;
 	/** 飞行已播放的物理时间（秒）。 */
 	flightTime: number;
 	/** 第一个进入目标容差的采样点索引；-1 = 未到达。 */
@@ -93,6 +98,7 @@ export function createCore(): GameCore {
 		aim: { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } },
 		flight: undefined,
 		dt: PhysicsStep,
+		t0: 0,
 		flightTime: 0,
 		goalIndex: -1,
 		result: undefined,
@@ -111,10 +117,10 @@ export function coreLaunch(core: GameCore, velocity: P2, level: GameLevel): void
 	const flight = simulate(
 		{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: velocity.x, y: velocity.y } },
 		level.bodies,
-		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius },
+		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0 },
 	);
 	core.flight = flight;
-	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt);
+	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0);
 	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
 	core.flightTime = 0;
 	core.phase = 'Flying';
@@ -245,13 +251,36 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		);
 	};
 
+	// 预测线的缓存（S3.7）：PredictSteps 提到 2400（覆盖整段飞行）之后，**每帧重算**会吃掉整帧预算
+	// （引擎启动时实测把主线程堵到 API 都超时）。所以只在"瞄准或日期变了"时重算，其余帧只重投影。
+	let predKey = '';
+	let predPoints: P2[] = [];
+
+	/** 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。 */
+	const goalRingsAt = (t: number, upto?: number): GoalRing[] => {
+		const wps = goalWaypoints(level.goal);
+		if (wps.length === 0) return [];
+		let passed = 0;
+		if (upto !== undefined && core.flight !== undefined) {
+			passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, upto).passed;
+		}
+		const rings: GoalRing[] = [];
+		for (let i = 0; i < wps.length; i++) {
+			const body = level.bodies[wps[i].planetIndex];
+			if (body === undefined) continue;
+			rings.push({ center: bodyPositionAt(body, t), radius: wps[i].tolerance, passed: i < passed });
+		}
+		return rings;
+	};
+
 	const updateAiming = (): void => {
 		deps.aim.setEnabled(true);
-		deps.scene.syncBodies(0); // D2：瞄准态全局冻结
+		// D2 的时间模型 + S3.6.4 时间轴：瞄准态行星停在"发射日期"t0 的姿态（拖日期即改这一刻）
+		deps.scene.syncBodies(core.t0);
 		deps.scene.syncProbe(level.probeStart);
 
 		const planetPts: P2[] = [];
-		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, 0));
+		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, core.t0));
 
 		const frame = deps.rig.step([level.probeStart, ...planetPts], deps.scene.probeRadius);
 		deps.rig.apply(deps.camera, frame);
@@ -267,12 +296,18 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 若只在 aimDirty 时画一次，线会冻结在过渡中途的投影上，
 		// 看起来“不是从探测器出发”（实测踩过）。
 		// 代价：每帧 600 步 simulate + ~150 点投影，可忽略。
-		const pred = simulate(
-			{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: core.aim.velocity.x, y: core.aim.velocity.y } },
-			level.bodies,
-			{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius },
-		);
-		deps.trajectory.setPrediction(pred.points, basis);
+		// 只在瞄准/日期变化时重算（同一次拖动里每帧都算一遍是浪费；投影仍然每帧做）。
+		const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + core.t0.toFixed(3);
+		if (key !== predKey) {
+			predKey = key;
+			predPoints = simulate(
+				{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: core.aim.velocity.x, y: core.aim.velocity.y } },
+				level.bodies,
+				{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: core.t0 },
+			).points;
+		}
+		deps.trajectory.setPrediction(predPoints, basis);
+		deps.trajectory.setGoalRings(goalRingsAt(core.t0), basis);
 		deps.trajectory.clearTrail();
 	};
 
@@ -303,6 +338,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const trail: P2[] = [];
 		for (let i = 0; i <= idx; i++) trail.push(core.flight.points[i]);
 		deps.trajectory.setTrail(trail, basis);
+		deps.trajectory.setGoalRings(goalRingsAt(t, idx), basis);
 
 		return entered;
 	};
@@ -337,6 +373,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			coreRetry(core);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
+			deps.trajectory.clearGoalRings();
 			deps.onPhase('Aiming');
 		},
 		backToSelect: (): boolean => {
@@ -345,6 +382,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.aim.setEnabled(false);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
+			deps.trajectory.clearGoalRings();
 			deps.onPhase('LevelSelect');
 			return true;
 		},
@@ -354,6 +392,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			coreRetry(core);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
+			deps.trajectory.clearGoalRings();
 			deps.onPhase('Aiming');
 		},
 		// 包一层箭头函数：简写属性会触发 TS100016（见 Hud.ts 同名注释）

@@ -105,6 +105,8 @@ export interface PlanetVisual {
 	ring: boolean;
 	/** 模型名（不含路径与扩展名，如 'Planet_Mars'）；留空表示回退到 spherePath。 */
 	model?: string;
+	/** 自发光（0–1，可选）—— 太阳用，让它看起来是光源而不是一颗石球（S3.7）。 */
+	emissive?: { r: number; g: number; b: number };
 }
 
 /** 行星在场景中的句柄。 */
@@ -444,6 +446,9 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 			const mat = bodyModel.getMaterial(mi);
 			if (mat === undefined) break;
 			mat.baseColor = Color(vis.r * 255, vis.g * 255, vis.b * 255, 255);
+			const em = vis.emissive;
+			// ⚠️ Color3 吃的是 0–255 的整数（或 0xRRGGBB），不是 0–1 的浮点（Earth 那处写的是 0x0c1622）
+			if (em !== undefined) mat.emissive = Color3(Math.round(em.r * 255), Math.round(em.g * 255), Math.round(em.b * 255));
 			mi += 1;
 		}
 

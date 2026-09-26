@@ -41,8 +41,13 @@ export const GravityScale = 1;
 /** 行星公转速度倍率。必须让公转"肉眼可见"（决策 D1）。 */
 export const OrbitSpeedScale = 1;
 
-/** 预测轨迹的采样步数。 */
-export const PredictSteps = 600;
+/**
+ * 预测轨迹的采样步数（S3.7：600 → 2400，覆盖整段飞行）。
+ *
+ * 为什么能加这么多：`createGame` 现在**只在瞄准变化时重算**这条线，其余帧只重投影
+ * （相机在 lerp，投影每帧都得更新）。2400 步 × 4~5 个天体的代价只付在拖动那几帧上。
+ */
+export const PredictSteps = 2400;
 
 // ---------------------------------------------------------------------------
 // 相机调参（已实测确定安全区间，见开发手册 §5.1 / R3 结论）
@@ -53,9 +58,14 @@ export const CameraTiltMin = 20;
 export const CameraTiltMax = 60;
 export const CameraTiltDefault = 45;
 
-/** 相机距离的夹紧范围。竖屏下纵向轨道 dist ≥ 25 即可框住整条轨道。 */
-export const CameraMinDistance = 25;
-export const CameraMaxDistance = 100;
+/**
+ * 相机距离的夹紧范围。竖屏下纵向轨道 dist ≥ 25 即可框住整条轨道。
+ *
+ * S3.7：关卡尺度 ×2.5（轨道半径 55–195）⇒ 取景范围同步放大到 60–260，
+ * 否则远端的行星会被夹在画面外（"拉不开、没有宇宙感"的根因之一）。
+ */
+export const CameraMinDistance = 60;
+export const CameraMaxDistance = 420;
 
 /** 相机跟随的平滑系数（0–1，每帧向目标插值的比例）。 */
 export const CameraLerp = 0.1;
@@ -64,11 +74,15 @@ export const CameraLerp = 0.1;
 // 拖拽瞄准（手册 §5.7）
 // ---------------------------------------------------------------------------
 
-/** 发射速度下限（平面单位/秒）。极短拖动时的速度。 */
-export const AimMinSpeed = 2;
+/**
+ * 发射速度下限（平面单位/秒）。极短拖动时的速度。
+ *
+ * S3.7 关卡重构：世界尺度 ×2.5（见 PLAN S3.7）⇒ 速度同步 ×2.5，轨迹形状与飞行时间不变。
+ */
+export const AimMinSpeed = 5;
 
 /** 发射速度上限（平面单位/秒）。满力时的速度。 */
-export const AimMaxSpeed = 22;
+export const AimMaxSpeed = 55;
 
 /** 拖动多远算“满力”（**视图像素**）。 */
 export const AimMaxDragPx = 380;

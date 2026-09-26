@@ -41,8 +41,9 @@ $root = Split-Path $PSScriptRoot -Parent
 $exe = 'C:\Users\32485\Downloads\dora-ssr-v1.9.3-windows-x86\Dora.exe'
 $api = "http://127.0.0.1:8866"
 
-function Api([string]$path, [string]$json = "{}") {
-  return Invoke-RestMethod -Uri "$api/$path" -Method Post -Body $json -ContentType "application/json" -TimeoutSec 10
+# ⚠️ /run 会**同步执行**整个入口（单测批跑十几秒）后才回包 —— 超时给短了会误报失败。
+function Api([string]$path, [string]$json = "{}", [int]$timeoutSec = 10) {
+  return Invoke-RestMethod -Uri "$api/$path" -Method Post -Body $json -ContentType "application/json" -TimeoutSec $timeoutSec
 }
 
 # 1) 清干净残留实例（占着 8866 的崩态进程会让后面全部连接被拒）
@@ -69,8 +70,8 @@ if ($WaitFile -ne "") {
 }
 if ($Run -ne "") {
   $body = @{ file = (($root -replace "\\", "/") + "/" + $Run); asProj = $false } | ConvertTo-Json -Compress
-  $r = Api "run" $body
-  Write-Output ("run -> " + ($r | ConvertTo-Json -Compress))
+  try { $r = Api "run" $body 180; Write-Output ("run -> " + ($r | ConvertTo-Json -Compress)) }
+  catch { Write-Output ("run -> 请求超时/失败（标记文件仍会照常写，继续等）: " + $_.Exception.Message) }
 }
 
 if ($SettleSec -gt 0) { Start-Sleep -Seconds $SettleSec }

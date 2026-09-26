@@ -74,8 +74,24 @@ export interface TrajectoryView {
 	setTrail(points: P2[], basis: CameraBasis): void;
 	/** 清空尾迹（重试本关时调用）。 */
 	clearTrail(): void;
+	/**
+	 * 重画"到达环"（S3.7）：目标容差在屏幕上的可见圈 —— 玩家一眼看出"要进到这里"。
+	 *
+	 * 每帧调用（环跟着行星一起动）；passed = true 的环画得更暗（已经掠过的航点）。
+	 */
+	setGoalRings(rings: GoalRing[], basis: CameraBasis): void;
+	/** 清空到达环（离开关卡/重试时调用）。 */
+	clearGoalRings(): void;
 	/** 底层节点，调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
+}
+
+/** 一个"到达环"：平面坐标的圆心 + 半径（= 该航点的容差）。 */
+export interface GoalRing {
+	center: P2;
+	radius: number;
+	/** 已经掠过的航点：画暗一些。 */
+	passed: boolean;
 }
 
 export interface TrajectoryOptions {
@@ -117,6 +133,16 @@ export interface TrajectoryOptions {
 	trailR: number;
 	trailG: number;
 	trailB: number;
+	/** 到达环（S3.7）的 RGB（0–255）。 */
+	ringR: number;
+	ringG: number;
+	ringB: number;
+	/** 到达环主线半径（像素）。 */
+	ringRadius: number;
+	/** 到达环光晕 alpha（比预测线更亮一点：它是"目标"，要看得见）。 */
+	ringGlowAlpha: number;
+	/** 到达环的圆周分段数（越大越圆）。 */
+	ringSegments: number;
 }
 
 export function defaultOptions(): TrajectoryOptions {
@@ -139,6 +165,13 @@ export function defaultOptions(): TrajectoryOptions {
 		predictR: 120,
 		predictG: 200,
 		predictB: 255,
+		// 到达环：偏暖的青色，和预测线（蓝）区分开；虚线更疏、光晕更亮。
+		ringR: 150,
+		ringG: 235,
+		ringB: 220,
+		ringRadius: 1.6,
+		ringGlowAlpha: 0.20,
+		ringSegments: 56,
 		trailR: 255,
 		trailG: 236,
 		trailB: 170,
@@ -297,7 +330,11 @@ export function createTrajectoryView(
 	// 用一个不设定尺寸的 Node 作为根，保持"中心原点"坐标系。
 	const root = Node();
 
-	// 两个独立的 DrawNode：尾迹在底层，预测线在上层。
+	// 三个独立的 DrawNode：到达环在最底层，尾迹居中，预测线在最上层。
+	const ringDraw = DrawNode();
+	ringDraw.blendFunc = BlendFunc(BlendOp.One, BlendOp.One);
+	root.addChild(ringDraw);
+
 	const trailDraw = DrawNode();
 	// 加法混合（One/One）= 发光感：在暗背景上叠加提亮。
 	trailDraw.blendFunc = BlendFunc(BlendOp.One, BlendOp.One);
@@ -353,6 +390,28 @@ export function createTrajectoryView(
 		},
 		clearTrail(): void {
 			trailDraw.clear();
+		},
+		setGoalRings(rings: GoalRing[], basis: CameraBasis): void {
+			ringDraw.clear();
+			for (const ring of rings) {
+				if (ring.radius <= 0) continue;
+				// 平面上的圆 → 逐点投影 → 虚线闭合折线（首尾相接）。
+				const n = options.ringSegments;
+				const circle: P2[] = [];
+				for (let i = 0; i <= n; i++) {
+					const a = (i / n) * 2 * Math.PI;
+					circle.push({ x: ring.center.x + ring.radius * Math.cos(a), y: ring.center.y + ring.radius * Math.sin(a) });
+				}
+				const verts = projectPolyline(circle, options.y, basis, options.layerOriginX, options.layerOriginY);
+				if (verts.length < 3) continue;
+				const rgb: RGB = ring.passed
+					? { r: options.ringR * 0.35, g: options.ringG * 0.35, b: options.ringB * 0.35 }
+					: { r: options.ringR, g: options.ringG, b: options.ringB };
+				drawDashedPolyline(ringDraw, verts, options.ringRadius, rgb, 1, options.glowRadiusFactor, options.ringGlowAlpha, options.dashOn * 1.5, options.dashOff, false);
+			}
+		},
+		clearGoalRings(): void {
+			ringDraw.clear();
 		},
 		root,
 	};
