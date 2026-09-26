@@ -551,6 +551,8 @@ export interface LevelSelectEntry {
 export interface LevelSelectOptions {
 	levels: LevelSelectEntry[];
 	onPick: (index: number) => void;
+	/** 重看开场（S3.3）。省略 = 不建这个按钮（探针/测试里不必有）。 */
+	onReplayIntro?: () => void;
 }
 
 /** 关卡选择句柄。 */
@@ -631,8 +633,32 @@ export function createLevelSelect(
 		buttons.push(button);
 	}
 
+	// ---- 「重看开场」（S3.3）----
+	// 开场只在**首次启动**播（存档标记）；想再看一遍又不方便删标记文件，就在这里给个入口。
+	// 位置：网格下沿与页脚提示之间的空档（竖屏 601×1066 实测有 180 px 余量），网格算完才定得下来。
+	const replayButton = opts.onReplayIntro !== undefined
+		? createButton(root, {
+			w: clampNumber(viewW * 0.36, 180, 300),
+			h: MinButtonHeight,
+			text: '重看开场',
+			fontSize: 30,
+			bgHex: SelectLockedBgHex,
+			fgHex: SelectSubtitleHex,
+			borderHex: SelectBorderHex,
+			onTap: (): void => {
+				if (opts.onReplayIntro !== undefined) opts.onReplayIntro();
+			},
+		})
+		: undefined;
+	if (replayButton !== undefined) {
+		const gridBottom = topY - rows * btnH - (rows - 1) * gap;
+		const by = clampNumber(gridBottom - MinButtonHeight - 20, 8, viewH);
+		replayButton.root.position = Vec2((viewW - clampNumber(viewW * 0.36, 180, 300)) / 2, by);
+	}
+
 	root.visible = false;
 	for (let i = 0; i < count; i++) buttons[i].setEnabled(false); // 创建即禁用（同上）
+	if (replayButton !== undefined) replayButton.setEnabled(false);
 
 	return {
 		root,
@@ -648,11 +674,13 @@ export function createLevelSelect(
 				else button.setColors(SelectLockedBgHex, SelectLockedFgHex);
 			}
 			root.visible = true;
+			if (replayButton !== undefined) replayButton.setEnabled(true);
 		},
 		hide: (): void => {
 			root.visible = false;
 			// 兜底：隐藏时把六个按钮的触摸全部断掉，避免“隐藏但仍命中”吞掉瞄准层的拖动
 			for (let i = 0; i < count; i++) buttons[i].setEnabled(false);
+			if (replayButton !== undefined) replayButton.setEnabled(false);
 		},
 	};
 }

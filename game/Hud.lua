@@ -384,115 +384,149 @@ end -- 427
 -- 
 -- @param viewW 视图逻辑宽
 -- @param viewH 视图逻辑高
-function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 579
-	local root = createPanel( -- 585
-		parent, -- 585
-		viewW, -- 585
-		viewH, -- 585
-		SelectBackdropHex, -- 585
-		{alpha = 0.9} -- 585
-	) -- 585
-	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 587
-	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 588
-	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 590
-	setLabelCenter( -- 591
-		subtitleLabel, -- 591
-		viewW / 2, -- 591
-		viewH - clampNumber(viewH * 0.13, 110, 260) -- 591
-	) -- 591
-	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 593
-	setLabelCenter( -- 594
-		hintLabel, -- 594
-		viewW / 2, -- 594
-		clampNumber(viewH * 0.045, 36, 90) -- 594
-	) -- 594
-	local count = #opts.levels -- 596
-	local cols = viewH > viewW and 2 or 1 -- 599
-	local rows = math.max( -- 600
-		1, -- 600
-		math.ceil(count / cols) -- 600
-	) -- 600
-	local gap = 18 -- 601
-	local headerH = clampNumber(viewH * 0.16, 120, 320) -- 602
-	local footerH = clampNumber(viewH * 0.1, 80, 200) -- 603
-	local availW = viewW * 0.84 -- 604
-	local availH = viewH - headerH - footerH - gap * (rows - 1) -- 605
-	local btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820) -- 606
-	local btnH = clampNumber(rows > 0 and availH / rows or MinButtonHeight, MinButtonHeight, 190) -- 607
-	local gridW = cols * btnW + gap * (cols - 1) -- 608
-	local topY = viewH - headerH -- 609
-	local buttons = {} -- 611
-	do -- 611
-		local i = 0 -- 612
-		while i < count do -- 612
-			local index = i -- 614
-			local button = createButton( -- 615
-				root, -- 615
-				{ -- 615
-					w = btnW, -- 616
-					h = btnH, -- 617
-					text = opts.levels[index + 1].name, -- 618
-					fontSize = 38, -- 619
-					bgHex = SelectLockedBgHex, -- 620
-					fgHex = SelectLockedFgHex, -- 621
-					borderHex = SelectBorderHex, -- 622
-					onTap = function() return opts:onPick(index) end -- 623
-				} -- 623
-			) -- 623
-			local col = index % cols -- 625
-			local rowIndex = math.floor(index / cols) -- 626
-			button.root.position = Vec2((viewW - gridW) / 2 + col * (btnW + gap), topY - (rowIndex + 1) * btnH - rowIndex * gap) -- 627
-			buttons[#buttons + 1] = button -- 631
-			i = i + 1 -- 612
-		end -- 612
-	end -- 612
-	root.visible = false -- 634
-	do -- 634
-		local i = 0 -- 635
-		while i < count do -- 635
-			buttons[i + 1]:setEnabled(false) -- 635
-			i = i + 1 -- 635
-		end -- 635
-	end -- 635
-	return { -- 637
-		root = root, -- 638
-		show = function(____, unlocked) -- 639
-			local maxUnlocked = clampNumber( -- 640
-				math.floor(unlocked), -- 640
-				0, -- 640
-				count - 1 -- 640
-			) -- 640
-			setLabelText( -- 641
-				subtitleLabel, -- 641
-				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 641
-			) -- 641
-			do -- 641
-				local i = 0 -- 642
-				while i < count do -- 642
-					local button = buttons[i + 1] -- 643
-					local open = i <= maxUnlocked -- 644
-					button:setEnabled(open) -- 645
-					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 646
-					if open then -- 646
-						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 647
-					else -- 647
-						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 648
-					end -- 648
-					i = i + 1 -- 642
-				end -- 642
-			end -- 642
-			root.visible = true -- 650
-		end, -- 639
-		hide = function() -- 652
-			root.visible = false -- 653
-			do -- 653
-				local i = 0 -- 655
-				while i < count do -- 655
-					buttons[i + 1]:setEnabled(false) -- 655
-					i = i + 1 -- 655
-				end -- 655
-			end -- 655
-		end -- 652
-	} -- 652
-end -- 579
-return ____exports -- 579
+function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 581
+	local root = createPanel( -- 587
+		parent, -- 587
+		viewW, -- 587
+		viewH, -- 587
+		SelectBackdropHex, -- 587
+		{alpha = 0.9} -- 587
+	) -- 587
+	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 589
+	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 590
+	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 592
+	setLabelCenter( -- 593
+		subtitleLabel, -- 593
+		viewW / 2, -- 593
+		viewH - clampNumber(viewH * 0.13, 110, 260) -- 593
+	) -- 593
+	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 595
+	setLabelCenter( -- 596
+		hintLabel, -- 596
+		viewW / 2, -- 596
+		clampNumber(viewH * 0.045, 36, 90) -- 596
+	) -- 596
+	local count = #opts.levels -- 598
+	local cols = viewH > viewW and 2 or 1 -- 601
+	local rows = math.max( -- 602
+		1, -- 602
+		math.ceil(count / cols) -- 602
+	) -- 602
+	local gap = 18 -- 603
+	local headerH = clampNumber(viewH * 0.16, 120, 320) -- 604
+	local footerH = clampNumber(viewH * 0.1, 80, 200) -- 605
+	local availW = viewW * 0.84 -- 606
+	local availH = viewH - headerH - footerH - gap * (rows - 1) -- 607
+	local btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820) -- 608
+	local btnH = clampNumber(rows > 0 and availH / rows or MinButtonHeight, MinButtonHeight, 190) -- 609
+	local gridW = cols * btnW + gap * (cols - 1) -- 610
+	local topY = viewH - headerH -- 611
+	local buttons = {} -- 613
+	do -- 613
+		local i = 0 -- 614
+		while i < count do -- 614
+			local index = i -- 616
+			local button = createButton( -- 617
+				root, -- 617
+				{ -- 617
+					w = btnW, -- 618
+					h = btnH, -- 619
+					text = opts.levels[index + 1].name, -- 620
+					fontSize = 38, -- 621
+					bgHex = SelectLockedBgHex, -- 622
+					fgHex = SelectLockedFgHex, -- 623
+					borderHex = SelectBorderHex, -- 624
+					onTap = function() return opts:onPick(index) end -- 625
+				} -- 625
+			) -- 625
+			local col = index % cols -- 627
+			local rowIndex = math.floor(index / cols) -- 628
+			button.root.position = Vec2((viewW - gridW) / 2 + col * (btnW + gap), topY - (rowIndex + 1) * btnH - rowIndex * gap) -- 629
+			buttons[#buttons + 1] = button -- 633
+			i = i + 1 -- 614
+		end -- 614
+	end -- 614
+	local replayButton = opts.onReplayIntro ~= nil and createButton( -- 639
+		root, -- 640
+		{ -- 640
+			w = clampNumber(viewW * 0.36, 180, 300), -- 641
+			h = MinButtonHeight, -- 642
+			text = "重看开场", -- 643
+			fontSize = 30, -- 644
+			bgHex = SelectLockedBgHex, -- 645
+			fgHex = SelectSubtitleHex, -- 646
+			borderHex = SelectBorderHex, -- 647
+			onTap = function() -- 648
+				if opts.onReplayIntro ~= nil then -- 648
+					opts:onReplayIntro() -- 649
+				end -- 649
+			end -- 648
+		} -- 648
+	) or nil -- 648
+	if replayButton ~= nil then -- 648
+		local gridBottom = topY - rows * btnH - (rows - 1) * gap -- 654
+		local by = clampNumber(gridBottom - MinButtonHeight - 20, 8, viewH) -- 655
+		replayButton.root.position = Vec2( -- 656
+			(viewW - clampNumber(viewW * 0.36, 180, 300)) / 2, -- 656
+			by -- 656
+		) -- 656
+	end -- 656
+	root.visible = false -- 659
+	do -- 659
+		local i = 0 -- 660
+		while i < count do -- 660
+			buttons[i + 1]:setEnabled(false) -- 660
+			i = i + 1 -- 660
+		end -- 660
+	end -- 660
+	if replayButton ~= nil then -- 660
+		replayButton:setEnabled(false) -- 661
+	end -- 661
+	return { -- 663
+		root = root, -- 664
+		show = function(____, unlocked) -- 665
+			local maxUnlocked = clampNumber( -- 666
+				math.floor(unlocked), -- 666
+				0, -- 666
+				count - 1 -- 666
+			) -- 666
+			setLabelText( -- 667
+				subtitleLabel, -- 667
+				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 667
+			) -- 667
+			do -- 667
+				local i = 0 -- 668
+				while i < count do -- 668
+					local button = buttons[i + 1] -- 669
+					local open = i <= maxUnlocked -- 670
+					button:setEnabled(open) -- 671
+					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 672
+					if open then -- 672
+						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 673
+					else -- 673
+						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 674
+					end -- 674
+					i = i + 1 -- 668
+				end -- 668
+			end -- 668
+			root.visible = true -- 676
+			if replayButton ~= nil then -- 676
+				replayButton:setEnabled(true) -- 677
+			end -- 677
+		end, -- 665
+		hide = function() -- 679
+			root.visible = false -- 680
+			do -- 680
+				local i = 0 -- 682
+				while i < count do -- 682
+					buttons[i + 1]:setEnabled(false) -- 682
+					i = i + 1 -- 682
+				end -- 682
+			end -- 682
+			if replayButton ~= nil then -- 682
+				replayButton:setEnabled(false) -- 683
+			end -- 683
+		end -- 679
+	} -- 679
+end -- 581
+return ____exports -- 581

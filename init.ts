@@ -302,6 +302,12 @@ if (levelTotal <= 0) {
 				if (select !== undefined) select.hide();
 				enterLevel(index);
 			},
+			// 「重看开场」：复用同一个开场实例（start() 会把帧号归零）；开场期间选关面板先收起
+			onReplayIntro: (): void => {
+				if (select !== undefined) select.hide();
+				startOpening();
+				print('[escape-velocity] opening replay (user)');
+			},
 		});
 		select = created;
 		return created;
