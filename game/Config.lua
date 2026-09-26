@@ -53,11 +53,17 @@ ____exports.AimMaxSpeed = 55 -- 99
 -- 用户 2026-09-26 的要求："需要一个 delta-v 之类的东西限制玩家可以施加给飞行器的力度，
 -- 避免力大砖飞、完全不顾及引力弹弓"。有效上限 = `min(AimMaxSpeed, dvBudget)`。
 ____exports.DvBudgetDefault = 55 -- 107
+--- 时间流速率（S3.9.4）：按住「加速 / 回退」时世界时钟走得多快（倍）。
+-- 40 倍下，L4 的 359 秒时间轴约 9 秒按住就能扫完 —— 玩家能看见行星在挪，又不至于等到手酸。
+____exports.TimeWarpRate = 40 -- 113
+--- 时间流**步长**（秒/次，S3.9.4）：按一次「加速 / 回退」世界时钟走多少。
+-- 15 秒下木星挪 5°（一眼看得出），连点十下就能走完整条时间轴（359 秒）。
+____exports.TimeWarpStep = 15 -- 119
 --- 刹车模式下的 Δv 分配（S3.9.2）：拖动力度 = 总 Δv，其中这一份用于**点火**，
 -- 剩下的留给后半程反推 —— 于是"刹得越狠 ⇒ 冲得越慢"是算术（共享同一个预算）。
-____exports.BrakeShare = 0.75 -- 113
+____exports.BrakeShare = 0.75 -- 125
 --- 拖动多远算“满力”（**视图像素**）。
-____exports.AimMaxDragPx = 380 -- 120
+____exports.AimMaxDragPx = 380 -- 132
 --- 飞行回放速度（模拟秒 / 真实秒）。1 = 实时；2 = 两倍速。
-____exports.FlightPlayback = 2 -- 123
-return ____exports -- 123
+____exports.FlightPlayback = 2 -- 135
+return ____exports -- 135

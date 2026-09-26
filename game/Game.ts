@@ -31,7 +31,9 @@ import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { GoalSpec, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
-import { AimMinSpeed, BrakeShare, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep, PredictSteps } from 'game/Config';
+import {
+	AimMinSpeed, BrakeShare, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep, PredictSteps, TimeWarpStep,
+} from 'game/Config';
 
 /**
  * 游戏阶段。
@@ -269,10 +271,13 @@ export interface Game {
 	 */
 	startLevel: () => void;
 	/**
-	 * 设定发射日期（S3.9.2c，秒）：行星相位、预测线、待机轨迹都跟着它走。
-	 * 只有带 `timeWindow` 的关卡会调它。
+	 * 时间流（S3.9.4，用户提议替换日期滑杆）：按一次走一步，dir = -1 回退 / +1 加速。
+	 * **世界时钟**走（行星绕太阳转，等发射窗口），而**探测器自己的轨道相位不动** ——
+	 * 这正是用户指出的冲突：滑杆是"瞬间跳"，而待机是"时间在流"，两者必须分开。
 	 */
-	setLaunchDate: (t0: number) => void;
+	stepTime: (dir: number, span: number) => void;
+	/** 当前发射日期（秒）= 基准日期 + 世界时钟；HUD 读数用。 */
+	dateNow: () => number;
 	/** 刹车模式（S3.9.2）：开 = 一半点火、一半留给后半程反推。默认关。 */
 	setBrakeMode: (on: boolean) => void;
 	/** 读当前刹车模式（HUD 按钮同步用）。 */
@@ -315,6 +320,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	// 实现：`clock` 只在**没在拖**的时候走；`idlePath` 是"不点火时探测器自己会飞成什么样"（进关时算一次），
 	// 于是待机时探测器沿着它走、预测线就是它的后半段 —— 不用每帧重算，也不会和真实飞行分家。
 	let clock = 0;
+	/** 探测器自己那口钟：待机时慢慢走，时间流快进时**不动**（它在轨道上等着窗口）。 */
+	let orbitClock = 0;
+	/** 时间流方向：-1 回退 / 0 停 / +1 加速（按住即走）。 */
+	let warpDir = 0;
+	/** 时间流量程（秒）：世界时钟夹在 [0, span]；0 = 不限制。 */
+	let warpSpan = 0;
 	let idlePath: SimResult | undefined = undefined;
 	/** 探测器**此刻**在哪 / 以什么速度前进（待机会绕着地球走，所以不能写死 probeStart）。 */
 	let probePos: P2 = { x: level.probeStart.x, y: level.probeStart.y };
@@ -335,7 +346,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (idlePath === undefined) return 0;
 		const n = idlePath.points.length;
 		if (n <= 1) return 0;
-		let i = Math.floor(clock / core.dt) % n;
+		let i = Math.floor(orbitClock / core.dt) % n;
 		if (i < 0) i = 0;
 		return i;
 	};
@@ -362,7 +373,11 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.aim.setEnabled(true);
 		// S3.9.4 待机时钟：**没在操控**时世界照常走（探测器沿自己的轨道绕地球转），一按下就冻结。
 		const dragging = deps.aim.isDragging();
-		if (!dragging && idlePath !== undefined) clock += dt;
+		if (!dragging && idlePath !== undefined) {
+			// 待机：两口钟一起走（探测器绕地球转）。
+			// ⚠️ 时间流是**离散步进**（按一次走 TimeWarpStep），这里只负责"平时的时间在流"；
+			// 步进时 orbitClock **不动** —— 探测器在轨道上等着发射窗口，而不是被一起快进。
+		}
 		const idx = idleIndex();
 		probePos = idlePath !== undefined ? idlePath.points[idx] : level.probeStart;
 		probeVel = idlePath !== undefined
@@ -450,16 +465,19 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 		const idx = coreProbeIndex(core);
 		const pos = core.flight.points[idx];
-		const t = core.flightTime;
+		// 飞行段的世界时刻 = 发射日期 + 已飞行时间。
+		// 之前这里直接用 flightTime 同步行星：发射日期调晚之后，物理用的是 t0（对），
+		// 行星模型却回到 t=0 的姿态（错）-- 用户实测到的「模型位置跳回时间 0」。
+		const tWorld = core.t0 + core.flightTime;
 
-		deps.scene.syncBodies(t);
+		deps.scene.syncBodies(tWorld);
 		deps.scene.syncProbe(pos);
 		if (idx > 0) {
 			deps.scene.faceVelocity(sub(pos, core.flight.points[idx - 1]));
 		}
 
 		const planetPts: P2[] = [];
-		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, t));
+		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, tWorld));
 
 		const frame = deps.rig.step([pos, ...planetPts], deps.scene.probeRadius);
 		deps.rig.apply(deps.camera, frame);
@@ -470,7 +488,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const trail: P2[] = [];
 		for (let i = 0; i <= idx; i++) trail.push(core.flight.points[i]);
 		deps.trajectory.setTrail(trail, basis);
-		deps.trajectory.setGoalRings(goalRingsAt(t, idx), basis);
+		deps.trajectory.setGoalRings(goalRingsAt(tWorld, idx), basis);
 
 		return entered;
 	};
@@ -532,11 +550,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.trajectory.clearGoalRings();
 			deps.onPhase('Aiming');
 		},
-		setLaunchDate: (t0: number): void => {
-			core.t0 = t0;
-			// 待机轨迹要按新日期重算（行星相位变了 ⇒ 探测器局部的轨道几乎不变，但预测线的相位要对）
-			prepareIdle();
+		stepTime: (dir: number, span: number): void => {
+			const span0 = span > 0 ? span : 0;
+			clock += dir * TimeWarpStep;
+			if (clock < 0) clock = 0;
+			if (span0 > 0 && clock > span0) clock = span0;
+			// 证据打点（放在 Game 里：HUD→Game 这一路的真相在这里，省得被别处的旧日志带偏）
+			print('[escape-velocity] stepTime dir=' + dir.toFixed(0) + ' clock=' + clock.toFixed(0));
 		},
+		dateNow: (): number => core.t0 + clock,
 		setBrakeMode: (on: boolean): void => {
 			core.brakeMode = on;
 			// 预测线要跟着重算（缓存键里带了 brakeMode，下一帧自然会重算）

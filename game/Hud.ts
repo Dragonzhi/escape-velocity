@@ -209,10 +209,10 @@ export interface AimInput {
 	/** 更新 Δv 读数（本次点火要花多少 / 这一关给了多少），拖动时由主循环调用。 */
 	setBurnInfo: (burn: number, budget: number) => void;
 	/**
-	 * 发射日期滑杆（S3.9.2c）：注册"日期变了"的回调（参数是秒）。
-	 * 只有带 `timeWindow` 的关卡才有这条滑杆，别的关卡它整块隐藏且**断触摸**。
+	 * 时间流按钮（S3.9.4）：回调收到 -1（回退）/ 0（松手）/ +1（加速）。
+	 * 只有带 `timeWindow` 的关卡才启用；别的关卡整块隐藏**且断触摸**。
 	 */
-	onDate: (callback: (t0: number) => void) => void;
+	onWarp: (callback: (dir: number) => void) => void;
 	/**
 	 * 设置滑杆的量程与当前值：`span <= 0` = 这一关没有时间轴 ⇒ 滑杆整块隐藏且**断触摸**。
 	 * （隐藏而不关触摸的层会吞掉整个区域的点击 —— 真机验收踩过，见 AGENTS 硬约束 4。）
@@ -365,51 +365,43 @@ export function createAimInput(
 		dvLabel.anchor = Vec2(0, 0);
 	}
 
-	// ---- 发射日期滑杆（S3.9.2c）----
-	// 只有 L4 这种"行星位置随日期变"的关卡才建；别的关卡 setDateEnabled(false) ⇒ 隐藏 + 断触摸。
-	let dateHandler: ((t0: number) => void) | undefined = undefined;
+	// ---- 时间流：加速 / 回退（S3.9.4，用户提议替换日期滑杆）----
+	// 为什么不是滑杆：滑杆是"瞬间跳到某个日期"，而这一版的核心是**时间在流**（探测器绕地球待机）。
+	// 两者语义打架 —— 用户自己也指出来了。改成"按住即走"的两个按钮：等窗口时转时间，松手就停。
+	// 只有带 `timeWindow` 的关卡才启用；别的关卡整块隐藏**且断触摸**（AGENTS 硬约束 4）。
+	let warpHandler: ((dir: number) => void) | undefined = undefined;
 	let dateSpan = 0;
-	let dateValue = 0;
-	const SliderH = 72;
-	const SliderW = Math.max(220, viewW - 48);
-	const slider = Node();
-	slider.size = Size(SliderW, SliderH);
-	slider.anchor = Vec2(0, 0);
-	slider.touchEnabled = false; // 默认关（没有 timeWindow 的关卡不启用）
-	slider.swallowTouches = true;
-	slider.position = Vec2(24, viewH - 96 - SliderH);
-	const sliderDraw = DrawNode();
-	slider.addChild(sliderDraw);
-	const sliderLabel = createLabel(slider, '发射日期', 30, ResultHintHex);
-	if (sliderLabel !== undefined) {
-		sliderLabel.position = Vec2(0, SliderH - 4);
-		sliderLabel.anchor = Vec2(0, 0);
+	const WarpButtonW = 116;
+	const WarpButtonH = 64;
+	const warpButtons: UiButton[] = [];
+	const makeWarpButton = (text: string, dir: number, x: number): void => {
+		const btn = createButton(root, {
+			w: WarpButtonW,
+			h: WarpButtonH,
+			text,
+			fontSize: 30,
+			bgHex: ResultButtonAltBgHex,
+			fgHex: ResultButtonFgHex,
+			borderHex: ResultButtonBorderHex,
+			onTap: (): void => {
+				// 按一次 = 时间走一步（步长在 Config.TimeWarpStep）
+				if (warpHandler !== undefined) warpHandler(dir);
+			},
+		});
+		// ⚠️ 不能自己往 root 上挂 onTapBegan/onTapEnded：`createButton` 内部已经注册过，
+		// 后注册会把它的处理器顶掉（实测：按下去既没视觉反馈、也拿不到回调）。
+		// 走它自己的 `onTap`（松手时触发）—— 这也是"两个按钮"该有的语义：按一次，时间走一步。
+		btn.root.position = Vec2(x, viewH - 96 - WarpButtonH);
+		warpButtons.push(btn);
+	};
+	const warpLeftX = viewW - (WarpButtonW * 2 + 8) - 20;
+	makeWarpButton('◀ 回退', -1, warpLeftX);
+	makeWarpButton('加速 ▶', 1, warpLeftX + WarpButtonW + 8);
+	const dateLabel = createLabel(root, '发射日期 —', 30, ResultHintHex);
+	if (dateLabel !== undefined) {
+		dateLabel.position = Vec2(24, viewH - 96 - WarpButtonH + 16);
+		dateLabel.anchor = Vec2(0, 0);
 	}
-	const paintSlider = (): void => {
-		sliderDraw.clear();
-		// 轨道
-		sliderDraw.drawPolygon([Vec2(0, 10), Vec2(SliderW, 10), Vec2(SliderW, 22), Vec2(0, 22)], Color(40, 55, 74, 255));
-		// 滑块（当前日期位置）
-		const k = dateSpan > 0 ? dateValue / dateSpan : 0;
-		const kx = k * (SliderW - 18);
-		sliderDraw.drawPolygon([Vec2(kx, 4), Vec2(kx + 18, 4), Vec2(kx + 18, 28), Vec2(kx, 28)], Color(120, 200, 255, 255));
-	};
-	const setDateFromLocal = (localX: number): void => {
-		if (dateSpan <= 0) return;
-		let k = localX / SliderW;
-		if (k < 0) k = 0;
-		if (k > 1) k = 1;
-		dateValue = k * dateSpan;
-		paintSlider();
-		setLabelText(sliderLabel, '发射日期 ' + dateValue.toFixed(0) + ' / ' + dateSpan.toFixed(0) + ' 秒');
-		if (dateHandler !== undefined) dateHandler(dateValue);
-	};
-	slider.onTapBegan((touch: Touch.Type): void => { setDateFromLocal(touch.location.x); });
-	slider.onTapMoved((touch: Touch.Type): void => { setDateFromLocal(touch.location.x); });
-	// ⚠️ 注册完回调后再关触摸（引擎会把 onTapXxx 的节点 touchEnabled 置 true）
-	slider.touchEnabled = false;
-	paintSlider();
-	root.addChild(slider);
 
 	const brakeRightX = viewW - BrakeButtonW - 20;
 	makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
@@ -439,19 +431,18 @@ export function createAimInput(
 			brakeOn = on;
 			paintBrake();
 		},
-		onDate: (callback: (t0: number) => void): void => {
-			dateHandler = callback;
+		onWarp: (callback: (dir: number) => void): void => {
+			warpHandler = callback;
 		},
 		setDate: (t0: number, span: number): void => {
 			dateSpan = span > 0 ? span : 0;
-			dateValue = t0 < 0 ? 0 : (t0 > dateSpan ? dateSpan : t0);
-			// 没有时间轴的关卡：整块隐藏 + 断触摸（AGENTS 硬约束 4）
-			slider.visible = dateSpan > 0;
-			slider.touchEnabled = dateSpan > 0;
-			setLabelText(sliderLabel, dateSpan > 0
-				? '发射日期 ' + dateValue.toFixed(0) + ' / ' + dateSpan.toFixed(0) + ' 秒'
-				: '发射日期');
-			paintSlider();
+			const on = dateSpan > 0;
+			for (const b of warpButtons) {
+				b.root.visible = on;
+				b.setEnabled(on); // 隐藏 + 断触摸（AGENTS 硬约束 4）
+			}
+			if (dateLabel !== undefined) dateLabel.visible = on;
+			setLabelText(dateLabel, on ? '发射日期 ' + t0.toFixed(0) + ' / ' + dateSpan.toFixed(0) + ' 秒' : '发射日期');
 		},
 		isDragging: (): boolean => dragging,
 		setBurnInfo: (burn: number, budget: number): void => {

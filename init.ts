@@ -40,6 +40,10 @@ interface LevelRuntime {
 	aim: AimInput;
 	/** 本关的轨迹视图（预测线/尾迹的 DrawNode 挂在关卡 2D 层上）。 */
 	trajectory: TrajectoryView;
+	/** 这一关有没有"时间流"（= 关卡数据里有 timeWindow）。 */
+	levelHasTimeWindow: boolean;
+	/** 时间流量程（秒）；没有时间轴时为 0。 */
+	dateSpan: number;
 }
 
 /** 关卡槽位：`built` 与 `runtime` 分开，避免出现带空洞的数组（手册 §7.2）。 */
@@ -209,11 +213,12 @@ if (levelTotal <= 0) {
 		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget);
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
 		aim.setBurnInfo(0, def.dvBudget);
-		// 发射日期滑杆（S3.9.2c）：只有带 timeWindow 的关卡才启用
-		aim.setDate(0, def.timeWindow !== undefined ? def.timeWindow.span : 0);
-		aim.onDate((t0: number): void => {
-			game.setLaunchDate(t0);
-			print('[escape-velocity] launch date t0=' + t0.toFixed(0) + ' (L' + (index + 1).toFixed(0) + ')');
+		// 时间流按钮（S3.9.4）：只有带 timeWindow 的关卡才启用
+		const dateSpan = def.timeWindow !== undefined ? def.timeWindow.span : 0;
+		aim.setDate(0, dateSpan); // 读数在每帧循环里刷新
+		aim.onWarp((dir: number): void => {
+			game.stepTime(dir, dateSpan);
+			print('[escape-velocity] time warp dir=' + dir.toFixed(0) + ' (L' + (index + 1).toFixed(0) + ')');
 		});
 
 		const game = createGame(level, {
@@ -228,6 +233,11 @@ if (levelTotal <= 0) {
 			aspect: View.aspectRatio,
 			onPhase: (p: GamePhase): void => {
 				print('[escape-velocity] phase -> ' + p + ' (L' + (index + 1).toFixed(0) + ')');
+				// ⚠️ 面板显隐**由状态驱动**，不由点按驱动（2026-09-26 用户："点了重试，UI 有反应但界面没变化"）。
+				// 只要状态被别的东西改了（切关、视口重建、自动回归序列），点按驱动就会留下一个"留在屏幕上
+				// 但已经没东西可改"的面板 —— 点它看起来完全没反应。状态是唯一事实来源：
+				// 一旦离开 Result 态，面板必须消失（其余阶段都不该有结算面板）。
+				if (p !== 'Result' && index === activeIndex && resultPanel !== undefined) resultPanel.hide();
 			},
 			onResult: (r: ResultKind): void => {
 				// 结算在发射瞬间就已确定，这里只是“飞行播完了”的时刻
@@ -269,6 +279,8 @@ if (levelTotal <= 0) {
 			game,
 			aim,
 			trajectory,
+			levelHasTimeWindow: def.timeWindow !== undefined,
+			dateSpan,
 		};
 		slot.built = true;
 		slot.runtime = runtime;
@@ -558,6 +570,10 @@ if (levelTotal <= 0) {
 		const runtime = activeRuntime();
 		if (runtime !== undefined) {
 			runtime.game.update(App.deltaTime);
+			// 时间流读数：每帧刷新（日期在走，滑杆/按钮本身不存状态）
+			if (runtime.levelHasTimeWindow) {
+				runtime.aim.setDate(runtime.game.dateNow(), runtime.dateSpan);
+			}
 			// 开发钩子的自动发射（见上方 enter-request 说明）
 			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0) {
 				autoFrame += 1;
