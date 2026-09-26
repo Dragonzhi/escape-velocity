@@ -507,6 +507,8 @@ if (levelTotal <= 0) {
 	// ⚠️ App.saveScreenshot 必须给**绝对路径**，相对路径实测让引擎原生崩溃（0xc0000374，二次复现）。
 	const enterReq = Path(Path(".", ".agent", "test-results"), "enter-request.txt");
 	let autoLaunchAt = -1;
+	/** "N@arm:<frames>"：自动进 Armed 的帧号（-1 = 不自动）。 */
+	let autoArmAt = -1;
 	let autoFrame = 0;
 	let autoVX = 0;
 	let autoVY = 0;
@@ -541,6 +543,16 @@ if (levelTotal <= 0) {
 			autoEntered = true;
 			if (at >= 0) {
 				const rest = spec.substring(at + 1);
+				// "N@arm:<frames>"：第 frames 帧自动"瞄好并松手"（进 Armed）——
+				// 自动化测试要验证「发射」按钮本身，就不能靠"在探测器附近拖一次"
+				// （那需要先知道探测器在屏幕上的坐标）。生产/Web 导出没有这个文件 ⇒ 零开销。
+				if (rest.substring(0, 4) === 'arm:') {
+					const f = tonumber(rest.substring(4));
+					if (f !== undefined && f >= 0) {
+						autoArmAt = f;
+						print('[escape-velocity] auto arm scheduled: frame ' + f.toFixed(0));
+					}
+				} else {
 				const c1 = rest.indexOf(':');
 				const c2 = rest.indexOf(':', c1 + 1);
 				if (c1 > 0 && c2 > c1) {
@@ -553,6 +565,7 @@ if (levelTotal <= 0) {
 						autoVY = vy;
 						print('[escape-velocity] auto launch scheduled: frame ' + frames.toFixed(0) + ' v=(' + vx.toFixed(1) + ',' + vy.toFixed(1) + ')');
 					}
+				}
 				}
 			}
 		}
@@ -598,8 +611,14 @@ if (levelTotal <= 0) {
 			// Armed 是状态，按钮显隐跟着状态走（AGENTS 硬约束 5）
 			runtime.aim.setArmed(runtime.game.armed());
 			// 开发钩子的自动发射（见上方 enter-request 说明）
-			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0) {
+			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0 || autoArmAt >= 0) {
 				autoFrame += 1;
+				// "N@arm:<frames>"：自动进 Armed（出「发射」按钮），用于验证按钮本身
+				if (autoArmAt >= 0 && autoFrame >= autoArmAt) {
+					autoArmAt = -1;
+					print('[escape-velocity] auto arm (enter-request)');
+					runtime.game.aimReady();
+				}
 				if (autoLaunchAt >= 0 && autoFrame >= autoLaunchAt) {
 					autoLaunchAt = -1;
 					print('[escape-velocity] auto launch');

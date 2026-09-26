@@ -505,116 +505,131 @@ else -- 58
 		"enter-request.txt" -- 508
 	) -- 508
 	local autoLaunchAt = -1 -- 509
-	local autoFrame = 0 -- 510
-	local autoVX = 0 -- 511
-	local autoVY = 0 -- 512
-	local autoBackAt = -1 -- 514
-	local autoReenterAt = -1 -- 515
-	local autoEntered = false -- 516
-	introHold = -1 -- 518
-	if Content:exist(enterReq) then -- 518
-		local spec = Content:load(enterReq) -- 520
-		local at = (string.find(spec, "@", nil, true) or 0) - 1 -- 521
-		local head = __TS__StringTrim(at < 0 and spec or __TS__StringSubstring(spec, 0, at)) -- 522
-		if head == "intro" then -- 522
-			forceIntro = true -- 524
-			if at >= 0 then -- 524
-				local rest = __TS__StringSubstring(spec, at + 1) -- 526
-				local colon = (string.find(rest, ":", nil, true) or 0) - 1 -- 527
-				if colon > 0 and __TS__StringTrim(__TS__StringSubstring(rest, 0, colon)) == "hold" then -- 527
-					local v = tonumber(__TS__StringSubstring(rest, colon + 1)) -- 529
-					if v ~= nil and v >= 0 then -- 529
-						introHold = v -- 531
-						print("[escape-velocity] opening hold at frame " .. __TS__NumberToFixed(v, 0)) -- 532
-					end -- 532
-				end -- 532
-			end -- 532
-		end -- 532
-		local n = tonumber(head) -- 537
-		if n ~= nil and n >= 1 and n <= levelTotal then -- 537
-			print(("[escape-velocity] auto enter L" .. __TS__NumberToFixed(n, 0)) .. " (enter-request)") -- 539
-			enterLevel(n - 1) -- 540
-			autoEntered = true -- 541
-			if at >= 0 then -- 541
-				local rest = __TS__StringSubstring(spec, at + 1) -- 543
-				local c1 = (string.find(rest, ":", nil, true) or 0) - 1 -- 544
-				local c2 = (string.find( -- 545
-					rest, -- 545
-					":", -- 545
-					math.max(c1 + 1 + 1, 1), -- 545
-					true -- 545
-				) or 0) - 1 -- 545
-				if c1 > 0 and c2 > c1 then -- 545
-					local frames = tonumber(__TS__StringSubstring(rest, 0, c1)) -- 547
-					local vx = tonumber(__TS__StringSubstring(rest, c1 + 1, c2)) -- 548
-					local vy = tonumber(__TS__StringSubstring(rest, c2 + 1)) -- 549
-					if frames ~= nil and vx ~= nil and vy ~= nil then -- 549
-						autoLaunchAt = frames -- 551
-						autoVX = vx -- 552
-						autoVY = vy -- 553
-						print(((((("[escape-velocity] auto launch scheduled: frame " .. __TS__NumberToFixed(frames, 0)) .. " v=(") .. __TS__NumberToFixed(vx, 1)) .. ",") .. __TS__NumberToFixed(vy, 1)) .. ")") -- 554
-					end -- 554
-				end -- 554
-			end -- 554
-		end -- 554
-	end -- 554
-	if autoEntered then -- 554
-		print("[escape-velocity] opening skipped (auto enter)") -- 564
-	elseif forceIntro or not introSeen then -- 564
-		startOpening() -- 566
-	else -- 566
-		startupPanel:show(progress.unlocked) -- 568
-		print("[escape-velocity] opening skipped (already seen)") -- 569
-	end -- 569
-	threadLoop(function() -- 574
-		if opening ~= nil and opening.running() then -- 574
-			if introHold < 0 or opening.frameIndex() < introHold then -- 574
-				opening.step() -- 578
-			end -- 578
-			if App.deltaTime > 0.05 then -- 578
-				print((("[escape-velocity] hitch " .. __TS__NumberToFixed(App.deltaTime * 1000, 0)) .. "ms @ opening frame ") .. __TS__NumberToFixed( -- 582
-					opening.frameIndex(), -- 582
-					0 -- 582
-				)) -- 582
-			end -- 582
-		end -- 582
-		local runtime = activeRuntime() -- 586
-		if runtime ~= nil then -- 586
-			runtime.game:update(App.deltaTime) -- 588
-			if runtime.levelHasTimeWindow then -- 588
-				runtime.aim:setDate( -- 591
-					runtime.game:dateNow(), -- 591
-					runtime.dateSpan -- 591
-				) -- 591
+	--- "N@arm:<frames>"：自动进 Armed 的帧号（-1 = 不自动）。
+	local autoArmAt = -1 -- 511
+	local autoFrame = 0 -- 512
+	local autoVX = 0 -- 513
+	local autoVY = 0 -- 514
+	local autoBackAt = -1 -- 516
+	local autoReenterAt = -1 -- 517
+	local autoEntered = false -- 518
+	introHold = -1 -- 520
+	if Content:exist(enterReq) then -- 520
+		local spec = Content:load(enterReq) -- 522
+		local at = (string.find(spec, "@", nil, true) or 0) - 1 -- 523
+		local head = __TS__StringTrim(at < 0 and spec or __TS__StringSubstring(spec, 0, at)) -- 524
+		if head == "intro" then -- 524
+			forceIntro = true -- 526
+			if at >= 0 then -- 526
+				local rest = __TS__StringSubstring(spec, at + 1) -- 528
+				local colon = (string.find(rest, ":", nil, true) or 0) - 1 -- 529
+				if colon > 0 and __TS__StringTrim(__TS__StringSubstring(rest, 0, colon)) == "hold" then -- 529
+					local v = tonumber(__TS__StringSubstring(rest, colon + 1)) -- 531
+					if v ~= nil and v >= 0 then -- 531
+						introHold = v -- 533
+						print("[escape-velocity] opening hold at frame " .. __TS__NumberToFixed(v, 0)) -- 534
+					end -- 534
+				end -- 534
+			end -- 534
+		end -- 534
+		local n = tonumber(head) -- 539
+		if n ~= nil and n >= 1 and n <= levelTotal then -- 539
+			print(("[escape-velocity] auto enter L" .. __TS__NumberToFixed(n, 0)) .. " (enter-request)") -- 541
+			enterLevel(n - 1) -- 542
+			autoEntered = true -- 543
+			if at >= 0 then -- 543
+				local rest = __TS__StringSubstring(spec, at + 1) -- 545
+				if __TS__StringSubstring(rest, 0, 4) == "arm:" then -- 545
+					local f = tonumber(__TS__StringSubstring(rest, 4)) -- 550
+					if f ~= nil and f >= 0 then -- 550
+						autoArmAt = f -- 552
+						print("[escape-velocity] auto arm scheduled: frame " .. __TS__NumberToFixed(f, 0)) -- 553
+					end -- 553
+				else -- 553
+					local c1 = (string.find(rest, ":", nil, true) or 0) - 1 -- 556
+					local c2 = (string.find( -- 557
+						rest, -- 557
+						":", -- 557
+						math.max(c1 + 1 + 1, 1), -- 557
+						true -- 557
+					) or 0) - 1 -- 557
+					if c1 > 0 and c2 > c1 then -- 557
+						local frames = tonumber(__TS__StringSubstring(rest, 0, c1)) -- 559
+						local vx = tonumber(__TS__StringSubstring(rest, c1 + 1, c2)) -- 560
+						local vy = tonumber(__TS__StringSubstring(rest, c2 + 1)) -- 561
+						if frames ~= nil and vx ~= nil and vy ~= nil then -- 561
+							autoLaunchAt = frames -- 563
+							autoVX = vx -- 564
+							autoVY = vy -- 565
+							print(((((("[escape-velocity] auto launch scheduled: frame " .. __TS__NumberToFixed(frames, 0)) .. " v=(") .. __TS__NumberToFixed(vx, 1)) .. ",") .. __TS__NumberToFixed(vy, 1)) .. ")") -- 566
+						end -- 566
+					end -- 566
+				end -- 566
+			end -- 566
+		end -- 566
+	end -- 566
+	if autoEntered then -- 566
+		print("[escape-velocity] opening skipped (auto enter)") -- 577
+	elseif forceIntro or not introSeen then -- 577
+		startOpening() -- 579
+	else -- 579
+		startupPanel:show(progress.unlocked) -- 581
+		print("[escape-velocity] opening skipped (already seen)") -- 582
+	end -- 582
+	threadLoop(function() -- 587
+		if opening ~= nil and opening.running() then -- 587
+			if introHold < 0 or opening.frameIndex() < introHold then -- 587
+				opening.step() -- 591
 			end -- 591
-			local phaseNow = runtime.game:phase() -- 595
-			runtime.aim:setTimeEnabled(phaseNow == "Aiming" or phaseNow == "Armed") -- 596
-			runtime.aim:update(App.deltaTime) -- 597
-			runtime.aim:setArmed(runtime.game:armed()) -- 599
-			if autoLaunchAt >= 0 or autoBackAt >= 0 or autoReenterAt >= 0 then -- 599
-				autoFrame = autoFrame + 1 -- 602
-				if autoLaunchAt >= 0 and autoFrame >= autoLaunchAt then -- 602
-					autoLaunchAt = -1 -- 604
-					print("[escape-velocity] auto launch") -- 605
-					runtime.game:launch({x = autoVX, y = autoVY}) -- 606
-					autoBackAt = autoFrame + 320 -- 607
-					autoReenterAt = autoFrame + 380 -- 608
-				end -- 608
-				if autoBackAt >= 0 and autoFrame >= autoBackAt then -- 608
-					autoBackAt = -1 -- 612
-					if runtime.game:backToSelect() then -- 612
-						print("[escape-velocity] auto back to select") -- 613
-					end -- 613
-				end -- 613
-				if autoReenterAt >= 0 and autoFrame >= autoReenterAt then -- 613
-					autoReenterAt = -1 -- 616
-					print("[escape-velocity] auto re-enter") -- 617
-					enterLevel(0) -- 618
-				end -- 618
-			end -- 618
-		end -- 618
-		return false -- 623
-	end) -- 574
-	print((((((((((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", view=") .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) .. ", platform=") .. App.platform) .. ", introSeen=") .. (introSeen and "yes" or "no")) -- 627
-end -- 627
-return ____exports -- 627
+			if App.deltaTime > 0.05 then -- 591
+				print((("[escape-velocity] hitch " .. __TS__NumberToFixed(App.deltaTime * 1000, 0)) .. "ms @ opening frame ") .. __TS__NumberToFixed( -- 595
+					opening.frameIndex(), -- 595
+					0 -- 595
+				)) -- 595
+			end -- 595
+		end -- 595
+		local runtime = activeRuntime() -- 599
+		if runtime ~= nil then -- 599
+			runtime.game:update(App.deltaTime) -- 601
+			if runtime.levelHasTimeWindow then -- 601
+				runtime.aim:setDate( -- 604
+					runtime.game:dateNow(), -- 604
+					runtime.dateSpan -- 604
+				) -- 604
+			end -- 604
+			local phaseNow = runtime.game:phase() -- 608
+			runtime.aim:setTimeEnabled(phaseNow == "Aiming" or phaseNow == "Armed") -- 609
+			runtime.aim:update(App.deltaTime) -- 610
+			runtime.aim:setArmed(runtime.game:armed()) -- 612
+			if autoLaunchAt >= 0 or autoBackAt >= 0 or autoReenterAt >= 0 or autoArmAt >= 0 then -- 612
+				autoFrame = autoFrame + 1 -- 615
+				if autoArmAt >= 0 and autoFrame >= autoArmAt then -- 615
+					autoArmAt = -1 -- 618
+					print("[escape-velocity] auto arm (enter-request)") -- 619
+					runtime.game:aimReady() -- 620
+				end -- 620
+				if autoLaunchAt >= 0 and autoFrame >= autoLaunchAt then -- 620
+					autoLaunchAt = -1 -- 623
+					print("[escape-velocity] auto launch") -- 624
+					runtime.game:launch({x = autoVX, y = autoVY}) -- 625
+					autoBackAt = autoFrame + 320 -- 626
+					autoReenterAt = autoFrame + 380 -- 627
+				end -- 627
+				if autoBackAt >= 0 and autoFrame >= autoBackAt then -- 627
+					autoBackAt = -1 -- 631
+					if runtime.game:backToSelect() then -- 631
+						print("[escape-velocity] auto back to select") -- 632
+					end -- 632
+				end -- 632
+				if autoReenterAt >= 0 and autoFrame >= autoReenterAt then -- 632
+					autoReenterAt = -1 -- 635
+					print("[escape-velocity] auto re-enter") -- 636
+					enterLevel(0) -- 637
+				end -- 637
+			end -- 637
+		end -- 637
+		return false -- 642
+	end) -- 587
+	print((((((((((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", view=") .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) .. ", platform=") .. App.platform) .. ", introSeen=") .. (introSeen and "yes" or "no")) -- 646
+end -- 646
+return ____exports -- 646

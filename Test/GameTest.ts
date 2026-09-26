@@ -8,7 +8,8 @@ import { Body, P2 } from 'game/Gravity';
 import { FlightPlayback, PhysicsStep } from 'game/Config';
 import { GoalSpec } from 'game/LevelData';
 import {
-	GameLevel, coreArm, coreCancelArm, coreLaunch, coreProbeIndex, coreRetry, coreTimeWarpAllowed, coreUpdate, createCore, resolveResult,
+	GameLevel, coreArm, coreCancelArm, coreHandoffDate, coreLaunch, coreProbeIndex, coreRetry, coreTimeWarpAllowed, coreUpdate,
+	createCore, resolveResult,
 } from 'game/Game';
 
 interface Failure {
@@ -93,6 +94,48 @@ function testTimeWarpGuard(): void {
 		if (core.phase === 'Result') break;
 	}
 	check('time-warp-result', !coreTimeWarpAllowed(core), `Result 必须禁止改日期：phase=${core.phase}`);
+}
+
+/**
+ * 1c) 发射日期交棒（S3.12 修 bug：L4/L6 按下「发射」后行星跳回原位）。
+ *
+ * 守两件事：① 交棒方向对（发射 clock→t0 / 重试 t0→clock）；
+ * ② **`t0 + clock` 守恒** —— 这是"交棒瞬间画面不跳"的数学表述。
+ * 引擎侧的端到端证据见 PROGRESS 会话 44（发射前后两张截图的像素差）。
+ */
+function testDateHandoff(): void {
+	const launch = coreHandoffDate(0, 180, true);
+	check('handoff-launch-t0', launch.t0 === 180 && launch.clock === 0, `发射应交棒成 t0=${launch.t0} clock=${launch.clock}`);
+	const retry = coreHandoffDate(180, 0, false);
+	check('handoff-retry-clock', retry.t0 === 0 && retry.clock === 180, `重试应交棒成 t0=${retry.t0} clock=${retry.clock}`);
+	check('handoff-sum-preserved-launch', 0 + 180 === launch.t0 + launch.clock, '交棒前后 t0+clock 必须守恒（发射）');
+	check('handoff-sum-preserved-retry', 180 + 0 === retry.t0 + retry.clock, '交棒前后 t0+clock 必须守恒（重试）');
+
+	// 日期必须真的进物理：同一发点火，在不同 t0 下结果不同（一颗会动的靶子）
+	const T = 400;
+	const bodies: Body[] = [{
+		gm: 0, radius: 1.4,
+		orbitCenter: { x: 0, y: 0 }, orbitRadius: 40, orbitPeriod: T,
+		phase0: 0, orbitDirection: 1,
+	}];
+	const level: GameLevel = {
+		bodies,
+		probeStart: { x: 0, y: 16 },
+		goal: { kind: 'planet', planetIndex: 0, tolerance: 3 },
+		escapeRadius: 900,
+		maxSteps: 1500,
+	};
+	// 直飞拦截：从 (0,16) 朝靶子 2.15 秒后的位置打（靶子在 400 秒里走 360°，此时走了 1.94°）
+	const ang = (-20.1 * Math.PI) / 180;
+	const burn = { x: Math.cos(ang) * 19.8, y: Math.sin(ang) * 19.8 };
+	const a = createCore();
+	a.t0 = 0;
+	coreLaunch(a, burn, level);
+	check('launch-date-hits-at-zero', a.goalIndex >= 0, `t0=0 应命中：goalIndex=${a.goalIndex}`);
+	const b = createCore();
+	b.t0 = T / 2; // 靶子转到对面去了
+	coreLaunch(b, burn, level);
+	check('launch-date-misses-at-half', b.goalIndex < 0, `t0=${T / 2} 应打空：goalIndex=${b.goalIndex}`);
 }
 
 /** 2) 发射：预推演、阶段切换、重复发射被拒绝。 */
@@ -269,6 +312,7 @@ function testArmed(): void {
 export function runTests(): string {
 	testResolveResult();
 	testTimeWarpGuard();
+	testDateHandoff();
 	testLaunch();
 	testArmed();
 	testPlayback();

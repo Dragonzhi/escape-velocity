@@ -220,6 +220,24 @@ export function coreTimeWarpAllowed(core: GameCore): boolean {
 	return core.phase === 'Aiming' || core.phase === 'Armed';
 }
 
+/**
+ * 发射日期的**交棒**（S3.12 修 bug①，纯算术、可单测）。
+ *
+ * 事实来源只有一个：`tWorld = core.t0 + core.flightTime`。发射前玩家用「加速 / 回退」
+ * 拨出来的是瞄准期的世界时钟 `clock`，而 `coreLaunch` 是纯函数、只认 `core.t0` ——
+ * 两者之间过去**没有人接**，于是 L4/L6 一按「发射」，行星就从"第 180 秒"跳回"第 0 秒"。
+ *
+ * - `toT0 = true`（发射）：`clock → t0`；
+ * - `toT0 = false`（重试）：`t0 → clock`（保留玩家挑好的日期，才能就着它继续调）。
+ *
+ * ⚠️ 两种方向的 `t0 + clock` **都守恒** —— 这正是"交棒时画面不跳"的数学表述
+ * （`dateNow()` 与瞄准期的 `tNow` 都等于 `t0 + clock`）。
+ */
+export function coreHandoffDate(t0: number, clock: number, toT0: boolean): { t0: number; clock: number } {
+	if (toT0) return { t0: clock, clock: 0 };
+	return { t0: 0, clock: t0 };
+}
+
 /** 当前帧探测器在 flight.points 中的索引（夹紧到有效范围）。 */
 export function coreProbeIndex(core: GameCore): number {
 	if (core.flight === undefined) return 0;
@@ -400,7 +418,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let probePos: P2 = { x: level.probeStart.x, y: level.probeStart.y };
 	let probeVel: P2 = level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 };
 	const prepareIdle = (): void => {
+		// 进关 / 重新进关 = 全新的一天（日期、待机时钟都归零）
 		clock = 0;
+		core.t0 = 0;
 		if (level.probeVel0 === undefined) {
 			idlePath = undefined;
 			return;
@@ -655,6 +675,24 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		return entered;
 	};
 
+	/**
+	 * **发射日期交棒**（S3.12 修 bug：发射瞬间行星跳回原位）。
+	 *
+	 * 事实来源只有一个：tWorld = core.t0 + core.flightTime（AGENTS 硬约束 7）。
+	 * 发射前玩家用「加速 / 回退」拨出来的是 clock（瞄准期的世界时钟），
+	 * 而 coreLaunch 是**纯函数**、只认 core.t0 —— 过去没有人把两者接起来，
+	 * 于是 L4/L6 一按「发射」，行星就从"第 180 秒"跳回"第 0 秒"（用户会话 44 的原话）。
+	 *
+	 * toT0 = true：发射时 clock → t0（dateNow() 与瞄准期的 tNow 都不变，画面不跳）；
+	 * toT0 = false：重试时 t0 → clock（**保留玩家挑好的日期**，L4 才能就着这个日期继续调）。
+	 */
+	const handoffDate = (toT0: boolean): void => {
+		const next = coreHandoffDate(core.t0, clock, toT0);
+		core.t0 = next.t0;
+		clock = next.clock;
+		print('[escape-velocity] date handoff ' + (toT0 ? 'clock->t0' : 't0->clock') + ' t0=' + core.t0.toFixed(1) + ' clock=' + clock.toFixed(1));
+	};
+
 	const update = (dt: number): void => {
 		if (core.phase === 'Aiming' || core.phase === 'Armed') {
 			updateAiming(dt);
@@ -682,6 +720,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		launchArmed: (): void => {
 			// 状态守卫：只有 Armed 才能打出去（连点/迟到的回调一律无效）
 			if (core.phase !== 'Armed') return;
+			handoffDate(true); // ⚠️ 必须在 coreLaunch 之前：飞行/结算只认 core.t0
 			coreLaunch(core, core.aim.velocity, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
 			deps.onPhase('Flying');
@@ -702,6 +741,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		launch: (v: P2): void => {
 			if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
+			handoffDate(true); // ⚠️ 同上：日期必须在 coreLaunch 之前交给 t0
 			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）
 			coreLaunch(core, v, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
@@ -709,6 +749,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		retry: (): void => {
 			if (core.phase !== 'Result') return;
+			handoffDate(false); // 把日期从 t0 拿回 clock：重试保留玩家挑好的时机
 			coreRetry(core);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
