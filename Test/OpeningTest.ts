@@ -112,11 +112,11 @@ function testPose(): void {
 	const p0 = openingPose(0, earth);
 	const d0 = dist3(p0.eye, p0.target);
 	// ⚠️ Vec3 是**单精度**（引擎侧 float）——容差别往 1e-6 以下写，实测 1e-9 会假失败
-	check('pose-wide-distance', Math.abs(d0 - 205) < 1e-2, `第 0 帧距离 ${d0.toFixed(2)} 应为 205`);
+	check('pose-wide-distance', Math.abs(d0 - 245) < 1e-2, `第 0 帧距离 ${d0.toFixed(2)} 应为 245`);
 	check('pose-wide-target', dist3(p0.target, Vec3(0, 0, 0)) < 1e-9, '全景注视点是太阳');
 	const p1 = openingPose(TotalFrames, earth);
 	const d1 = dist3(p1.eye, p1.target);
-	check('pose-close-distance', Math.abs(d1 - 12) < 1e-2, `停留段距离 ${d1.toFixed(2)} 应为 12`);
+	check('pose-close-distance', Math.abs(d1 - 22) < 1e-2, `停留段距离 ${d1.toFixed(2)} 应为 22`);
 	const t1 = p1.target;
 	const earthWorldDist = Math.sqrt((t1.x - earth.x) * (t1.x - earth.x) + (t1.z - earth.y) * (t1.z - earth.y));
 	check('pose-close-target', earthWorldDist < 1e-3, '特写注视点落在地球上');

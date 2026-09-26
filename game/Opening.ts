@@ -21,11 +21,9 @@
  * - onTapBegan/onTapEnded 注册时会把 touchEnabled 置回 true ⇒ 开关写在注册之后；
  * - Model3D 对不存在的文件**抛错**，可选资产一律先 Content.exist 守卫。
  */
-import { Camera3D, Color3, Content, DirectionalLight3D, DrawNode, Label, Model3D, Node, Node3D, Path, Size, Vec2, Vec3 } from 'Dora';
+import { Camera3D, Color, Color3, Content, DirectionalLight3D, Label, Material3D, Model3D, Node, Node3D, Path, Size, Vec2, Vec3 } from 'Dora';
 import { P2 } from 'game/Gravity';
-import { CameraBasis, CameraView, FLIP_Y, HANDEDNESS, prepareCamera } from 'game/Projection';
-import { createProbe, createStarBackdrop, modelRadius, planeToWorld, pointAntenna, probeYawForVelocity } from 'game/Scene';
-import { drawDashedPolyline, projectPolyline } from 'game/Trajectory';
+import { ProbeHandle, createProbe, createStarBackdrop, modelRadius, planeToWorld, pointAntenna, probeYawForVelocity } from 'game/Scene';
 import { colorFromHex, createLabel, setLabelCenter } from 'game/Ui';
 
 const DegToRad = Math.PI / 180;
@@ -43,15 +41,16 @@ export const TotalFrames = WideFrames + FocusFrames + HoldFrames;
 export const PullBackFrames = 240;
 
 // ---- 机位（世界单位 / 度）----
-/** 全景时的相机距离：刚好装下最外圈（海王星轨道 47 → 竖屏半宽 0.234·d ⇒ d ≈ 200）。 */
-const WideDist = 205;
+/** 全景时的相机距离：刚好装下最外圈（海王星轨道 55 → 竖屏半宽 0.2335·d ⇒ d ≈ 235，留一点余量）。 */
+const WideDist = 245;
 const WideTiltDeg = 42;
 const WideAzDeg = 18;
 /**
  * 聚焦时的相机距离：装下「地球 + 轨道上的探测器」（轨道 3.0 + 探测器半径 ~0.7）。
- * 竖屏半宽 = 0.2335·d；探测器轨道 2.4 要留在画面内 ⇒ d ≥ 11（取 12，地球在画面里也够大）。
+ * 竖屏半宽 = 0.2335·d；探测器轨道 4.6 要留在画面内 ⇒ d ≥ 20（取 22）：
+ * 地球在画面里约 260 px 直径，探测器在 4.6 单位外的轨道上绕行、始终在框内。
  */
-const CloseDist = 12;
+const CloseDist = 22;
 const CloseTiltDeg = 20;
 /**
  * 特写的方位角：与「地球 → 太阳」方向**差约 90° 的侧后方**，太阳因此完全在画面外，
@@ -64,23 +63,32 @@ const CloseAzDeg = 278;
 const AzDriftDegPerFrame = 0.035;
 
 /** 太阳半径（世界单位）。 */
-const SunRadius = 3.6;
+const SunRadius = 4.8;
 
 /** 探测器在开场里的缩放与轨道（比关卡内小一号：全景尺度下才协调）。 */
-export const ProbeScale = 0.45;
-export const ProbeOrbitRadius = 2.4;
+export const ProbeScale = 0.55;
+export const ProbeOrbitRadius = 4.6;
 export const ProbeOrbitStartDeg = 40;
 /** 探测器绕地球的公转角速度（度/帧）——540 帧转约 297°，看得见「在轨」。 */
 export const ProbeOrbitDegPerFrame = 0.55;
 
-/** 轨道虚线圈的采样段数（每圈）。 */
-const RingSamples = 96;
-const RingRadius = 1.7;
-const RingGlowFactor = 2.4;
-const RingGlowAlpha = 0.16;
-const RingDashOn = 14;
-const RingDashOff = 12;
-const RingRgb = { r: 96, g: 128, b: 176 };
+/**
+ * 轨道线改成 **3D 网格**（2026-09-26 用户第 4 条反馈）：
+ * 2D 虚线永远画在 3D 之上，行星挡不住线（"线压在行星上"）；烘成网格后由深度缓冲决定遮挡。
+ * 资产 = Assets/Model/OrbitRings.gltf（八条轨道一个 mesh，1 draw call，
+ * 半径与世界单位一致 ⇒ 不做缩放；由 Test/gen_orbit_assets.py 从本文件的 Stations 解析生成）。
+ */
+const OrbitRingsPath = 'Assets/Model/OrbitRings.gltf';
+/** 轨道线亮度（emissive 0xRRGGBB）。压暗过一版：用户反馈"线条过分明显"。 */
+const OrbitRingsHex = 0x3f5f88;
+/**
+ * 混合系数超过它就**整条藏掉**轨道线。
+ *
+ * 为什么不能只"调暗"：环是不透明的网格（baseColor 黑 + emissive 亮），调暗只是让它变黑 ——
+ * 贴脸时线宽会涨到几十像素，画面里就成了一根根**黑棍子**，比亮线更糟（实测截图）。
+ * 全景/拉回段看得到，俯冲进特写就收起来（它是"地图"元素，不是场景元素）。
+ */
+const OrbitRingsHideBlend = 0.45;
 
 /**
  * 全景里的一站（= 一条轨道 + 一颗行星）。
@@ -104,16 +112,24 @@ export interface OpeningStation {
 }
 
 /** 地球在 Stations 里的下标（聚焦目标）。 */
-export const EarthStationIndex = 1;
+export const EarthStationIndex = 2;
 
 export const Stations: OpeningStation[] = [
-	{ model: 'Planet_Venus', radius: 1.15, orbit: 8.5, angleDeg: 205, colorHex: 0xf0dcae, emissiveHex: 0 },
-	{ model: 'Planet_Earth', radius: 1.35, orbit: 14.0, angleDeg: 262, colorHex: 0x5b9be0, emissiveHex: 0x0c1622 },
-	{ model: 'Planet_Mars', radius: 1.00, orbit: 19.0, angleDeg: 318, colorHex: 0xd07f4a, emissiveHex: 0 },
-	{ model: 'Planet_Jupiter', radius: 2.70, orbit: 25.0, angleDeg: 12, colorHex: 0xe0c092, emissiveHex: 0 },
-	{ model: 'Planet_Saturn', radius: 2.10, orbit: 32.0, angleDeg: 68, colorHex: 0xd3c49a, emissiveHex: 0 },
-	{ model: 'Planet_Uranus', radius: 1.35, orbit: 39.5, angleDeg: 124, colorHex: 0xa8dde4, emissiveHex: 0 },
-	{ model: 'Planet_Neptune', radius: 1.30, orbit: 47.0, angleDeg: 180, colorHex: 0x7b95f0, emissiveHex: 0 },
+	// 水星（2026-09-26 用户："水星怎么不见了"）：模型库里**没有** Planet_Mercury，
+	// 用代码生成的单位球 Sphere.gltf 染成灰色 —— 它在全景里只有 ~9 px，光滑灰球足够。
+	{ model: 'Sphere', radius: 0.85, orbit: 7.5, angleDeg: 340, colorHex: 0x9a8f86, emissiveHex: 0 },
+	// ⚠️ 金星的角度按**特写机位**定：机位在地球背光侧约 (-12,-12) 处，
+	// 原先 205°（金星在该方向的延长线上）会让它在特写里只有 9.7 单位远、占掉半个屏幕（实测截图）。
+	{ model: 'Planet_Venus', radius: 1.60, orbit: 11.5, angleDeg: 300, colorHex: 0xf0dcae, emissiveHex: 0 },
+	// 地球：特写里是主角，自发光比关卡里那版略亮（正交光方向固定，夜面太黑会看不出是地球）
+	{ model: 'Planet_Earth', radius: 2.20, orbit: 17.0, angleDeg: 262, colorHex: 0x5b9be0, emissiveHex: 0x16283c },
+	{ model: 'Planet_Mars', radius: 1.50, orbit: 22.5, angleDeg: 318, colorHex: 0xd07f4a, emissiveHex: 0 },
+	{ model: 'Planet_Jupiter', radius: 4.60, orbit: 30.0, angleDeg: 12, colorHex: 0xe0c092, emissiveHex: 0 },
+	// 土星环是模型自带的（外径 ≈ 本体 2.24 倍）⇒ 本体 3.2 时环外径 7.2，
+	// 轨道取 38.5 让环正好落在木星(30)与天王星(47)之间，不压邻轨。
+	{ model: 'Planet_Saturn', radius: 3.20, orbit: 38.5, angleDeg: 68, colorHex: 0xd3c49a, emissiveHex: 0 },
+	{ model: 'Planet_Uranus', radius: 2.00, orbit: 47.0, angleDeg: 124, colorHex: 0xa8dde4, emissiveHex: 0 },
+	{ model: 'Planet_Neptune', radius: 1.90, orbit: 55.0, angleDeg: 180, colorHex: 0x7b95f0, emissiveHex: 0 },
 ];
 
 /** 一站所在的平面坐标。下标越界返回原点（调用方不必再判空）。 */
@@ -233,6 +249,8 @@ export interface OpeningOptions {
 	probePath: string;
 	probeBodyPath?: string;
 	probeAntennaPath?: string;
+	/** 代码生成单位球的路径（回退模型；水星用它）。省略按 Assets/Model/Sphere.gltf。 */
+	spherePath?: string;
 	/** 开场结束（自然播完或跳过）时回调一次。 */
 	onFinish: () => void;
 }
@@ -341,28 +359,56 @@ export function createOpening(options: OpeningOptions): Opening {
 		root.addChild(sun);
 	}
 
+	// ---- 分帧建：八颗行星 + 分体探测器不是一次性加载 ----
+	// 为什么（2026-09-26 用户第 3 条反馈：**第一次播会卡，重看就顺**）：一次性 Model3D 建 9 个网格
+	// 会在开场头几帧里阻塞（磁盘 + 材质/着色器首次编译），重看时引擎已缓存所以不卡。
+	// 摊到开场头十几帧（≈0.25s，正好在标题淡入、行星还只有几个像素的时候）就看不出来了。
+	const spherePath = options.spherePath !== undefined ? options.spherePath : 'Assets/Model/Sphere.gltf';
+	const buildQueue: (() => void)[] = [];
 	for (let i = 0; i < Stations.length; i++) {
 		const st = Stations[i];
-		const model = Model3D('Assets/Model/' + st.model + '.glb');
-		if (model === undefined) continue;
-		const scale = st.radius / modelRadius(st.model);
-		model.scale = Vec3(scale, scale, scale);
-		tint(model, st.colorHex, st.emissiveHex);
-		model.position = planeToWorld(stationPlane(i), 0);
-		root.addChild(model);
+		const p = stationPlane(i);
+		buildQueue.push((): void => {
+			// 水星没有专用资产，用代码生成的单位球（Sphere.gltf）
+			const model = Model3D(st.model === 'Sphere' ? spherePath : 'Assets/Model/' + st.model + '.glb');
+			if (model === undefined) {
+				print('[escape-velocity] opening model MISSING: ' + st.model);
+				return;
+			}
+			const scale = st.radius / modelRadius(st.model);
+			model.scale = Vec3(scale, scale, scale);
+			tint(model, st.colorHex, st.emissiveHex);
+			model.position = planeToWorld(p, 0);
+			root.addChild(model);
+		});
 	}
 
-	// ---- 探测器（分体约定与关卡一致）----
-	const probe = createProbe(root, {
-		scale: ProbeScale,
-		probePath: options.probePath,
-		bodyPath: options.probeBodyPath,
-		antennaPath: options.probeAntennaPath,
+	// ---- 轨道线：3D 网格（行星能挡住它；见 OrbitRingsPath 注释）----
+	let rings: Model3D.Type | undefined = undefined;
+	if (Content.exist(OrbitRingsPath)) {
+		rings = Model3D(OrbitRingsPath);
+		if (rings !== undefined) {
+			const rm = rings.getMaterial(0);
+			if (rm !== undefined) {
+				rm.baseColor = Color(0, 0, 0, 255);
+				rm.emissive = Color3(OrbitRingsHex);
+			}
+			root.addChild(rings);
+		}
+	}
+
+	// ---- 探测器（分体约定与关卡一致）——排在队尾，最后建 ----
+	let probe: ProbeHandle | undefined = undefined;
+	buildQueue.push((): void => {
+		probe = createProbe(root, {
+			scale: ProbeScale,
+			probePath: options.probePath,
+			bodyPath: options.probeBodyPath,
+			antennaPath: options.probeAntennaPath,
+		});
 	});
 
-	// ---- 2D：轨道虚线圈（最底层）+ 文案 + 跳过层 ----
-	const orbitDraw = DrawNode();
-	ui.addChild(orbitDraw);
+	// ---- 2D：文案 + 跳过层 ----
 
 	const titleSize = Math.round(clampNumber(viewH * 0.085, 54, 104));
 	const taglineSize = Math.round(clampNumber(viewH * 0.028, 22, 34));
@@ -387,17 +433,9 @@ export function createOpening(options: OpeningOptions): Opening {
 	skipLayer.touchEnabled = true;
 	ui.addChild(skipLayer);
 
-	// 轨道采样点（平面坐标，只算一次；每帧只做投影）
-	const ringSamples: P2[][] = [];
-	for (let i = 0; i < Stations.length; i++) {
-		const r = Stations[i].orbit;
-		const pts: P2[] = [];
-		for (let j = 0; j <= RingSamples; j++) {
-			const a = (j / RingSamples) * Math.PI * 2;
-			pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
-		}
-		ringSamples.push(pts);
-	}
+	// 资产诊断：缺件时开场不会崩（都有回退），但日志要留痕
+	print('[escape-velocity] opening assets: rings=' + (rings !== undefined ? 'ok' : 'MISSING')
+		+ ' sky=' + (backdrop !== undefined ? 'ok' : 'MISSING'));
 
 	const earth = stationPlane(EarthStationIndex);
 
@@ -405,44 +443,31 @@ export function createOpening(options: OpeningOptions): Opening {
 	let frame = -1;
 	let bodyYawDeg = 0;
 
-	/** 把某一帧的世界状态摆好，返回这一帧的相机基（轨道线共用同一份投影）。 */
-	const updateWorld = (f: number): CameraBasis => {
-		if (probe !== undefined) {
+	// 轨道线材质的取用口。
+	// 行星/探测器是**分帧建**的（见上方 buildQueue）：赋值发生在闭包里，TS 的控制流分析
+	// 会以为外层 probe 恒为 undefined（narrowing 成 never）⇒ 取用一律走这个函数。
+	const probeNow = (): ProbeHandle | undefined => probe;
+
+	/** 把某一帧的世界状态摆好。 */
+	const updateWorld = (f: number): void => {
+		const hp = probeNow();
+		if (hp !== undefined) {
 			const p = probeOrbitPos(f, earth);
-			probe.node.position = planeToWorld(p, 0);
+			hp.node.position = planeToWorld(p, 0);
 			const yaw = probeYawForVelocity(probeOrbitVel(f));
 			if (yaw !== undefined) {
 				bodyYawDeg = yaw;
-				probe.node.angleY = yaw;
+				hp.node.angleY = yaw;
 			}
-			if (probe.antenna !== undefined) pointAntenna(probe.antenna, p, earth, bodyYawDeg);
+			if (hp.antenna !== undefined) pointAntenna(hp.antenna, p, earth, bodyYawDeg);
 		}
 
 		const pose = openingPose(f, earth);
 		options.camera.lookAt(pose.eye, pose.target, Vec3(0, 1, 0));
 		if (backdrop !== undefined) backdrop.sync(pose.eye, pose.target);
 
-		const view: CameraView = {
-			eye: pose.eye,
-			target: pose.target,
-			up: { x: 0, y: 1, z: 0 },
-			fovYDeg: options.fovYDeg,
-			aspect: options.aspect,
-			viewW: viewW,
-			viewH: viewH,
-		};
-		return prepareCamera(view, HANDEDNESS, FLIP_Y);
-	};
-
-	const drawRings = (basis: CameraBasis): void => {
-		orbitDraw.clear();
-		for (let i = 0; i < ringSamples.length; i++) {
-			const verts = projectPolyline(ringSamples[i], 0, basis, viewW * 0.5, viewH * 0.5);
-			drawDashedPolyline(
-				orbitDraw, verts, RingRadius, RingRgb, 1, RingGlowFactor, RingGlowAlpha,
-				RingDashOn, RingDashOff, false,
-			);
-		}
+		// 轨道线：俯冲进特写就整条收起（理由见 OrbitRingsHideBlend）
+		if (rings !== undefined) rings.visible = openingBlend(f) < OrbitRingsHideBlend;
 	};
 
 	/** 文案的呼吸节奏（帧号写死在这里 = 分镜表）。 */
@@ -467,8 +492,12 @@ export function createOpening(options: OpeningOptions): Opening {
 	};
 
 	const update = (f: number): void => {
-		const basis = updateWorld(f);
-		drawRings(basis);
+		// 分帧建：一帧建一件（8 行星 + 探测器 ⇒ 9 帧建完，约 0.15s，落在标题淡入里）
+		if (buildQueue.length > 0) {
+			const job = buildQueue.shift();
+			if (job !== undefined) job();
+		}
+		updateWorld(f);
 		updateLabels(f);
 	};
 

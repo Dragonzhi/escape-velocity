@@ -394,6 +394,7 @@ if (levelTotal <= 0) {
 				viewH: viewH,
 				fovYDeg: View.fieldOfView,
 				aspect: View.aspectRatio,
+				spherePath: 'Assets/Model/Sphere.gltf',
 				probePath: 'Assets/Model/Probe_Voyager_v1.glb',
 				probeBodyPath: 'Assets/Model/Probe_Body.glb',
 				probeAntennaPath: 'Assets/Model/Probe_Antenna.glb',
@@ -499,6 +500,11 @@ if (levelTotal <= 0) {
 		if (opening !== undefined && opening.running()) {
 			// @hold:N —— 冻结在第 N 帧不动（抓分镜截图用）；轻触跳过时 onFinish 会解冻
 			if (introHold < 0 || opening.frameIndex() < introHold) opening.step();
+			// 开场卡顿的现场证据（用户 2026-09-26 第 3 条反馈"首播卡、重看不卡"）：
+			// 超过 50ms 的帧打一行，带开场帧号 —— 分帧建之后这几行应该消失
+			if (App.deltaTime > 0.05) {
+				print('[escape-velocity] hitch ' + (App.deltaTime * 1000).toFixed(0) + 'ms @ opening frame ' + opening.frameIndex().toFixed(0));
+			}
 		}
 
 		const runtime = activeRuntime();

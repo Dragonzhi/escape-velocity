@@ -185,8 +185,8 @@ local function testPose() -- 110
 	local d0 = dist3(p0.eye, p0.target) -- 113
 	check( -- 115
 		"pose-wide-distance", -- 115
-		math.abs(d0 - 205) < 0.01, -- 115
-		("第 0 帧距离 " .. __TS__NumberToFixed(d0, 2)) .. " 应为 205" -- 115
+		math.abs(d0 - 245) < 0.01, -- 115
+		("第 0 帧距离 " .. __TS__NumberToFixed(d0, 2)) .. " 应为 245" -- 115
 	) -- 115
 	check( -- 116
 		"pose-wide-target", -- 116
@@ -200,8 +200,8 @@ local function testPose() -- 110
 	local d1 = dist3(p1.eye, p1.target) -- 118
 	check( -- 119
 		"pose-close-distance", -- 119
-		math.abs(d1 - 12) < 0.01, -- 119
-		("停留段距离 " .. __TS__NumberToFixed(d1, 2)) .. " 应为 12" -- 119
+		math.abs(d1 - 22) < 0.01, -- 119
+		("停留段距离 " .. __TS__NumberToFixed(d1, 2)) .. " 应为 22" -- 119
 	) -- 119
 	local t1 = p1.target -- 120
 	local earthWorldDist = math.sqrt((t1.x - earth.x) * (t1.x - earth.x) + (t1.z - earth.y) * (t1.z - earth.y)) -- 121

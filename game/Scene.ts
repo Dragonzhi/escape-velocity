@@ -295,42 +295,83 @@ export function probeYawForVelocity(v: P2): number | undefined {
 const BackdropDist = 600;
 const BackdropHalf = 560;
 
+/** 天球半径（世界单位）。 */
+const SkyRadius = 1200;
+/** 天球资产（Test/gen_orbit_assets.py 生成）。 */
+const SkySpherePath = 'Assets/Model/StarSphere.gltf';
+/**
+ * 星空总亮度（emissive 0xRRGGBB）。
+ *
+ * 2026-09-26 换天球时把 0x8c 调到 0x7a：新贴图是 2048×1024（1 texel ≈ 4.2 屏幕像素，
+ * 星点直径 1.5–6 px），比旧面片版（1024²，1 texel ≈ 2.3 px）的点更大更亮，
+ * 同样的 emissive 会显得"星点变大变吵"，压一档回到原来的观感。
+ */
+const StarBrightnessHex = 0x7a7a7a;
+
 /** 星图背板句柄（关卡与开场共用）。 */
 export interface StarBackdrop {
-	/** 背板节点本身（四边形）。 */
+	/** 节点本身（天球；回退模式下是四边形）。 */
 	node: Model3D.Type;
-	/** 每帧钉到"相机视线前方"（理由见 createStarBackdrop 注释）。 */
+	/** 每帧跟随相机（天球 = 球心挪到 eye；回退模式 = 钉在视线前方）。 */
 	sync(eye: Vec3.Type, target: Vec3.Type): void;
 }
 
 /**
- * 建星空背板：一张程序化星图贴在**贴着相机**的四边形上（方案 B，2026-09-25 用户拍板）。
+ * 建星空：**世界尺度的天球 + 每帧把球心挪到相机位置**（2026-09-26，用户第 5 条反馈）。
  *
- * 为什么每帧贴着相机（sync）：相机距离在 [25,100] 内随包围盒变化、注视点也会移动，
- * 固定位置的背板会被移出画面或露出边缘；钉在"视线前方 600"相当于把星空放在无穷远
- * （无视差），任何距离/宽高比下都正好铺满（半边长 560 > 需求 600·tan(fov/2)·1.645 ≈ 490）。
- * 远裁剪面实测 > 2000（Test/FarPlaneProbe，2026-09-25；早前"z=-900 不可见"是误判）。
+ * 为什么换掉面片：旧的四边形是"钉在视线前方 600"的，但它**朝向写死**（angleX = -45）。
+ * 开场里相机要从全景俯冲到特写（俯角 42°→20°、方位角差 60°+），朝向不匹配时星图会被拉伸/透视错位，
+ * 一眼看出是块贴片。天球没有朝向问题：转到哪个角度看都对。
+ * 球心跟着相机 ⇒ 旋转带着星空一起转（正确），平移不产生视差（等价于无穷远，也正确）。
  *
- * 素材由 Test/gen_star_assets.py 代码生成：Assets/Image/starfield.png（1024×1024）
- * + Assets/Model/StarQuad.gltf（顶点 ±1 ⇒ **scale = 半边长**，材质自带 doubleSided）。
+ * 天球半径 1200：远大于任何场景跨度（全景最外轨道 55、关卡 25–100），
+ * 又远小于远裁剪面（实测 > 2000，Test/FarPlaneProbe，2026-09-25）。
+ *
+ * 素材由 Test/gen_orbit_assets.py 代码生成：starfield.png（2048×1024 等距圆柱）
+ * + StarSphere.gltf（单位球，**scale = 天球半径**，材质自带 doubleSided）。
+ * 旧的 StarQuad.gltf / 1024² 贴图保留作回退。
  */
 export function createStarBackdrop(root: Node3D.Type): StarBackdrop | undefined {
+	const tex = Texture2D('Assets/Image/starfield.png');
+
+	// 主路：天球
+	if (Content.exist(SkySpherePath)) {
+		const sphere = Model3D(SkySpherePath);
+		if (sphere !== undefined) {
+			const sm = sphere.getMaterial(0);
+			if (sm !== undefined && tex !== undefined) {
+				// ⚠️ 星空**不吃光照**：只走 emissive 槽（baseColor 留黑），总亮度 = emissive 一个旋钮。
+				// 首版双槽全白 = 贴图亮度 ×2，用户反馈"喧宾夺主"后压到 ~55%（0x8c）。
+				sm.setEmissiveTexture(tex);
+				sm.baseColor = Color(0, 0, 0, 255);
+				sm.emissive = Color3(StarBrightnessHex);
+				sm.roughness = 1.0;
+				sm.metallic = 0.0;
+			}
+			sphere.scale = Vec3(SkyRadius, SkyRadius, SkyRadius);
+			sphere.position = Vec3(0, 0, 0);
+			root.addChild(sphere);
+			return {
+				node: sphere,
+				sync: (eye: Vec3.Type, target: Vec3.Type): void => {
+					sphere.position = Vec3(eye.x, eye.y, eye.z);
+				},
+			};
+		}
+	}
+
+	// 回退：旧的面片（资产缺失时仍能看）
 	const backdrop = Model3D('Assets/Model/StarQuad.gltf');
 	if (backdrop === undefined) return undefined;
-	const tex = Texture2D('Assets/Image/starfield.png');
 	const bm = backdrop.getMaterial(0);
 	if (bm !== undefined && tex !== undefined) {
-		// ⚠️ 星空**不吃光照**：只走 emissive 槽（baseColor 留黑），总亮度 = emissive 一个旋钮。
-		// 首版双槽全白 = 贴图亮度 ×2，用户反馈"喧宾夺主"后压到 ~55%（0x8c）。
 		bm.setEmissiveTexture(tex);
 		bm.baseColor = Color(0, 0, 0, 255);
-		bm.emissive = Color3(0x8c8c8c);
+		bm.emissive = Color3(StarBrightnessHex);
 		bm.roughness = 1.0;
 		bm.metallic = 0.0;
 	}
 	backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf);
-	// 相机从斜上方俯视：把四边形绕 X 转到 ⊥ 视线。符号 -45 是按右手系推的——
-	// 首次截图必须确认背板真的铺满画面；若只见一条细缝就是转成了 90°，翻成 +45。
 	backdrop.angleX = -45;
 	backdrop.position = Vec3(0, 0, -BackdropDist);
 	root.addChild(backdrop);
