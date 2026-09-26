@@ -7,21 +7,21 @@ local distance = ____Gravity.distance -- 25
 local ____Config = require("game.Config") -- 26
 local GravityScale = ____Config.GravityScale -- 26
 local OrbitSpeedScale = ____Config.OrbitSpeedScale -- 26
-function applyScalesLocal(bodies, gravityScale, orbitScale) -- 218
-	local out = {} -- 219
-	for ____, b in ipairs(bodies) do -- 220
-		out[#out + 1] = { -- 221
-			gm = b.gm * gravityScale, -- 222
-			radius = b.radius, -- 223
-			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 224
-			orbitRadius = b.orbitRadius, -- 225
-			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 226
-			phase0 = b.phase0, -- 227
-			orbitDirection = b.orbitDirection -- 228
-		} -- 228
-	end -- 228
-	return out -- 231
-end -- 231
+function applyScalesLocal(bodies, gravityScale, orbitScale) -- 219
+	local out = {} -- 220
+	for ____, b in ipairs(bodies) do -- 221
+		out[#out + 1] = { -- 222
+			gm = b.gm * gravityScale, -- 223
+			radius = b.radius, -- 224
+			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 225
+			orbitRadius = b.orbitRadius, -- 226
+			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 227
+			phase0 = b.phase0, -- 228
+			orbitDirection = b.orbitDirection -- 229
+		} -- 229
+	end -- 229
+	return out -- 232
+end -- 232
 --- 在飞行采样点中找第一个进入目标容差的索引。
 -- 
 -- 目标行星在移动，所以逐点用 `t = i * dt` 时的行星位置判定。
@@ -226,55 +226,55 @@ local LEVELS = { -- 87
 			ring = true, -- 173
 			model = "Planet_Saturn" -- 173
 		}, { -- 173
-			r = 0.55, -- 175
-			g = 0.75, -- 175
-			b = 0.8, -- 175
-			displayRadius = 1.3, -- 175
-			ring = false, -- 175
-			model = "Planet_Neptune" -- 175
-		}}, -- 175
-		goal = {kind = "planet", planetIndex = 2, tolerance = 3}, -- 177
-		escapeRadius = 400, -- 178
-		maxSteps = 1800 -- 179
-	}, -- 179
-	{ -- 181
-		id = 6, -- 182
-		title = "贴着过去", -- 183
-		brief = "最后一次机会。贴着土星环过去，别碰它。", -- 184
-		probeStart = {x = 0, y = 16}, -- 185
-		planets = {{ -- 186
-			gm = 1100, -- 188
-			radius = 1.6, -- 188
-			orbitCenter = {x = 4, y = -6}, -- 188
-			orbitRadius = 0, -- 188
-			orbitPeriod = 0, -- 188
-			phase0 = 0, -- 188
-			orbitDirection = 1 -- 188
-		}}, -- 188
-		visuals = {{ -- 190
-			r = 0.75, -- 191
-			g = 0.7, -- 191
-			b = 0.6, -- 191
-			displayRadius = 1.6, -- 191
-			ring = true, -- 191
-			model = "Planet_Saturn" -- 191
-		}}, -- 191
-		goal = {kind = "planet", planetIndex = 0, tolerance = 2.2}, -- 193
-		escapeRadius = 400, -- 194
-		maxSteps = 1800 -- 195
-	} -- 195
-} -- 195
+			r = 0.62, -- 176
+			g = 0.82, -- 176
+			b = 0.86, -- 176
+			displayRadius = 1.3, -- 176
+			ring = false, -- 176
+			model = "Planet_Uranus" -- 176
+		}}, -- 176
+		goal = {kind = "planet", planetIndex = 2, tolerance = 3}, -- 178
+		escapeRadius = 400, -- 179
+		maxSteps = 1800 -- 180
+	}, -- 180
+	{ -- 182
+		id = 6, -- 183
+		title = "贴着过去", -- 184
+		brief = "最后一次机会。贴着土星环过去，别碰它。", -- 185
+		probeStart = {x = 0, y = 16}, -- 186
+		planets = {{ -- 187
+			gm = 1100, -- 189
+			radius = 1.6, -- 189
+			orbitCenter = {x = 4, y = -6}, -- 189
+			orbitRadius = 0, -- 189
+			orbitPeriod = 0, -- 189
+			phase0 = 0, -- 189
+			orbitDirection = 1 -- 189
+		}}, -- 189
+		visuals = {{ -- 191
+			r = 0.75, -- 192
+			g = 0.7, -- 192
+			b = 0.6, -- 192
+			displayRadius = 1.6, -- 192
+			ring = true, -- 192
+			model = "Planet_Saturn" -- 192
+		}}, -- 192
+		goal = {kind = "planet", planetIndex = 0, tolerance = 2.2}, -- 194
+		escapeRadius = 400, -- 195
+		maxSteps = 1800 -- 196
+	} -- 196
+} -- 196
 --- 关卡总数。
-function ____exports.levelCount() -- 200
-	return #LEVELS -- 201
-end -- 200
+function ____exports.levelCount() -- 201
+	return #LEVELS -- 202
+end -- 201
 --- 取第 index 关（0 起）。越界返回 undefined。
-function ____exports.getLevel(index) -- 205
-	return LEVELS[index + 1] -- 206
-end -- 205
+function ____exports.getLevel(index) -- 206
+	return LEVELS[index + 1] -- 207
+end -- 206
 --- 应用全局倍率，返回可直接喂给 createGame 的行星数组。
 -- 不修改关卡原始数据。
-function ____exports.scaledPlanets(level) -- 213
-	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 214
-end -- 213
-return ____exports -- 213
+function ____exports.scaledPlanets(level) -- 214
+	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 215
+end -- 214
+return ____exports -- 214

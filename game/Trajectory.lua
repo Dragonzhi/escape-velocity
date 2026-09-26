@@ -99,193 +99,199 @@ local function segColor(rgb, alpha) -- 174
 end -- 174
 --- 虚线 + 渐隐 + 光晕：沿折线按"实段/空段"节奏走笔，
 -- 每个实段按其中点的沿线比例取 alpha（光晕层同 alpha、更宽）。
-local function drawDashed(draw, verts, coreRadius, rgb, fadeMin, glowRadiusFactor, glowAlpha, dashOn, dashOff) -- 185
-	local maxSeg = 800 -- 199
-	draw:clear() -- 200
-	local n = #verts -- 201
-	if n < 2 then -- 201
-		return -- 202
-	end -- 202
-	local segLen = {} -- 205
-	local total = 0 -- 206
-	do -- 206
-		local i = 1 -- 207
-		while i < n do -- 207
-			local dx = verts[i + 1].x - verts[i].x -- 208
-			local dy = verts[i + 1].y - verts[i].y -- 209
-			local l = math.sqrt(dx * dx + dy * dy) -- 210
-			segLen[#segLen + 1] = l -- 211
-			total = total + l -- 212
-			i = i + 1 -- 207
-		end -- 207
+-- 
+-- 导出给 S3.3 开场复用（太阳系轨道虚线圈）——轨道是**整圈均匀**的，
+-- 调 `fadeMin = 1` 即可关掉沿线渐隐；`clearFirst = false` 让同一个 DrawNode
+-- 上叠多条环（预测线/尾迹每帧重画，仍用默认的 clear）。
+function ____exports.drawDashedPolyline(draw, verts, coreRadius, rgb, fadeMin, glowRadiusFactor, glowAlpha, dashOn, dashOff, clearFirst) -- 189
+	local maxSeg = 800 -- 204
+	if clearFirst ~= false then -- 204
+		draw:clear() -- 205
+	end -- 205
+	local n = #verts -- 206
+	if n < 2 then -- 206
+		return -- 207
 	end -- 207
-	if total < 0.001 then -- 207
-		return -- 214
-	end -- 214
-	local cycle = dashOn + dashOff -- 216
-	local glowRadius = coreRadius * glowRadiusFactor -- 217
-	local pen = 0 -- 218
-	do -- 218
-		local i = 1 -- 219
-		while i < n do -- 219
-			do -- 219
-				local ax = verts[i].x -- 220
-				local ay = verts[i].y -- 220
-				local bx = verts[i + 1].x -- 221
-				local by = verts[i + 1].y -- 221
-				local len = segLen[i] -- 222
-				if len < 0.001 or len > maxSeg then -- 222
-					goto __continue19 -- 224
-				end -- 224
-				local s = 0 -- 225
-				while s < len - 0.001 do -- 225
-					local c = pen % cycle -- 227
-					local run = math.min(cycle - c, len - s) -- 228
-					if c < dashOn then -- 228
-						local t0 = s / len -- 230
-						local t1 = (s + run) / len -- 231
-						local x0 = ax + (bx - ax) * t0 -- 232
-						local y0 = ay + (by - ay) * t0 -- 233
-						local x1 = ax + (bx - ax) * t1 -- 234
-						local y1 = ay + (by - ay) * t1 -- 235
-						local al = fadeAlpha((pen + run * 0.5) / total, fadeMin) -- 236
-						local p0 = Vec2(x0, y0) -- 237
-						local p1 = Vec2(x1, y1) -- 238
-						draw:drawSegment( -- 239
-							p0, -- 239
-							p1, -- 239
-							glowRadius, -- 239
-							segColor(rgb, glowAlpha * al) -- 239
-						) -- 239
-						draw:drawSegment( -- 240
-							p0, -- 240
-							p1, -- 240
-							coreRadius, -- 240
-							segColor(rgb, al) -- 240
-						) -- 240
-					end -- 240
-					pen = pen + run -- 242
-					s = s + run -- 243
-				end -- 243
-			end -- 243
-			::__continue19:: -- 243
-			i = i + 1 -- 219
-		end -- 219
+	local segLen = {} -- 210
+	local total = 0 -- 211
+	do -- 211
+		local i = 1 -- 212
+		while i < n do -- 212
+			local dx = verts[i + 1].x - verts[i].x -- 213
+			local dy = verts[i + 1].y - verts[i].y -- 214
+			local l = math.sqrt(dx * dx + dy * dy) -- 215
+			segLen[#segLen + 1] = l -- 216
+			total = total + l -- 217
+			i = i + 1 -- 212
+		end -- 212
+	end -- 212
+	if total < 0.001 then -- 212
+		return -- 219
 	end -- 219
-end -- 185
+	local cycle = dashOn + dashOff -- 221
+	local glowRadius = coreRadius * glowRadiusFactor -- 222
+	local pen = 0 -- 223
+	do -- 223
+		local i = 1 -- 224
+		while i < n do -- 224
+			do -- 224
+				local ax = verts[i].x -- 225
+				local ay = verts[i].y -- 225
+				local bx = verts[i + 1].x -- 226
+				local by = verts[i + 1].y -- 226
+				local len = segLen[i] -- 227
+				if len < 0.001 or len > maxSeg then -- 227
+					goto __continue20 -- 229
+				end -- 229
+				local s = 0 -- 230
+				while s < len - 0.001 do -- 230
+					local c = pen % cycle -- 232
+					local run = math.min(cycle - c, len - s) -- 233
+					if c < dashOn then -- 233
+						local t0 = s / len -- 235
+						local t1 = (s + run) / len -- 236
+						local x0 = ax + (bx - ax) * t0 -- 237
+						local y0 = ay + (by - ay) * t0 -- 238
+						local x1 = ax + (bx - ax) * t1 -- 239
+						local y1 = ay + (by - ay) * t1 -- 240
+						local al = fadeAlpha((pen + run * 0.5) / total, fadeMin) -- 241
+						local p0 = Vec2(x0, y0) -- 242
+						local p1 = Vec2(x1, y1) -- 243
+						draw:drawSegment( -- 244
+							p0, -- 244
+							p1, -- 244
+							glowRadius, -- 244
+							segColor(rgb, glowAlpha * al) -- 244
+						) -- 244
+						draw:drawSegment( -- 245
+							p0, -- 245
+							p1, -- 245
+							coreRadius, -- 245
+							segColor(rgb, al) -- 245
+						) -- 245
+					end -- 245
+					pen = pen + run -- 247
+					s = s + run -- 248
+				end -- 248
+			end -- 248
+			::__continue20:: -- 248
+			i = i + 1 -- 224
+		end -- 224
+	end -- 224
+end -- 189
 --- 彗星拖尾：宽度与 alpha 从头部向尾部收窄 + 光晕 + 头部亮点。
-local function drawComet(draw, verts, headRadius, rgb, headAlpha, glowRadiusFactor, glowAlpha) -- 249
-	draw:clear() -- 258
-	local n = #verts -- 259
-	if n < 2 then -- 259
-		return -- 260
-	end -- 260
-	local tailRadius = headRadius * 0.15 -- 261
-	local glowRadius = headRadius * glowRadiusFactor -- 262
-	local maxSeg = 800 -- 263
-	do -- 263
-		local i = 1 -- 264
-		while i < n do -- 264
-			do -- 264
-				local u = i / (n - 1) -- 266
-				local up = u ^ 1.2 -- 267
-				local r = tailRadius + (headRadius - tailRadius) * up -- 268
-				local al = headAlpha * u ^ 1.6 -- 269
-				local dxv = verts[i + 1].x - verts[i].x -- 270
-				local dyv = verts[i + 1].y - verts[i].y -- 271
-				if dxv * dxv + dyv * dyv > maxSeg * maxSeg then -- 271
-					goto __continue26 -- 272
-				end -- 272
-				draw:drawSegment( -- 273
-					verts[i], -- 273
-					verts[i + 1], -- 273
-					r * glowRadiusFactor, -- 273
-					segColor(rgb, glowAlpha * al) -- 273
-				) -- 273
-				draw:drawSegment( -- 274
-					verts[i], -- 274
-					verts[i + 1], -- 274
-					r, -- 274
-					segColor(rgb, al) -- 274
-				) -- 274
-			end -- 274
-			::__continue26:: -- 274
-			i = i + 1 -- 264
-		end -- 264
-	end -- 264
-	draw:drawDot( -- 277
-		verts[n], -- 277
-		headRadius * 1.5, -- 277
-		segColor(rgb, headAlpha) -- 277
-	) -- 277
-end -- 249
+local function drawComet(draw, verts, headRadius, rgb, headAlpha, glowRadiusFactor, glowAlpha) -- 254
+	draw:clear() -- 263
+	local n = #verts -- 264
+	if n < 2 then -- 264
+		return -- 265
+	end -- 265
+	local tailRadius = headRadius * 0.15 -- 266
+	local glowRadius = headRadius * glowRadiusFactor -- 267
+	local maxSeg = 800 -- 268
+	do -- 268
+		local i = 1 -- 269
+		while i < n do -- 269
+			do -- 269
+				local u = i / (n - 1) -- 271
+				local up = u ^ 1.2 -- 272
+				local r = tailRadius + (headRadius - tailRadius) * up -- 273
+				local al = headAlpha * u ^ 1.6 -- 274
+				local dxv = verts[i + 1].x - verts[i].x -- 275
+				local dyv = verts[i + 1].y - verts[i].y -- 276
+				if dxv * dxv + dyv * dyv > maxSeg * maxSeg then -- 276
+					goto __continue27 -- 277
+				end -- 277
+				draw:drawSegment( -- 278
+					verts[i], -- 278
+					verts[i + 1], -- 278
+					r * glowRadiusFactor, -- 278
+					segColor(rgb, glowAlpha * al) -- 278
+				) -- 278
+				draw:drawSegment( -- 279
+					verts[i], -- 279
+					verts[i + 1], -- 279
+					r, -- 279
+					segColor(rgb, al) -- 279
+				) -- 279
+			end -- 279
+			::__continue27:: -- 279
+			i = i + 1 -- 269
+		end -- 269
+	end -- 269
+	draw:drawDot( -- 282
+		verts[n], -- 282
+		headRadius * 1.5, -- 282
+		segColor(rgb, headAlpha) -- 282
+	) -- 282
+end -- 254
 --- 创建轨迹视图。
 -- 
 -- @param parent 挂载的父节点。必须是 **2D** 节点（通常是 `Director.ui`）——
 -- `Director.entry` 是 `View3D`，不能挂 2D 绘制节点。
-function ____exports.createTrajectoryView(parent, opts) -- 286
-	local options = opts ~= nil and opts or ____exports.defaultOptions() -- 290
-	local root = Node() -- 293
-	local trailDraw = DrawNode() -- 296
-	trailDraw.blendFunc = BlendFunc("One", "One") -- 298
-	root:addChild(trailDraw) -- 299
-	local predictDraw = DrawNode() -- 301
-	predictDraw.blendFunc = BlendFunc("One", "One") -- 302
-	root:addChild(predictDraw) -- 303
-	parent:addChild(root) -- 305
-	local predictRGB = {r = options.predictR, g = options.predictG, b = options.predictB} -- 307
-	local trailRGB = {r = options.trailR, g = options.trailG, b = options.trailB} -- 308
-	return { -- 310
-		setPrediction = function(self, points, basis) -- 311
-			local verts = ____exports.projectPolyline( -- 312
-				____exports.decimate(points, options.maxPoints), -- 312
-				options.y, -- 312
-				basis, -- 312
-				options.layerOriginX, -- 312
-				options.layerOriginY -- 312
-			) -- 312
-			drawDashed( -- 313
-				predictDraw, -- 314
-				verts, -- 315
-				options.predictRadius, -- 316
-				predictRGB, -- 317
-				options.predictFadeMin, -- 318
-				options.glowRadiusFactor, -- 319
-				options.glowAlpha, -- 320
-				options.dashOn, -- 321
-				options.dashOff -- 322
-			) -- 322
-		end, -- 311
-		clearPrediction = function(self) -- 325
-			predictDraw:clear() -- 326
-		end, -- 325
-		setTrail = function(self, points, basis) -- 328
-			if #points < 2 then -- 328
-				trailDraw:clear() -- 332
-				return -- 333
-			end -- 333
-			local tail = #points > options.tailPoints and __TS__ArraySlice(points, #points - options.tailPoints) or points -- 335
-			local verts = ____exports.projectPolyline( -- 338
-				____exports.decimate(tail, options.maxPoints), -- 338
-				options.y, -- 338
-				basis, -- 338
-				options.layerOriginX, -- 338
-				options.layerOriginY -- 338
-			) -- 338
-			drawComet( -- 339
-				trailDraw, -- 340
-				verts, -- 341
-				options.trailHeadRadius, -- 342
-				trailRGB, -- 343
-				options.trailHeadAlpha, -- 344
-				options.glowRadiusFactor, -- 345
-				options.glowAlpha -- 346
-			) -- 346
-		end, -- 328
-		clearTrail = function(self) -- 349
-			trailDraw:clear() -- 350
-		end, -- 349
-		root = root -- 352
-	} -- 352
-end -- 286
-return ____exports -- 286
+function ____exports.createTrajectoryView(parent, opts) -- 291
+	local options = opts ~= nil and opts or ____exports.defaultOptions() -- 295
+	local root = Node() -- 298
+	local trailDraw = DrawNode() -- 301
+	trailDraw.blendFunc = BlendFunc("One", "One") -- 303
+	root:addChild(trailDraw) -- 304
+	local predictDraw = DrawNode() -- 306
+	predictDraw.blendFunc = BlendFunc("One", "One") -- 307
+	root:addChild(predictDraw) -- 308
+	parent:addChild(root) -- 310
+	local predictRGB = {r = options.predictR, g = options.predictG, b = options.predictB} -- 312
+	local trailRGB = {r = options.trailR, g = options.trailG, b = options.trailB} -- 313
+	return { -- 315
+		setPrediction = function(self, points, basis) -- 316
+			local verts = ____exports.projectPolyline( -- 317
+				____exports.decimate(points, options.maxPoints), -- 317
+				options.y, -- 317
+				basis, -- 317
+				options.layerOriginX, -- 317
+				options.layerOriginY -- 317
+			) -- 317
+			____exports.drawDashedPolyline( -- 318
+				predictDraw, -- 319
+				verts, -- 320
+				options.predictRadius, -- 321
+				predictRGB, -- 322
+				options.predictFadeMin, -- 323
+				options.glowRadiusFactor, -- 324
+				options.glowAlpha, -- 325
+				options.dashOn, -- 326
+				options.dashOff -- 327
+			) -- 327
+		end, -- 316
+		clearPrediction = function(self) -- 330
+			predictDraw:clear() -- 331
+		end, -- 330
+		setTrail = function(self, points, basis) -- 333
+			if #points < 2 then -- 333
+				trailDraw:clear() -- 337
+				return -- 338
+			end -- 338
+			local tail = #points > options.tailPoints and __TS__ArraySlice(points, #points - options.tailPoints) or points -- 340
+			local verts = ____exports.projectPolyline( -- 343
+				____exports.decimate(tail, options.maxPoints), -- 343
+				options.y, -- 343
+				basis, -- 343
+				options.layerOriginX, -- 343
+				options.layerOriginY -- 343
+			) -- 343
+			drawComet( -- 344
+				trailDraw, -- 345
+				verts, -- 346
+				options.trailHeadRadius, -- 347
+				trailRGB, -- 348
+				options.trailHeadAlpha, -- 349
+				options.glowRadiusFactor, -- 350
+				options.glowAlpha -- 351
+			) -- 351
+		end, -- 333
+		clearTrail = function(self) -- 354
+			trailDraw:clear() -- 355
+		end, -- 354
+		root = root -- 357
+	} -- 357
+end -- 291
+return ____exports -- 291

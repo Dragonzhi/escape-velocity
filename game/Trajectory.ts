@@ -169,7 +169,7 @@ function fadeAlpha(t: number, minA: number): number {
 	return minA + (1 - minA) * Math.pow(1 - u, 1.35);
 }
 
-interface RGB { r: number; g: number; b: number; }
+export interface RGB { r: number; g: number; b: number; }
 
 function segColor(rgb: RGB, alpha: number): Color.Type {
 	// ⚠️ 加法混合（BlendFunc(One, One)）下 color 的 **alpha 分量不参与混合**（实测：
@@ -181,8 +181,12 @@ function segColor(rgb: RGB, alpha: number): Color.Type {
 /**
  * 虚线 + 渐隐 + 光晕：沿折线按"实段/空段"节奏走笔，
  * 每个实段按其中点的沿线比例取 alpha（光晕层同 alpha、更宽）。
+ *
+ * 导出给 S3.3 开场复用（太阳系轨道虚线圈）——轨道是**整圈均匀**的，
+ * 调 `fadeMin = 1` 即可关掉沿线渐隐；`clearFirst = false` 让同一个 DrawNode
+ * 上叠多条环（预测线/尾迹每帧重画，仍用默认的 clear）。
  */
-function drawDashed(
+export function drawDashedPolyline(
 	draw: DrawNode.Type,
 	verts: Vec2.Type[],
 	coreRadius: number,
@@ -192,12 +196,13 @@ function drawDashed(
 	glowAlpha: number,
 	dashOn: number,
 	dashOff: number,
+	clearFirst?: boolean,
 ): void {
 	// 单段长度上限（像素）：超过即视为投影退化，跳过不画。
 	// ⚠️ 阈值必须紧（800px）：抽稀后正常段长只有 5-50px；阈值松了（如 3×对角线）时
 	//    lerp 期间几十个巨型段 × 每段数百次虚线迭代 = 每帧 8 万+ 顶点 => GPU TDR 引擎崩溃（实测）。
 	const maxSeg = 800;
-	draw.clear();
+	if (clearFirst !== false) draw.clear();
 	const n = verts.length;
 	if (n < 2) return;
 
@@ -310,7 +315,7 @@ export function createTrajectoryView(
 	return {
 		setPrediction(points: P2[], basis: CameraBasis): void {
 			const verts = projectPolyline(decimate(points, options.maxPoints), options.y, basis, options.layerOriginX, options.layerOriginY);
-			drawDashed(
+			drawDashedPolyline(
 				predictDraw,
 				verts,
 				options.predictRadius,

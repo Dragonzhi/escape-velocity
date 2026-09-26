@@ -26,6 +26,7 @@ import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptio
 import { AimInput, AimResult, LevelSelect, ResultPanel, createAimInput, createLevelSelect, createResultPanel } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
 import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
+import { Opening, createOpening, loadIntroSeen, saveIntroSeen } from 'game/Opening';
 
 /** 一关的运行时（惰性创建，切关只切 visible）。 */
 interface LevelRuntime {
@@ -71,6 +72,20 @@ if (levelTotal <= 0) {
 		Director.ui.addChild(layer);
 		levelLayers.push(layer);
 	}
+
+	// ---- 开场的 2D 层（S3.3）：轨道虚线圈 + 标题 + 跳过层 ----
+	// 位置在关卡层之后、UI 叠层之前 ⇒ 选关/结算面板永远盖住开场文案（与轨迹线同一套层级规矩）。
+	const openingLayer = Node();
+	openingLayer.size = Size(viewW, viewH);
+	openingLayer.anchor = Vec2(0.5, 0.5);
+	openingLayer.position = Vec2(0, 0);
+	Director.ui.addChild(openingLayer);
+
+	// 开场的 3D 根与相机（懒启动：introSeen 时整块不显示、零开销）
+	const openingRoot = Node3D();
+	openingRoot.visible = false;
+	Director.entry.addChild(openingRoot);
+	const openingCamera = Camera3D();
 
 	// ---- UI 叠层（最后加 = 画在最上层）----
 	const uiLayer = Node();
@@ -236,6 +251,8 @@ if (levelTotal <= 0) {
 		// [二分 2b] 仅在真正切换关卡时压相机栈：重进已激活的关不重复压
 		// （用户卡死路径 = 重进已建 runtime；怀疑同一相机被重复 push 后渲染遍历异常）
 		const wasActive = activeIndex === index;
+		// 开场那套 3D（全景）与关卡各有一套相机；进关卡就把它收掉，别让两套场景一起渲染
+		if (opening !== undefined) opening.hide();
 		if (select !== undefined) select.hide();
 		activeIndex = index;
 		showOnlyLevel(index);
@@ -306,6 +323,12 @@ if (levelTotal <= 0) {
 		if (w === viewW && h === viewH) return;
 
 		// 1) 旧 UI 与旧关卡运行时：隐藏 + 断触摸
+		// 开场实例整块丢掉：它的文案坐标与轨道线像素都是按旧视口算的（新实例由 startOpening 重建；
+		// 这次重建意味着玩家错过了开场，**不写标记** ⇒ 下次启动还会播一遍）
+		if (opening !== undefined) {
+			opening.hide();
+			opening = undefined;
+		}
 		if (select !== undefined) select.hide();
 		if (resultPanel !== undefined) resultPanel.hide();
 		for (let i = 0; i < levelTotal; i++) {
@@ -326,6 +349,7 @@ if (levelTotal <= 0) {
 		viewW = w;
 		viewH = h;
 		uiLayer.size = Size(viewW, viewH);
+		openingLayer.size = Size(viewW, viewH);
 		for (let i = 0; i < levelTotal; i++) levelLayers[i].size = Size(viewW, viewH);
 
 		// 3) 重建面板并恢复当前状态
@@ -345,14 +369,60 @@ if (levelTotal <= 0) {
 		if (name === 'Size') relayoutForViewport();
 	});
 
-	// ---- 启动即进入关卡选择（Title/金唱片开场属 S3.3）----
-	buildPanels().show(progress.unlocked);
+	// ---- 开场（S3.3）----
+	// 分镜：太阳系全景 → 聚焦到地球旁已入轨的探测器 → 交还选关（此后相机缓缓拉回全景当背景）。
+	// 播放策略（用户 2026-09-25 拍板）：**首次启动完整播，之后每次直接进选关**；任何时刻点击跳过。
+	// 存档标记 = writablePath 下的 escape-velocity.intro（存在即看过）——不碰 Progress 的格式，
+	// 免得"开场看没看过"和"解锁到第几关"互相拖累（ProgressTest 有格式断言）。
+	let introSeen = loadIntroSeen();
+	let forceIntro = false;
+	let opening: Opening | undefined = undefined;
+
+	const startOpening = (): void => {
+		if (opening === undefined) {
+			opening = createOpening({
+				root: openingRoot,
+				camera: openingCamera,
+				layer: openingLayer,
+				viewW: viewW,
+				viewH: viewH,
+				fovYDeg: View.fieldOfView,
+				aspect: View.aspectRatio,
+				probePath: 'Assets/Model/Probe_Voyager_v1.glb',
+				probeBodyPath: 'Assets/Model/Probe_Body.glb',
+				probeAntennaPath: 'Assets/Model/Probe_Antenna.glb',
+				onFinish: (): void => {
+					introHold = -1; // 解冻（跳过关或自然播完）
+					if (!introSeen) {
+						saveIntroSeen();
+						introSeen = true;
+						print('[escape-velocity] intro seen -> saved');
+					}
+					// 播完/跳过 → 交还选关（panorama 留着当活背景，见 game/Opening.ts 的拉回段）
+					if (select !== undefined) select.show(progress.unlocked);
+					print('[escape-velocity] opening finished: frame=' + (opening !== undefined ? opening.frameIndex().toFixed(0) : '?'));
+				},
+			});
+		}
+		if (opening === undefined) return;
+		Director.pushCamera(openingCamera);
+		opening.start();
+		print('[escape-velocity] opening start (first launch)');
+	};
+
+	const startupPanel = buildPanels();
 
 	// 开发便利钩子（会话 25）：存在 .agent/test-results/enter-request.txt（内容 = 关卡号 N）时
 	// 自动进第 N 关。生产/Web 导出该文件不存在 => 零开销；验证脚本因此可以绕开
 	// 合成鼠标的选关坐标点击（2026-09-25 实测同一坐标两次进了 L6 而不是 L1，原因未查明）。
+	//   内容格式：
+	//     "N"             —— 自动进第 N 关（不开场）
+	//     "N@frames:vx:vy"—— 进关后第 frames 帧以 (vx,vy) 自动发射（+ 回选关 + 重进的回归序列）
+	//     "intro"         —— 强制播完整开场（不看存档标记）
+	//     "intro@hold:N"  —— 强制播开场并**冻结在第 N 帧**（抓固定机位/分镜截图用；冻结后仍可跳过关）
+	// 截图仍旧走 Test/GameShot.lua 驱动（见该文件的 shot-request 轮询）：
+	// ⚠️ App.saveScreenshot 必须给**绝对路径**，相对路径实测让引擎原生崩溃（0xc0000374，二次复现）。
 	const enterReq = Path(Path(".", ".agent", "test-results"), "enter-request.txt");
-	// 内容格式："N"（只进关）或 "N@frames:vx:vy"（进关后第 frames 帧以 (vx,vy) 自动发射）
 	let autoLaunchAt = -1;
 	let autoFrame = 0;
 	let autoVX = 0;
@@ -360,13 +430,32 @@ if (levelTotal <= 0) {
 	// 回归序列: 发射后回选关再重进 (复用 runtime, 相机 lerp), 复现用户卡死路径
 	let autoBackAt = -1;
 	let autoReenterAt = -1;
+	let autoEntered = false;
+	// 开场冻结帧（enter-request 的 @hold）：到这一帧就不再推进，方便按帧抓图
+	let introHold = -1;
 	if (Content.exist(enterReq)) {
 		const spec = Content.load(enterReq);
 		const at = spec.indexOf('@');
-		const n = tonumber(at < 0 ? spec : spec.substring(0, at));
+		const head = (at < 0 ? spec : spec.substring(0, at)).trim();
+		if (head === 'intro') {
+			forceIntro = true;
+			if (at >= 0) {
+				const rest = spec.substring(at + 1);
+				const colon = rest.indexOf(':');
+				if (colon > 0 && rest.substring(0, colon).trim() === 'hold') {
+					const v = tonumber(rest.substring(colon + 1));
+					if (v !== undefined && v >= 0) {
+						introHold = v;
+						print('[escape-velocity] opening hold at frame ' + v.toFixed(0));
+					}
+				}
+			}
+		}
+		const n = tonumber(head);
 		if (n !== undefined && n >= 1 && n <= levelTotal) {
 			print('[escape-velocity] auto enter L' + n.toFixed(0) + ' (enter-request)');
 			enterLevel(n - 1);
+			autoEntered = true;
 			if (at >= 0) {
 				const rest = spec.substring(at + 1);
 				const c1 = rest.indexOf(':');
@@ -386,9 +475,26 @@ if (levelTotal <= 0) {
 		}
 	}
 
-	// ---- 单一主循环（手册 §4.3）：只驱动当前激活的关 ----
+	// ---- 启动决策（S3.3）：首次启动完整播开场，之后直接进选关 ----
+	// 开发钩子优先：自动进关时不播开场（否则开场相机会盖住关卡画面）。
+	if (autoEntered) {
+		print('[escape-velocity] opening skipped (auto enter)');
+	} else if (forceIntro || !introSeen) {
+		startOpening();
+	} else {
+		startupPanel.show(progress.unlocked);
+		print('[escape-velocity] opening skipped (already seen)');
+	}
+
+	// ---- 单一主循环（手册 §4.3）：只驱动当前激活的关（+ 开场）----
 	// ⚠️ threadLoop 回调没有参数，帧间隔用 App.deltaTime
 	threadLoop(() => {
+		// 开场先推进（它在场时没有激活的关；播完转 idle，继续当选关界面的背景）
+		if (opening !== undefined && opening.running()) {
+			// @hold:N —— 冻结在第 N 帧不动（抓分镜截图用）；轻触跳过时 onFinish 会解冻
+			if (introHold < 0 || opening.frameIndex() < introHold) opening.step();
+		}
+
 		const runtime = activeRuntime();
 		if (runtime !== undefined) {
 			runtime.game.update(App.deltaTime);
@@ -419,5 +525,5 @@ if (levelTotal <= 0) {
 	});
 
 	// 带上视口尺寸与平台：真机（手机浏览器）排查全靠这一行——手机上的 View.size 只能从这里看
-	print('[escape-velocity] started: ' + levelTotal.toFixed(0) + ' levels, unlocked=' + progress.unlocked.toFixed(0) + ', view=' + viewW.toFixed(0) + 'x' + viewH.toFixed(0) + ', platform=' + App.platform + ', level select shown');
+	print('[escape-velocity] started: ' + levelTotal.toFixed(0) + ' levels, unlocked=' + progress.unlocked.toFixed(0) + ', view=' + viewW.toFixed(0) + 'x' + viewH.toFixed(0) + ', platform=' + App.platform + ', introSeen=' + (introSeen ? 'yes' : 'no'));
 }

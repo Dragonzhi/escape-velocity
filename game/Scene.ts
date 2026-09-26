@@ -54,10 +54,15 @@ const MODEL_RADIUS: ModelRadius[] = [
 	{ name: 'Planet_Jupiter', k: 1.0000 },
 	{ name: 'Planet_Saturn', k: 0.9837 },
 	{ name: 'Planet_Neptune', k: 1.0170 },
+	// 天王星（2026-09-25 建模交付 Planet_Uranus.glb，24 KB / 464 面 / 环+本体两个 mesh）：
+	// k 同样取**本体**半径（本体 max 半宽 1.023；环在 x/y 平面 ±1.95，不参与），
+	// 否则环会被 displayRadius 二次放大。环面在 **xy 平面**（法线 = z，对应真实天王星 98° 轴倾），
+	// 与土星环（xz 平面）正好差 90°——相机俯视 45° 下看起来是**竖向**椭圆。
+	{ name: 'Planet_Uranus', k: 1.0230 },
 ];
 
 /** 取模型半径系数；表里没有的名字按 1.0 处理（等价于旧行为）。 */
-function modelRadius(name: string): number {
+export function modelRadius(name: string): number {
 	for (let i = 0; i < MODEL_RADIUS.length; i++) {
 		if (MODEL_RADIUS[i].name === name) return MODEL_RADIUS[i].k;
 	}
@@ -86,7 +91,7 @@ const ProbeYawOffsetDeg = -90;
  * 取自拆分前单体文件里 Probe_Antenna 空物体的 translation（建模把它放在碟面背面与
  * 支撑腿的汇交点）。天线文件按"转轴 = 原点"导出，游戏把天线模型放到本常量 × scale 处。
  */
-const AntennaPivotY = 0.20;
+export const AntennaPivotY = 0.20;
 
 /** 一颗行星的视觉描述。 */
 export interface PlanetVisual {
@@ -166,6 +171,181 @@ export interface GameScene {
 	planets: PlanetNode[];
 	/** 探测器模型的**世界**外接半径，喂给相机取景（否则天线会被画面边缘切掉）。 */
 	probeRadius: number;
+}
+
+/** 探测器组装参数。 */
+export interface ProbeOptions {
+	/** 世界缩放（模型单位 → 世界单位）。 */
+	scale: number;
+	/** 单体文件（回退用；分体两个文件都在时不加载）。 */
+	probePath: string;
+	/** 分体：身体（去掉天线）。 */
+	bodyPath?: string;
+	/** 分体：天线（**文件原点 = 转轴**）。 */
+	antennaPath?: string;
+}
+
+/** 探测器句柄。 */
+export interface ProbeHandle {
+	/** 根节点（拿去定位 / 朝速度方向）。 */
+	node: Node3D.Type;
+	/** 天线模型（分体模式）；单体回退时为 undefined。 */
+	antenna?: Node3D.Type;
+	/** 模型的**世界**外接半径，喂给相机取景（否则天线会被画面边缘切掉）。 */
+	radius: number;
+}
+
+/**
+ * 按"分体"约定组装探测器（关卡与 S3.3 开场共用）。
+ *
+ * ⚠️ 引擎的 Node3D **不把 glTF 子节点暴露成可寻址节点**（Test/AntennaProbe 实测：
+ *    children/eachChild/name 全部不可访问，hasChildren 恒 false），所以"大天线回头指向地球"
+ *    只能靠**拆文件**：Probe_Body.glb（去掉天线）+ Probe_Antenna.glb（仅天线，转轴在文件原点）。
+ *    两个文件都在 → 天线可绕转轴旋转；缺任何一个 → 回退单体（天线刚性，不影响玩法）。
+ * ⚠️ Model3D 对**不存在的文件**不是返回 nil 而是**抛运行时错误**（"can not locate full path"
+ *    → Object::createNotNull failed，实测把整个建关流程炸掉、画面全黑）——
+ *    所以"可选资产"必须先用 Content.exist 守卫，绝不能拿 Model3D 的返回值做存在性判断。
+ * ⚠️ 不要给天线再套一层普通 Node3D 枢轴容器并每帧旋转它：会触发引擎堆损坏（0xc0000374）。
+ *
+ * @returns 句柄；连单体文件都加载不上时返回 undefined（调用方应报错）。
+ */
+export function createProbe(parent: Node3D.Type, opts: ProbeOptions): ProbeHandle | undefined {
+	const scale = opts.scale;
+	const bodyModel = opts.bodyPath !== undefined && Content.exist(opts.bodyPath)
+		? Model3D(opts.bodyPath)
+		: undefined;
+	const antennaModel = bodyModel !== undefined && opts.antennaPath !== undefined && Content.exist(opts.antennaPath)
+		? Model3D(opts.antennaPath)
+		: undefined;
+	const singleModel = bodyModel === undefined ? Model3D(opts.probePath) : undefined;
+	if (bodyModel === undefined && singleModel === undefined) return undefined;
+
+	const node = Node3D();
+	parent.addChild(node);
+
+	if (bodyModel !== undefined) {
+		bodyModel.scale = Vec3(scale, scale, scale);
+		node.addChild(bodyModel);
+	}
+	if (singleModel !== undefined) {
+		singleModel.scale = Vec3(scale, scale, scale);
+		node.addChild(singleModel);
+	}
+
+	// 天线模型直接挂在探测器根下、位置在转轴处（模型本地 (0, AntennaPivotY, 0)·scale）；
+	// 建模约定：天线文件以转轴为原点 ⇒ 旋转天线模型节点 = 绕转轴摆动。
+	if (bodyModel !== undefined && antennaModel !== undefined) {
+		antennaModel.scale = Vec3(scale, scale, scale);
+		antennaModel.position = Vec3(0, AntennaPivotY * scale, 0);
+		node.addChild(antennaModel);
+	}
+
+	return {
+		node,
+		antenna: antennaModel,
+		// 口径：**实测常数** —— 拆分前单体文件 AABB 最大边 3.227（碟面直径，ModelCalibProbe 标定），
+		// 半长 × scale × 1.1。拆分后身体/天线各自的包围盒都不完整，不再逐文件量；
+		// 不取外接球：两根吊杆沿飞行轴伸出（z -1.85…1.00），屏幕上不占宽度。
+		radius: 0.5 * 3.227 * scale * 1.1,
+	};
+}
+
+/**
+ * "大天线回头指向地球"的目标法线（关卡与 S3.3 开场共用同一份算式）。
+ *
+ * 目标法线 = 从"朝上"向目标方向倾斜（倾角随距离渐入——刚出发距离 ≈ 0 时不倾）；
+ * 方位角在**机身本地系**里算（机身自己会被 faceVelocity 转到速度方向）。
+ * Euler 次序（angleY 后 angleZ）按截图标定；若天线倾倒方向不随位置变，说明次序反了。
+ *
+ * ⚠️ 不要拆成 angleY/angleZ 两次赋值：每帧两次独立 Euler setter 会触发引擎
+ *    堆损坏（0xc0000374，二分 C1 实测定位）；一次性写 angles 整体更新则稳定。
+ *
+ * @param probe 探测器位置（平面坐标）
+ * @param target 指向目标（平面坐标；关卡传地球锚点，开场传地球）
+ * @param bodyYawDeg 机身当前朝向（度；由 probeYawForVelocity 维护）
+ */
+export function pointAntenna(antenna: Node3D.Type, probe: P2, target: P2, bodyYawDeg: number): void {
+	const ex = (target.x - probe.x) * PlaneToWorldX;
+	const ez = (target.y - probe.y) * PlaneToWorldZ;
+	const dist = Math.sqrt(ex * ex + ez * ez);
+	if (dist <= 1e-4) return;
+	let tiltFactor = (dist - 0.5) / 3.0;
+	if (tiltFactor < 0) tiltFactor = 0;
+	if (tiltFactor > 1) tiltFactor = 1;
+	const tilt = 46 * tiltFactor;
+	const phiWorld = Math.atan2(-ez, ex) * 180 / Math.PI;
+	antenna.angles = Vec3(0, phiWorld - bodyYawDeg, -tilt);
+}
+
+/**
+ * 速度方向 → 机身 yaw（度）。返回 undefined 表示速度太小（保持原朝向）。
+ *
+ * 世界方向 (dx, 0, dz) 对应 yaw = atan2(-dz, dx)（用已知朝 +X 的旧 Probe.gltf 在
+ * yaw=0/90/180/270 读世界包围盒标定过）；模型自身"朝前的轴"不是 +X 时由
+ * ProbeYawOffsetDeg 补正。
+ */
+export function probeYawForVelocity(v: P2): number | undefined {
+	const wx = v.x * PlaneToWorldX;
+	const wz = v.y * PlaneToWorldZ;
+	if (wx * wx + wz * wz < 1e-12) return undefined;
+	return Math.atan2(-wz, wx) * 180 / Math.PI + ProbeYawOffsetDeg;
+}
+
+/** 星空背板距相机的距离（世界单位）与半边尺寸；理由见 createStarBackdrop。 */
+const BackdropDist = 600;
+const BackdropHalf = 560;
+
+/** 星图背板句柄（关卡与开场共用）。 */
+export interface StarBackdrop {
+	/** 背板节点本身（四边形）。 */
+	node: Model3D.Type;
+	/** 每帧钉到"相机视线前方"（理由见 createStarBackdrop 注释）。 */
+	sync(eye: Vec3.Type, target: Vec3.Type): void;
+}
+
+/**
+ * 建星空背板：一张程序化星图贴在**贴着相机**的四边形上（方案 B，2026-09-25 用户拍板）。
+ *
+ * 为什么每帧贴着相机（sync）：相机距离在 [25,100] 内随包围盒变化、注视点也会移动，
+ * 固定位置的背板会被移出画面或露出边缘；钉在"视线前方 600"相当于把星空放在无穷远
+ * （无视差），任何距离/宽高比下都正好铺满（半边长 560 > 需求 600·tan(fov/2)·1.645 ≈ 490）。
+ * 远裁剪面实测 > 2000（Test/FarPlaneProbe，2026-09-25；早前"z=-900 不可见"是误判）。
+ *
+ * 素材由 Test/gen_star_assets.py 代码生成：Assets/Image/starfield.png（1024×1024）
+ * + Assets/Model/StarQuad.gltf（顶点 ±1 ⇒ **scale = 半边长**，材质自带 doubleSided）。
+ */
+export function createStarBackdrop(root: Node3D.Type): StarBackdrop | undefined {
+	const backdrop = Model3D('Assets/Model/StarQuad.gltf');
+	if (backdrop === undefined) return undefined;
+	const tex = Texture2D('Assets/Image/starfield.png');
+	const bm = backdrop.getMaterial(0);
+	if (bm !== undefined && tex !== undefined) {
+		// ⚠️ 星空**不吃光照**：只走 emissive 槽（baseColor 留黑），总亮度 = emissive 一个旋钮。
+		// 首版双槽全白 = 贴图亮度 ×2，用户反馈"喧宾夺主"后压到 ~55%（0x8c）。
+		bm.setEmissiveTexture(tex);
+		bm.baseColor = Color(0, 0, 0, 255);
+		bm.emissive = Color3(0x8c8c8c);
+		bm.roughness = 1.0;
+		bm.metallic = 0.0;
+	}
+	backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf);
+	// 相机从斜上方俯视：把四边形绕 X 转到 ⊥ 视线。符号 -45 是按右手系推的——
+	// 首次截图必须确认背板真的铺满画面；若只见一条细缝就是转成了 90°，翻成 +45。
+	backdrop.angleX = -45;
+	backdrop.position = Vec3(0, 0, -BackdropDist);
+	root.addChild(backdrop);
+	return {
+		node: backdrop,
+		sync: (eye: Vec3.Type, target: Vec3.Type): void => {
+			const dx = target.x - eye.x;
+			const dy = target.y - eye.y;
+			const dz = target.z - eye.z;
+			const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+			if (len < 1e-6) return;
+			const s = BackdropDist / len;
+			backdrop.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s);
+		},
+	};
 }
 
 /**
@@ -271,87 +451,24 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 	//    children/eachChild/name 全部不可访问，hasChildren 恒 false），所以“大天线回头指向地球”
 	//    只能靠**拆文件**：Probe_Body.glb（去掉天线）+ Probe_Antenna.glb（仅天线，转轴在文件原点）。
 	//    两个文件都在 → 天线可绕转轴旋转；缺任何一个 → 回退单体（天线刚性，不影响玩法）。
-	const probeScale = options.probeScale;
-	// ⚠️ Model3D 对**不存在的文件**不是返回 nil 而是**抛运行时错误**（"can not locate full path"
-	//    → Object::createNotNull failed，实测把整个建关流程炸掉、画面全黑）——
-	//    所以"可选资产"必须先用 Content.exist 守卫，绝不能拿 Model3D 的返回值做存在性判断。
-	const bodyModel = options.probeBodyPath !== undefined && Content.exist(options.probeBodyPath)
-		? Model3D(options.probeBodyPath)
-		: undefined;
-	const antennaModel = bodyModel !== undefined && options.probeAntennaPath !== undefined && Content.exist(options.probeAntennaPath)
-		? Model3D(options.probeAntennaPath)
-		: undefined;
-	const singleModel = bodyModel === undefined ? Model3D(options.probePath) : undefined;
-	if (bodyModel === undefined && singleModel === undefined) return undefined;
-
-	const probeNode = Node3D();
-	root.addChild(probeNode);
-
-	if (bodyModel !== undefined) {
-		bodyModel.scale = Vec3(probeScale, probeScale, probeScale);
-		probeNode.addChild(bodyModel);
-	}
-	if (singleModel !== undefined) {
-		singleModel.scale = Vec3(probeScale, probeScale, probeScale);
-		probeNode.addChild(singleModel);
-	}
-
-	// 天线模型直接挂在 probeNode 下、位置在转轴处（模型本地 (0, AntennaPivotY, 0)·scale；
-	// 建模约定：天线文件以转轴为原点）⇒ 旋转天线模型节点 = 绕转轴摆动。
-	// ⚠️ 不要套一层普通 Node3D 枢轴容器再每帧旋转它——每帧旋转空容器会触发引擎堆损坏
-	// （0xc0000374，二分 C1/C2 实测：关掉旋转存活、任何形式的每帧容器旋转必崩），
-	// 直接旋转 Model3D 节点则稳定。
-	if (bodyModel !== undefined && antennaModel !== undefined) {
-		antennaModel.scale = Vec3(probeScale, probeScale, probeScale);
-		antennaModel.position = Vec3(0, AntennaPivotY * probeScale, 0);
-		probeNode.addChild(antennaModel);
-	}
-
-	// 取景用：探测器的世界外接半径。
-	// 相机只把关键点当**质点**，于是碟形天线会被画面边缘切掉（L3 实测踩过），
-	// 所以把“探测器有体积”这一项也算进取景求解（见 game/CameraRig.ts 的 frameFits）。
-	// 口径：**实测常数** —— 拆分前单体文件 AABB 最大边 3.227（碟面直径，ModelCalibProbe 标定），
-	// 半长 × scale × 1.1。拆分后身体/天线各自的包围盒都不完整，不再逐文件量；
-	// 不取外接球：两根吊杆沿飞行轴伸出（z -1.85…1.00），屏幕上不占宽度。
-	const probeRadius = 0.5 * 3.227 * probeScale * 1.1;
+	// 探测器（分体约定收在 createProbe 里，S3.3 开场复用同一份组装逻辑）
+	const probe = createProbe(root, {
+		scale: options.probeScale,
+		probePath: options.probePath,
+		bodyPath: options.probeBodyPath,
+		antennaPath: options.probeAntennaPath,
+	});
+	if (probe === undefined) return undefined;
+	const probeNode = probe.node;
+	const antennaModel = probe.antenna;
+	const probeRadius = probe.radius;
 
 	// 机身当前的世界朝向（faceVelocity 维护；Aiming 态保持最后一次的值）
 	let bodyYawDeg = 0;
 
 	// ---- 星空背板（2026-09-25 用户拍板：方案 B「程序化星图贴图」，放弃 C2 星点壳）----
-	// 素材全部由 Test/gen_star_assets.py 代码生成：Assets/Image/starfield.png（1024×1024）
-	// + Assets/Model/StarQuad.gltf（顶点 ±1 ⇒ **scale = 半边长**；材质自带 doubleSided）。
-	// 相比 C2：72 KB vs 180 KB、2 三角面 vs 1940、软圆点 vs 横屏下的白色方块/菱形。
-	// 项目约束相应放宽：「零贴图」→「素材全部由本仓库代码生成，不引入第三方素材」。
-	//
-	// 为什么每帧贴着相机放（见下方 syncBackdrop）：相机距离在 [25,100] 内随包围盒变化、注视点也会移动，
-	// 固定位置的背板会被移出画面或露出边缘；钉在「视线前方 600」相当于把星空放在无穷远（无视差），
-	// 任何距离/宽高比下都正好铺满（半边长 560 > 需求 600·tan(fov/2)·1.645 ≈ 490）。
-	// 远裁剪面实测 >2000（Test/FarPlaneProbe，2026-09-25；早前“z=-900 不可见”的结论是误报）。
-	const BackdropDist = 600;
-	const BackdropHalf = 560;
-	let backdropNode: Model3D.Type | undefined = undefined;
-	const backdrop = Model3D('Assets/Model/StarQuad.gltf');
-	if (backdrop !== undefined) {
-		const tex = Texture2D('Assets/Image/starfield.png');
-		const bm = backdrop.getMaterial(0);
-		if (bm !== undefined && tex !== undefined) {
-			// ⚠️ 星空**不吃光照**：只走 emissive 槽（baseColor 留黑），总亮度 = emissive 一个旋钮。
-			// 首版双槽全白 = 贴图亮度 ×2，用户反馈“喧宾夺主”后压到 ~55%（0x8c）。
-			bm.setEmissiveTexture(tex);
-			bm.baseColor = Color(0, 0, 0, 255);
-			bm.emissive = Color3(0x8c8c8c);
-			bm.roughness = 1.0;
-			bm.metallic = 0.0;
-		}
-		backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf);
-		// 相机从斜上方俯视：把四边形绕 X 转到⊥视线。符号 -45 是按右手系推的——
-		// 首次截图必须确认背板真的铺满画面；若只见一条细缝就是转成了 90°，翻成 +45。
-		backdrop.angleX = -45;
-		backdrop.position = Vec3(0, 0, -BackdropDist);
-		root.addChild(backdrop);
-		backdropNode = backdrop;
-	}
+	// 素材、亮度旋钮与"每帧钉在视线前方"的理由都收在 createStarBackdrop 里（S3.3 开场复用同一份）。
+	const backdrop = createStarBackdrop(root);
 
 	// ---- 同步函数 ----
 	const syncBodies = (t: number): void => {
@@ -369,19 +486,7 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		// 方位角在**机身本地系**里算（机身自己会被 faceVelocity 转到速度方向）。
 		// Euler 次序（angleY 后 angleZ）按截图标定；若天线倾倒方向不随位置变，说明次序反了。
 		if (antennaModel !== undefined && options.home !== undefined) {
-			const ex = (options.home.x - p.x) * PlaneToWorldX;
-			const ez = (options.home.y - p.y) * PlaneToWorldZ;
-			const dist = Math.sqrt(ex * ex + ez * ez);
-			if (dist > 1e-4) {
-				let tiltFactor = (dist - 0.5) / 3.0;
-				if (tiltFactor < 0) tiltFactor = 0;
-				if (tiltFactor > 1) tiltFactor = 1;
-				const tilt = 46 * tiltFactor;
-				const phiWorld = Math.atan2(-ez, ex) * 180 / Math.PI;
-				// ⚠️ 不要拆成 angleY/angleZ 两次赋值：每帧两次独立 Euler setter 会触发引擎
-				//    堆损坏（0xc0000374，二分 C1 实测定位）；一次性写 angles 整体更新则稳定。
-				antennaModel.angles = Vec3(0, phiWorld - bodyYawDeg, -tilt);
-			}
+			pointAntenna(antennaModel, p, options.home, bodyYawDeg);
 		}
 	};
 
@@ -389,23 +494,15 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 	// 世界方向 (dx, 0, dz) 对应角度 atan2(-dz, dx)（已用旧 Probe.gltf 实测标定）。
 	// 模型自身“朝前的轴”不是 +X 时用 ProbeYawOffsetDeg 补正（见其注释）。
 	const faceVelocity = (v: P2): void => {
-		const wx = v.x * PlaneToWorldX;
-		const wz = v.y * PlaneToWorldZ;
-		if (wx * wx + wz * wz < 1e-12) return;
-		bodyYawDeg = Math.atan2(-wz, wx) * 180 / Math.PI + ProbeYawOffsetDeg;
+		const yaw = probeYawForVelocity(v);
+		if (yaw === undefined) return;
+		bodyYawDeg = yaw;
 		probeNode.angleY = bodyYawDeg;
 	};
 
-	// 每帧把背板钉到「相机视线前方 BackdropDist」处（eye/target 来自机架当前帧；理由见上方背板注释）
+	// 每帧把背板钉到「相机视线前方 BackdropDist」处（eye/target 来自机架当前帧；理由见背板注释）
 	const syncBackdrop = (eye: Vec3.Type, target: Vec3.Type): void => {
-		if (backdropNode === undefined) return;
-		const dx = target.x - eye.x;
-		const dy = target.y - eye.y;
-		const dz = target.z - eye.z;
-		const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-		if (len < 1e-6) return;
-		const s = BackdropDist / len;
-		backdropNode.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s);
+		if (backdrop !== undefined) backdrop.sync(eye, target);
 	};
 
 	// 初始化到 t=0 的姿态

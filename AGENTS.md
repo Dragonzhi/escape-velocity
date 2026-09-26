@@ -41,7 +41,7 @@
 构建通过只证明编译过，进程存活只证明没崩。输入、状态迁移、输赢流程、持久化、时序、视觉各自需要证据。
 
 ```powershell
-# 单测（引擎内批跑）→ .agent/test-results/unit-summary.txt，基线 SUMMARY passed=7 failed=0 total=7
+# 单测（引擎内批跑）→ .agent/test-results/unit-summary.txt，基线 SUMMARY passed=8 failed=0 total=8（202 条断言）
 # 先 POST /run {"file":"<proj>/Test/UnitRunner","asProj":false}，再读标记文件，最后 POST /stop
 
 # 运行时探针：同上，换成 Test/XxxProbe；标记文件里找 RESULT=PASS
@@ -67,5 +67,5 @@ python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"
 - 完成一个小节 → 更新 `PROGRESS.md`（已实现 / 已验证的证据 / 未验证 / 下一步）→ 一次语义化 git 提交。
 - 提交前清理：不带入 `.agent/test-results/*`、临时日志、密钥或个人配置。
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
-- ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 39 个文件，
-  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=7 failed=0 total=7`（169 条断言）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
+- ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 41 个文件，
+  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（202 条断言）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。

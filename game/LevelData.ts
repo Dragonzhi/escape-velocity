@@ -171,8 +171,9 @@ const LEVELS: LevelDef[] = [
 		visuals: [
 			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 2.4, ring: false, model: 'Planet_Jupiter' },
 			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 2.2, ring: true, model: 'Planet_Saturn' },
-			// 天王星：库里没有 Uranus，用 Planet_Neptune 代用，靠青蓝色染色区分
-			{ r: 0.55, g: 0.75, b: 0.80, displayRadius: 1.3, ring: false, model: 'Planet_Neptune' },
+			// 天王星（2026-09-25 建模已交付 Planet_Uranus.glb，替换原先“用海王星染色代用”的临时方案）：
+			// 模型自带环（xy 平面 = 竖向），无需再叠 Ring.gltf；染成淡青（模型本体色 sRGB ≈ 0.66/0.86/0.88）。
+			{ r: 0.62, g: 0.82, b: 0.86, displayRadius: 1.3, ring: false, model: 'Planet_Uranus' },
 		],
 		goal: { kind: 'planet', planetIndex: 2, tolerance: 3.0 },
 		escapeRadius: 400,
