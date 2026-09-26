@@ -587,31 +587,34 @@ else -- 58
 					runtime.dateSpan -- 591
 				) -- 591
 			end -- 591
-			runtime.aim:setArmed(runtime.game:armed()) -- 594
-			if autoLaunchAt >= 0 or autoBackAt >= 0 or autoReenterAt >= 0 then -- 594
-				autoFrame = autoFrame + 1 -- 597
-				if autoLaunchAt >= 0 and autoFrame >= autoLaunchAt then -- 597
-					autoLaunchAt = -1 -- 599
-					print("[escape-velocity] auto launch") -- 600
-					runtime.game:launch({x = autoVX, y = autoVY}) -- 601
-					autoBackAt = autoFrame + 320 -- 602
-					autoReenterAt = autoFrame + 380 -- 603
-				end -- 603
-				if autoBackAt >= 0 and autoFrame >= autoBackAt then -- 603
-					autoBackAt = -1 -- 607
-					if runtime.game:backToSelect() then -- 607
-						print("[escape-velocity] auto back to select") -- 608
-					end -- 608
+			local phaseNow = runtime.game:phase() -- 595
+			runtime.aim:setTimeEnabled(phaseNow == "Aiming" or phaseNow == "Armed") -- 596
+			runtime.aim:update(App.deltaTime) -- 597
+			runtime.aim:setArmed(runtime.game:armed()) -- 599
+			if autoLaunchAt >= 0 or autoBackAt >= 0 or autoReenterAt >= 0 then -- 599
+				autoFrame = autoFrame + 1 -- 602
+				if autoLaunchAt >= 0 and autoFrame >= autoLaunchAt then -- 602
+					autoLaunchAt = -1 -- 604
+					print("[escape-velocity] auto launch") -- 605
+					runtime.game:launch({x = autoVX, y = autoVY}) -- 606
+					autoBackAt = autoFrame + 320 -- 607
+					autoReenterAt = autoFrame + 380 -- 608
 				end -- 608
-				if autoReenterAt >= 0 and autoFrame >= autoReenterAt then -- 608
-					autoReenterAt = -1 -- 611
-					print("[escape-velocity] auto re-enter") -- 612
-					enterLevel(0) -- 613
+				if autoBackAt >= 0 and autoFrame >= autoBackAt then -- 608
+					autoBackAt = -1 -- 612
+					if runtime.game:backToSelect() then -- 612
+						print("[escape-velocity] auto back to select") -- 613
+					end -- 613
 				end -- 613
-			end -- 613
-		end -- 613
-		return false -- 618
+				if autoReenterAt >= 0 and autoFrame >= autoReenterAt then -- 613
+					autoReenterAt = -1 -- 616
+					print("[escape-velocity] auto re-enter") -- 617
+					enterLevel(0) -- 618
+				end -- 618
+			end -- 618
+		end -- 618
+		return false -- 623
 	end) -- 574
-	print((((((((((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", view=") .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) .. ", platform=") .. App.platform) .. ", introSeen=") .. (introSeen and "yes" or "no")) -- 622
-end -- 622
-return ____exports -- 622
+	print((((((((((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", view=") .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) .. ", platform=") .. App.platform) .. ", introSeen=") .. (introSeen and "yes" or "no")) -- 627
+end -- 627
+return ____exports -- 627

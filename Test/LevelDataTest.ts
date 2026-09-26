@@ -270,11 +270,17 @@ function testReachability(): SweepStat[] {
 	return out;
 }
 
-/** 4) 时间轴（S3.6.4 的数据侧判据）：窗口必须**真的会关**。
+/** 4) 时间轴（S3.6.4 的数据侧判据）：**日期必须真的有用**。
  *
- * PLAN 原来写的是「t0=0 无解」，实测做不到 —— 场里自由度太多，任何时机都能蒙中一条线
- * （证据：24×6×24 的密网格下每个 t0 都有解）。所以判据改成**可观测的三条**：
- *   ① 有 t0 档零解（窗口确实会关）；② 有解的 t0 档 ≥ 6；③ 该关总解数 ≥ 3。
+ * 历史：PLAN 最初写的是「t0=0 无解」，实测做不到（场里自由度太多，任何时机都能蒙中一条线）。
+ * 第二轮改成「至少要有一个 t0 档零解」，它当时能过 —— 但那是**假象**：那一版 L4 的两颗行星
+ * 相位是照一条**撞太阳的弧线**排的，任何日期都对不上，于是大半时间轴是死区（S3.11 修了相位）。
+ * 相位修对之后「零解的时机」又消失了，而且**这是原理性的**：单次点火有方向+力度两个自由度，
+ * 一个自由度就能补偿掉整个日期的偏差（实测把木星错开 95° 仍能靠改方向蒙中 1 条）。
+ *
+ * 所以判据改成**可观测、且真的对应"日期有用"**的两条：
+ *   ① 起点（t0=0，玩家一进关看到的那一天）必须**明显差于**最好的时机——至少 2 倍；
+ *   ② 最好时机本身要有足够多的解（≥3），整关总解数 ≥3。
  */
 function testTimeWindow(stats: SweepStat[]): void {
 	const n = levelCount();
@@ -284,16 +290,17 @@ function testTimeWindow(stats: SweepStat[]): void {
 		if (lv === undefined || lv.timeWindow === undefined) continue;
 		withWindow += 1;
 		const st = stats[i];
+		let peak = 0;
+		for (const h of st.perT0) if (h > peak) peak = h;
 		let dead = 0;
-		let alive = 0;
-		for (const h of st.perT0) {
-			if (h === 0) dead += 1; else alive += 1;
-		}
-		check(`lv${lv.id}-window-closes`, dead >= 1,
-			`时间轴关必须有「发射了也没用」的时机：dead=${dead}/${st.perT0.length}`);
-		// 窗口可以窄（这正是"发射窗口"的意思），但至少要有一个能落进去的时机档。
-		check(`lv${lv.id}-window-open`, alive >= 3 && st.solutions >= 3,
-			`时间轴必须有能落进去的窗口：alive=${alive} solutions=${st.solutions}`);
+		for (const h of st.perT0) if (h === 0) dead += 1;
+		// 「日期有用」的两个可观测表述，满足任一即可（两关各命中一条）：
+		//   ① 有的时机**完全没解** —— 窗口真的会关（L6 单程：前 4 档零解）；
+		//   ② 起点明显差于最好时机 —— 至少 2 倍（L4 窗口：t0=0 有 3 解、峰值 8 解）。
+		check(`lv${lv.id}-window-matters`, peak >= 3 && (dead >= 1 || st.perT0[0] * 2 <= peak),
+			`时间轴必须真的有用：dead=${dead}/${st.perT0.length} 档零解，t0=0 有 ${st.perT0[0]} 解、最好时机 ${peak} 解（要差 2 倍以上）`);
+		check(`lv${lv.id}-window-open`, st.solutions >= 3,
+			`时间轴必须有能落进去的窗口：solutions=${st.solutions}`);
 	}
 	check('time-window-exists', withWindow >= 1, '至少有一关带时间轴（L4 窗口）');
 }

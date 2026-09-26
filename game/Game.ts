@@ -60,11 +60,19 @@ export type ResultKind = 'success' | 'missed' | 'crashed';
  * 优先级：到达目标 > 逃逸目标达成 > 撞毁 > 错过。
  * （到达目标优先于撞毁：轨迹在到达点截断，撞毁点根本不会发生。）
  *
+ * ⚠️ **逃逸关 + 航线（chain）**：两个条件**都要**满足 —— 既走完航线，又真的越界（S3.11）。
+ * L6「单程」用的就是这条：终章是"综合"，不能只朝任何方向猛推一下就赢。
+ * 只走完航线没出去、或只出去没走航线，都是「错过」。
+ *
  * 全部输入在**发射瞬间**即可确定 —— 结算与飞行一样是确定性的。
  */
 export function resolveResult(outcome: Outcome, goalIndex: number, goal: GoalSpec): ResultKind {
-	if (goalIndex >= 0) return 'success';
-	if (goal.kind === 'escape' && outcome === 'escaped') return 'success';
+	if (goal.kind === 'escape') {
+		const wps = goalWaypoints(goal);
+		if (outcome === 'escaped' && (wps.length === 0 || goalIndex >= 0)) return 'success';
+	} else if (goalIndex >= 0) {
+		return 'success';
+	}
 	if (outcome === 'crashed') return 'crashed';
 	return 'missed';
 }
@@ -195,6 +203,21 @@ export function coreCancelArm(core: GameCore): boolean {
 	if (core.phase !== 'Armed') return false;
 	core.phase = 'Aiming';
 	return true;
+}
+
+/**
+ * 时间流（改发射日期）在当前相态下是否允许（S3.11）。
+ *
+ * 只在**发射前**允许（Aiming / Armed）：
+ *  - 飞行用的是 `tWorld = t0 + flightTime`，飞行途中改 t0 等于把参考系整个挪走 ——
+ *    行星会在飞行路径底下跳位（会话 39 亲眼见过同源现象：物理对、模型错）；
+ *  - 结算之后改日期没有任何意义。
+ *
+ * 提成导出函数是为了**可单测**（`Test/GameTest.ts` 的 time-warp-* 三条），
+ * HUD 里的按钮开关（`AimInput.setTimeEnabled`）读的是同一个判据。
+ */
+export function coreTimeWarpAllowed(core: GameCore): boolean {
+	return core.phase === 'Aiming' || core.phase === 'Armed';
 }
 
 /** 当前帧探测器在 flight.points 中的索引（夹紧到有效范围）。 */
@@ -382,10 +405,34 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			idlePath = undefined;
 			return;
 		}
+		// ⚠️ 待机轨迹是**循环播放**的（idleIndex 对点数取模），所以仿真时长最好正好**一个周期**，
+		//    否则绕回去的瞬间探测器会瞬移（L1 的周期 = 2π·30/9.31 ≈ 20.2 秒，而 maxSteps 只有 10 秒）。
+		//    周期用"最近的那颗有引力的天体"和出发速度估：T = 2πr/v —— 只有 L1 走这条路径，
+		//    而它的 v0 就是圆轨道速度，估出来正好闭合。
+		// ⚠️ 这里用 Math.sqrt 而不是 Math.hypot：**tstl 不支持 Math.hypot**
+		//    （编译期报 TS100029 "Math.hypot is unsupported"，产物不会更新 —— 2026-09-27 踩过）
+		let idleSteps = level.maxSteps;
+		const v0x = level.probeVel0.x;
+		const v0y = level.probeVel0.y;
+		const v0 = Math.sqrt(v0x * v0x + v0y * v0y);
+		if (v0 > 1e-6) {
+			let bestD = 1e9;
+			for (const b of level.bodies) {
+				if (b.gm <= 0) continue;
+				const dx = b.orbitCenter.x - level.probeStart.x;
+				const dy = b.orbitCenter.y - level.probeStart.y;
+				const d = Math.sqrt(dx * dx + dy * dy);
+				if (d < bestD) bestD = d;
+			}
+			if (bestD > 1e-6 && bestD < 1e8) {
+				const n = Math.round((2 * Math.PI * bestD) / v0 / core.dt);
+				if (n > 60 && n < 40000) idleSteps = n;
+			}
+		}
 		idlePath = simulate(
 			{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: level.probeVel0.x, y: level.probeVel0.y } },
 			level.bodies,
-			{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0 },
+			{ steps: idleSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0 },
 		);
 	};
 	const idleIndex = (): number => {
@@ -691,6 +738,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.onPhase('Aiming');
 		},
 		stepTime: (dir: number, span: number): void => {
+			// 相态守卫（S3.11）：时间轴只在**发射前**能动。飞行用的是 tWorld = t0 + flightTime，
+			// 这时候改 t0 等于把参考系整个挪走（行星会在飞行途中跳位）；结算后更没意义。
+			if (!coreTimeWarpAllowed(core)) {
+				print('[escape-velocity] stepTime ignored (phase=' + core.phase + ')');
+				return;
+			}
 			const span0 = span > 0 ? span : 0;
 			clock += dir * TimeWarpStep;
 			if (clock < 0) clock = 0;

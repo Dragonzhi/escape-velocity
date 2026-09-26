@@ -590,6 +590,11 @@ if (levelTotal <= 0) {
 			if (runtime.levelHasTimeWindow) {
 				runtime.aim.setDate(runtime.game.dateNow(), runtime.dateSpan);
 			}
+			// 时间流只在"能改日期"的相态里可点（飞行中改日期会让行星在飞行途中跳位），
+			// 并驱动"按住连按"（S3.11）—— 两件都是状态驱动，不能只靠点按（AGENTS 硬约束 5）
+			const phaseNow = runtime.game.phase();
+			runtime.aim.setTimeEnabled(phaseNow === 'Aiming' || phaseNow === 'Armed');
+			runtime.aim.update(App.deltaTime);
 			// Armed 是状态，按钮显隐跟着状态走（AGENTS 硬约束 5）
 			runtime.aim.setArmed(runtime.game.armed());
 			// 开发钩子的自动发射（见上方 enter-request 说明）

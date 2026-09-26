@@ -8,7 +8,7 @@ import { Body, P2 } from 'game/Gravity';
 import { FlightPlayback, PhysicsStep } from 'game/Config';
 import { GoalSpec } from 'game/LevelData';
 import {
-	GameLevel, coreArm, coreCancelArm, coreLaunch, coreProbeIndex, coreRetry, coreUpdate, createCore, resolveResult,
+	GameLevel, coreArm, coreCancelArm, coreLaunch, coreProbeIndex, coreRetry, coreTimeWarpAllowed, coreUpdate, createCore, resolveResult,
 } from 'game/Game';
 
 interface Failure {
@@ -56,6 +56,43 @@ function testResolveResult(): void {
 	// planet 目标但未到达
 	check('resolve-planet-escaped', resolveResult('escaped', -1, planetGoal) === 'missed', '飞出边界但未到达目标 = 错过');
 	check('resolve-planet-crashed', resolveResult('crashed', -1, planetGoal) === 'crashed', '撞毁 = 撞毁');
+
+	// 逃逸 + 航线（S3.11，L6 单程）：两个条件都要
+	const chainedEscape: GoalSpec = {
+		kind: 'escape', planetIndex: -1, tolerance: 0,
+		chain: [{ planetIndex: 0, tolerance: 4, label: 'A' }, { planetIndex: 1, tolerance: 4, label: 'B' }],
+	};
+	check('resolve-escape-chain-both', resolveResult('escaped', 7, chainedEscape) === 'success', '逃逸关：走完航线 + 越界 = 成功');
+	check('resolve-escape-chain-no-route', resolveResult('escaped', -1, chainedEscape) === 'missed', '逃逸关：只有越界、没走完航线 = 错过');
+	check('resolve-escape-chain-no-escape', resolveResult('running', 7, chainedEscape) === 'missed', '逃逸关：只走完航线、没越界 = 错过');
+	check('resolve-escape-chain-crashed', resolveResult('crashed', -1, chainedEscape) === 'crashed', '逃逸关：撞毁 = 撞毁');
+}
+
+/**
+ * 1b) 时间流的相态守卫（S3.11）。
+ *
+ * 为什么要有它：飞行用的是 tWorld = t0 + flightTime，飞行途中改 t0 等于把参考系整个挪走，
+ * 行星会在飞行路径底下跳位。所以"能不能改日期"必须由**相态**决定，而不是由按钮决定。
+ */
+function testTimeWarpGuard(): void {
+	const level = testLevel();
+	const core = createCore();
+	check('time-warp-aiming', coreTimeWarpAllowed(core), `Aiming 应允许改日期：phase=${core.phase}`);
+	coreArm(core);
+	check('time-warp-armed', coreTimeWarpAllowed(core), `Armed 也应允许（瞄好了再挑日期）：phase=${core.phase}`);
+	coreCancelArm(core);
+
+	coreLaunch(core, { x: 6, y: -12 }, level);
+	check('time-warp-flying', !coreTimeWarpAllowed(core), `Flying 必须禁止改日期：phase=${core.phase}`);
+
+	let entered = false;
+	let frames = 0;
+	while (!entered && frames < 100000) {
+		entered = coreUpdate(core, 1 / 60);
+		frames += 1;
+		if (core.phase === 'Result') break;
+	}
+	check('time-warp-result', !coreTimeWarpAllowed(core), `Result 必须禁止改日期：phase=${core.phase}`);
 }
 
 /** 2) 发射：预推演、阶段切换、重复发射被拒绝。 */
@@ -231,6 +268,7 @@ function testArmed(): void {
 
 export function runTests(): string {
 	testResolveResult();
+	testTimeWarpGuard();
 	testLaunch();
 	testArmed();
 	testPlayback();

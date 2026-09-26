@@ -173,8 +173,17 @@ export interface ButtonOptions {
 	bgHex: number;
 	fgHex: number;
 	borderHex?: number;
-	/** 点击（松手）回调。 */
+	/** 点击（松手）回调。⚠️ 带 0.5 秒防抖（见 createButton 里的说明）。 */
 	onTap: () => void;
+	/**
+	 * 按下（还没松手）回调。给"按住即走"这类需要**按下/松手两个时刻**的按钮用。
+	 *
+	 * ⚠️ 与 `onTap` 不同，它**不做防抖** —— 同一物理按压可能被投递两次（鼠标 + 触摸两条路），
+	 * 所以实现必须是**幂等**的（例如"已经在按住同一个方向就直接 return"）。
+	 */
+	onPressBegan?: () => void;
+	/** 松手回调。同样不防抖、同样可能被投递两次 ⇒ 实现要幂等。 */
+	onPressEnded?: () => void;
 }
 
 /** 按钮句柄：自身是**可点节点**（底色 + 居中 Label + 触摸开关）。 */
@@ -237,11 +246,15 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 		if (!enabled) return;
 		pressed = true;
 		repaint();
+		if (opts.onPressBegan !== undefined) opts.onPressBegan();
 	});
 	root.onTapEnded(() => {
 		if (!enabled) return;
 		pressed = false;
 		repaint();
+		// ⚠️ 松手这条**不走下面的 0.5 秒防抖**：防抖是给 `onTap`（同一瞬间双投递）的，
+		//    而"按住即走"必须在真的松手时立刻停 —— 幂等由调用方保证。
+		if (opts.onPressEnded !== undefined) opts.onPressEnded();
 		// ⚠️ 实测（2026-09-26，合成点击点「刹车」按钮）：**一次点击会被投递两次** ——
 		//    引擎的鼠标与触摸两条路都会走到 onTapEnded，切换型按钮因此"开了又立刻关"。
 		//    0.5 秒防抖：双投递是同一瞬间，而人不可能 0.5 秒内在同一按钮上点两次。

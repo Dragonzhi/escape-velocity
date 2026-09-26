@@ -391,67 +391,76 @@ local function testReachability() -- 242
 	end -- 248
 	return out -- 270
 end -- 242
---- 4) 时间轴（S3.6.4 的数据侧判据）：窗口必须**真的会关**。
+--- 4) 时间轴（S3.6.4 的数据侧判据）：**日期必须真的有用**。
 -- 
--- PLAN 原来写的是「t0=0 无解」，实测做不到 —— 场里自由度太多，任何时机都能蒙中一条线
--- （证据：24×6×24 的密网格下每个 t0 都有解）。所以判据改成**可观测的三条**：
---  ① 有 t0 档零解（窗口确实会关）；② 有解的 t0 档 ≥ 6；③ 该关总解数 ≥ 3。
-local function testTimeWindow(stats) -- 279
-	local n = levelCount() -- 280
-	local withWindow = 0 -- 281
-	do -- 281
-		local i = 0 -- 282
-		while i < n do -- 282
-			do -- 282
-				local lv = getLevel(i) -- 283
-				if lv == nil or lv.timeWindow == nil then -- 283
-					goto __continue51 -- 284
-				end -- 284
-				withWindow = withWindow + 1 -- 285
-				local st = stats[i + 1] -- 286
-				local dead = 0 -- 287
-				local alive = 0 -- 288
-				for ____, h in ipairs(st.perT0) do -- 289
-					if h == 0 then -- 289
-						dead = dead + 1 -- 290
-					else -- 290
-						alive = alive + 1 -- 290
-					end -- 290
+-- 历史：PLAN 最初写的是「t0=0 无解」，实测做不到（场里自由度太多，任何时机都能蒙中一条线）。
+-- 第二轮改成「至少要有一个 t0 档零解」，它当时能过 —— 但那是**假象**：那一版 L4 的两颗行星
+-- 相位是照一条**撞太阳的弧线**排的，任何日期都对不上，于是大半时间轴是死区（S3.11 修了相位）。
+-- 相位修对之后「零解的时机」又消失了，而且**这是原理性的**：单次点火有方向+力度两个自由度，
+-- 一个自由度就能补偿掉整个日期的偏差（实测把木星错开 95° 仍能靠改方向蒙中 1 条）。
+-- 
+-- 所以判据改成**可观测、且真的对应"日期有用"**的两条：
+--  ① 起点（t0=0，玩家一进关看到的那一天）必须**明显差于**最好的时机——至少 2 倍；
+--  ② 最好时机本身要有足够多的解（≥3），整关总解数 ≥3。
+local function testTimeWindow(stats) -- 285
+	local n = levelCount() -- 286
+	local withWindow = 0 -- 287
+	do -- 287
+		local i = 0 -- 288
+		while i < n do -- 288
+			do -- 288
+				local lv = getLevel(i) -- 289
+				if lv == nil or lv.timeWindow == nil then -- 289
+					goto __continue51 -- 290
 				end -- 290
-				check( -- 292
-					("lv" .. tostring(lv.id)) .. "-window-closes", -- 292
-					dead >= 1, -- 292
-					(("时间轴关必须有「发射了也没用」的时机：dead=" .. tostring(dead)) .. "/") .. tostring(#st.perT0) -- 292
-				) -- 292
-				check( -- 295
-					("lv" .. tostring(lv.id)) .. "-window-open", -- 295
-					alive >= 3 and st.solutions >= 3, -- 295
-					(("时间轴必须有能落进去的窗口：alive=" .. tostring(alive)) .. " solutions=") .. tostring(st.solutions) -- 295
-				) -- 295
-			end -- 295
-			::__continue51:: -- 295
-			i = i + 1 -- 282
-		end -- 282
-	end -- 282
-	check("time-window-exists", withWindow >= 1, "至少有一关带时间轴（L4 窗口）") -- 298
-end -- 279
-function ____exports.runTests() -- 301
-	testValidity() -- 302
-	testFindGoalIndex() -- 303
-	local stats = testReachability() -- 304
-	testTimeWindow(stats) -- 305
-	testCapture() -- 306
-	local lines = {} -- 308
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 309
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 310
-	local limit = #failures < 12 and #failures or 12 -- 311
-	do -- 311
-		local i = 0 -- 312
-		while i < limit do -- 312
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 313
-			i = i + 1 -- 312
-		end -- 312
-	end -- 312
-	return table.concat(lines, "\n") -- 315
-end -- 301
-return ____exports -- 301
+				withWindow = withWindow + 1 -- 291
+				local st = stats[i + 1] -- 292
+				local peak = 0 -- 293
+				for ____, h in ipairs(st.perT0) do -- 294
+					if h > peak then -- 294
+						peak = h -- 294
+					end -- 294
+				end -- 294
+				local dead = 0 -- 295
+				for ____, h in ipairs(st.perT0) do -- 296
+					if h == 0 then -- 296
+						dead = dead + 1 -- 296
+					end -- 296
+				end -- 296
+				check( -- 300
+					("lv" .. tostring(lv.id)) .. "-window-matters", -- 300
+					peak >= 3 and (dead >= 1 or st.perT0[1] * 2 <= peak), -- 300
+					((((((("时间轴必须真的有用：dead=" .. tostring(dead)) .. "/") .. tostring(#st.perT0)) .. " 档零解，t0=0 有 ") .. tostring(st.perT0[1])) .. " 解、最好时机 ") .. tostring(peak)) .. " 解（要差 2 倍以上）" -- 300
+				) -- 300
+				check( -- 302
+					("lv" .. tostring(lv.id)) .. "-window-open", -- 302
+					st.solutions >= 3, -- 302
+					"时间轴必须有能落进去的窗口：solutions=" .. tostring(st.solutions) -- 303
+				) -- 303
+			end -- 303
+			::__continue51:: -- 303
+			i = i + 1 -- 288
+		end -- 288
+	end -- 288
+	check("time-window-exists", withWindow >= 1, "至少有一关带时间轴（L4 窗口）") -- 305
+end -- 285
+function ____exports.runTests() -- 308
+	testValidity() -- 309
+	testFindGoalIndex() -- 310
+	local stats = testReachability() -- 311
+	testTimeWindow(stats) -- 312
+	testCapture() -- 313
+	local lines = {} -- 315
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 316
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 317
+	local limit = #failures < 12 and #failures or 12 -- 318
+	do -- 318
+		local i = 0 -- 319
+		while i < limit do -- 319
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 320
+			i = i + 1 -- 319
+		end -- 319
+	end -- 319
+	return table.concat(lines, "\n") -- 322
+end -- 308
+return ____exports -- 308

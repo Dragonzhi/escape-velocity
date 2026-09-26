@@ -24,6 +24,10 @@
 3. **TSTL 三坑**（编译期不报错、运行时报错）：① 接口/对象成员函数默认带 self → 接口标 `/** @noSelf **/`，
    返回对象里别用简写属性（包一层箭头函数）；② `threadLoop` 返回 `false` 继续、`true` 停止；
    ③ 工厂命名空间不是类型（写 `Vec3.Type` / `Node3D.Type`）。
+   ④ **有些 ES 内建在 tstl 里不存在**（手册 §7.1 已列：`Math.hypot`、`Math.imul`；另有 `toExponential`）。
+   `Math.hypot` 的报错是 `TS100029 Math.hypot is unsupported` —— 换成 `Math.sqrt(x*x+y*y)` / `toFixed`。
+   🚨 **构建失败 = 那一份 .lua 还是旧的**：别拿它截图/跑单测当证据（2026-09-27 踩过：改完 L1 轨道后截图没变，
+   其实是构建 40/41，白白多截了一轮）。**每次截图/验收前先确认构建是 41/41。**
 4. **触摸**：全屏 `touchEnabled + swallowTouches` 的节点会**独占**整屏点击；隐藏时**必须同时断掉触摸**
    （只设 `visible = false` 不够 —— 真机验收踩过：进关卡拖不动飞行器）。瞄准层是唯一允许全屏独占的层，
    且只在该关 `Aiming` 时开启。子节点可独立命中（父节点不必开触摸）。
@@ -55,9 +59,16 @@ pwsh tools/level-shots.ps1 -Levels 1,2,3,4,5,6      # 产物 .agent/test-results
 # ③ 关卡数值秒级扫掠（Node 里跑**同一套公式**，不用起引擎；调数值先用它，再进引擎验收）
 node tools/level-sweep.mjs                          # 仓库六关，12 方向 × 4 档力度
 node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
+
+# ④ 行星相位设计器（改 orbiter 的第 4 个参数前**必须**用它，别再手填 —— S3.11 的教训）
+node tools/level-phases.mjs 5                       # 解 L5：最佳相位 + "有多少条路线"
+node tools/level-phases.mjs 4 --t0 180              # 解"第 180 秒才对齐"的相位（L4/L6 用）
+
+# ⑤ 合成鼠标"玩一关"（按住/连按/相态守卫这类**时序**行为，逐关截图证明不了）
+pwsh tools/level-play.ps1 -Level 4 -HoldWarpMs 2500
 ```
 
-单测基线：`SUMMARY passed=8 failed=0 total=8`（**225 条断言**）→ `.agent/test-results/unit-summary.txt`。
+单测基线：`SUMMARY passed=8 failed=0 total=8`（**247 条断言**）→ `.agent/test-results/unit-summary.txt`。
 引擎 API（8866）需要引擎设置里「访问验证 / Auth Required」为关闭；`/ts/build` 还要求 Web IDE 浏览器已连接
 （TS 编译实际发生在浏览器里 —— 本地构建用 `tools/dora-build/` 即可，不要依赖它）。
 截图是未压缩 TGA，转 PNG：`python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"`。
@@ -113,4 +124,4 @@ node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
 - 提交前清理：不带入 `.agent/test-results/*`、临时日志、密钥或个人配置。
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
 - ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 41 个文件，
-  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**225 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
+  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**247 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。

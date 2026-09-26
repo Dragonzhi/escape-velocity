@@ -75,8 +75,13 @@ const { PhysicsStep, AimMinSpeed, AimMaxSpeed } = require2(path.join(outDir, "Co
 
 /** game/Game.ts resolveResult 的镜像（见文件头说明）。 */
 function resolveResult(outcome, goalIndex, goal) {
-	if (goalIndex >= 0) return "success";
-	if (goal.kind === "escape" && outcome === "escaped") return "success";
+	// S3.11：逃逸关带 chain ⇒ 航线走完 **且** 越界，两个条件都要（L6 单程）
+	if (goal.kind === "escape") {
+		const wps = goal.chain !== undefined ? goal.chain : [];
+		if (outcome === "escaped" && (wps.length === 0 || goalIndex >= 0)) return "success";
+	} else if (goalIndex >= 0) {
+		return "success";
+	}
 	if (outcome === "crashed") return "crashed";
 	return "missed";
 }

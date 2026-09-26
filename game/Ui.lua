@@ -154,76 +154,82 @@ end -- 164
 -- ⚠️ 已知局限：Dora 没有“触摸取消”回调，手指按下后划出按钮再松开，`onTapEnded`
 -- 仍会触发。这里不做坐标过滤 —— `touch.location` 的局部空间在无头环境无法标定
 -- （`Touch` 构造是私有的），错误的空间假设会让按钮整块点不到，比“多触发一次”更糟。
-function ____exports.createButton(parent, opts) -- 204
-	local root = Node() -- 205
-	root.size = Size(opts.w, opts.h) -- 206
-	root.anchor = Vec2(0, 0) -- 207
-	root.touchEnabled = true -- 208
-	root.swallowTouches = true -- 209
-	local draw = DrawNode() -- 211
-	root:addChild(draw) -- 212
-	local lastTapAt = -1 -- 215
-	local label = ____exports.createLabel(root, opts.text, opts.fontSize, opts.fgHex) -- 218
-	if label ~= nil then -- 218
-		label.position = Vec2(opts.w / 2, opts.h / 2) -- 219
-	end -- 219
-	local bgHex = opts.bgHex -- 221
-	local fgHex = opts.fgHex -- 222
-	local enabled = true -- 223
-	local pressed = false -- 224
-	local function repaint() -- 226
-		local bg = pressed and ____exports.shadeHex(bgHex, 1.45) or bgHex -- 227
-		draw:clear() -- 228
-		draw:drawPolygon( -- 229
-			____exports.rectVerts(opts.w, opts.h), -- 229
-			____exports.colorFromHex(bg, 1) -- 229
-		) -- 229
-		if opts.borderHex ~= nil then -- 229
-			draw:drawPolygon( -- 231
-				____exports.rectVerts(opts.w, opts.h), -- 231
-				____exports.colorFromHex(0, 0), -- 231
-				2, -- 231
-				____exports.colorFromHex(opts.borderHex, 1) -- 231
-			) -- 231
-		end -- 231
-		____exports.setLabelColor(label, fgHex) -- 233
-	end -- 226
-	root:onTapBegan(function() -- 236
-		if not enabled then -- 236
-			return -- 237
-		end -- 237
-		pressed = true -- 238
-		repaint() -- 239
-	end) -- 236
-	root:onTapEnded(function() -- 241
-		if not enabled then -- 241
-			return -- 242
-		end -- 242
-		pressed = false -- 243
-		repaint() -- 244
-		local now = App.elapsedTime -- 248
-		if lastTapAt >= 0 and now - lastTapAt < 0.5 then -- 248
-			return -- 249
+function ____exports.createButton(parent, opts) -- 213
+	local root = Node() -- 214
+	root.size = Size(opts.w, opts.h) -- 215
+	root.anchor = Vec2(0, 0) -- 216
+	root.touchEnabled = true -- 217
+	root.swallowTouches = true -- 218
+	local draw = DrawNode() -- 220
+	root:addChild(draw) -- 221
+	local lastTapAt = -1 -- 224
+	local label = ____exports.createLabel(root, opts.text, opts.fontSize, opts.fgHex) -- 227
+	if label ~= nil then -- 227
+		label.position = Vec2(opts.w / 2, opts.h / 2) -- 228
+	end -- 228
+	local bgHex = opts.bgHex -- 230
+	local fgHex = opts.fgHex -- 231
+	local enabled = true -- 232
+	local pressed = false -- 233
+	local function repaint() -- 235
+		local bg = pressed and ____exports.shadeHex(bgHex, 1.45) or bgHex -- 236
+		draw:clear() -- 237
+		draw:drawPolygon( -- 238
+			____exports.rectVerts(opts.w, opts.h), -- 238
+			____exports.colorFromHex(bg, 1) -- 238
+		) -- 238
+		if opts.borderHex ~= nil then -- 238
+			draw:drawPolygon( -- 240
+				____exports.rectVerts(opts.w, opts.h), -- 240
+				____exports.colorFromHex(0, 0), -- 240
+				2, -- 240
+				____exports.colorFromHex(opts.borderHex, 1) -- 240
+			) -- 240
+		end -- 240
+		____exports.setLabelColor(label, fgHex) -- 242
+	end -- 235
+	root:onTapBegan(function() -- 245
+		if not enabled then -- 245
+			return -- 246
+		end -- 246
+		pressed = true -- 247
+		repaint() -- 248
+		if opts.onPressBegan ~= nil then -- 248
+			opts:onPressBegan() -- 249
 		end -- 249
-		lastTapAt = now -- 250
-		opts:onTap() -- 251
-	end) -- 241
-	repaint() -- 254
-	parent:addChild(root) -- 255
-	return { -- 257
-		root = root, -- 258
-		setText = function(____, text) return ____exports.setLabelText(label, text) end, -- 259
-		setEnabled = function(____, value) -- 260
-			enabled = value -- 261
-			root.touchEnabled = value -- 264
-			pressed = false -- 265
-			repaint() -- 266
-		end, -- 260
-		setColors = function(____, bg, fg) -- 268
-			bgHex = bg -- 269
-			fgHex = fg -- 270
-			repaint() -- 271
-		end -- 268
-	} -- 268
-end -- 204
-return ____exports -- 204
+	end) -- 245
+	root:onTapEnded(function() -- 251
+		if not enabled then -- 251
+			return -- 252
+		end -- 252
+		pressed = false -- 253
+		repaint() -- 254
+		if opts.onPressEnded ~= nil then -- 254
+			opts:onPressEnded() -- 257
+		end -- 257
+		local now = App.elapsedTime -- 261
+		if lastTapAt >= 0 and now - lastTapAt < 0.5 then -- 261
+			return -- 262
+		end -- 262
+		lastTapAt = now -- 263
+		opts:onTap() -- 264
+	end) -- 251
+	repaint() -- 267
+	parent:addChild(root) -- 268
+	return { -- 270
+		root = root, -- 271
+		setText = function(____, text) return ____exports.setLabelText(label, text) end, -- 272
+		setEnabled = function(____, value) -- 273
+			enabled = value -- 274
+			root.touchEnabled = value -- 277
+			pressed = false -- 278
+			repaint() -- 279
+		end, -- 273
+		setColors = function(____, bg, fg) -- 281
+			bgHex = bg -- 282
+			fgHex = fg -- 283
+			repaint() -- 284
+		end -- 281
+	} -- 281
+end -- 213
+return ____exports -- 213

@@ -32,7 +32,10 @@
 import { Color, DrawNode, Node, Size, Touch, Vec2 } from 'Dora';
 import { CameraBasis, screenToPlaneY } from 'game/Projection';
 import { P2 } from 'game/Gravity';
-import { AimMaxDragPx, AimMaxSpeed, AimMinSpeed, PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
+import {
+	AimMaxDragPx, AimMaxSpeed, AimMinSpeed, PlaneToWorldX, PlaneToWorldZ,
+	TimeWarpRate, TimeWarpStep, WarpHoldDelaySec,
+} from 'game/Config';
 import { ResultKind } from 'game/Game';
 import { MinButtonHeight, MinButtonWidth, UiButton, createButton, createLabel, createPanel, setLabelCenter, setLabelColor, setLabelText } from 'game/Ui';
 
@@ -226,6 +229,13 @@ export interface AimInput {
 	 */
 	onWarp: (callback: (dir: number) => void) => void;
 	/**
+	 * 相态守卫：只有"能改日期"的相态（Aiming / Armed）才让时间流按钮可点。
+	 * 主循环每帧同步 —— 飞行中改日期会让行星在飞行途中跳位（飞行用的是 t0 + flightTime）。
+	 */
+	setTimeEnabled: (on: boolean) => void;
+	/** 每帧推进（秒）：驱动时间流按钮的"按住连按"。 */
+	update: (dt: number) => void;
+	/**
 	 * 设置滑杆的量程与当前值：`span <= 0` = 这一关没有时间轴 ⇒ 滑杆整块隐藏且**断触摸**。
 	 * （隐藏而不关触摸的层会吞掉整个区域的点击 —— 真机验收踩过，见 AGENTS 硬约束 4。）
 	 */
@@ -412,15 +422,47 @@ export function createAimInput(
 		dvLabel.anchor = Vec2(0, 0);
 	}
 
-	// ---- 时间流：加速 / 回退（S3.9.4，用户提议替换日期滑杆）----
+	// ---- 时间流：加速 / 回退（S3.9.4 起是按钮；S3.11 起**按住即走**）----
 	// 为什么不是滑杆：滑杆是"瞬间跳到某个日期"，而这一版的核心是**时间在流**（探测器绕地球待机）。
-	// 两者语义打架 —— 用户自己也指出来了。改成"按住即走"的两个按钮：等窗口时转时间，松手就停。
-	// 只有带 `timeWindow` 的关卡才启用；别的关卡整块隐藏**且断触摸**（AGENTS 硬约束 4）。
+	// 两者语义打架 —— 用户自己也指出来了。
+	// 点按 = 走一步（`TimeWarpStep` 15 秒，木星挪 5°，看得出在动）；
+	// 按住 = 先走一步、停 `WarpHoldDelaySec` 后开始连按，速率 `TimeWarpRate` 倍（40 倍）
+	//   ⇒ L4/L6 的 300 秒时间轴按住约 7.5 秒扫完，松手即停。
+	// 只有带 `timeWindow` 的关卡才显示；别的关卡整块隐藏**且断触摸**（AGENTS 硬约束 4）。
 	let warpHandler: ((dir: number) => void) | undefined = undefined;
 	let dateSpan = 0;
+	/** 这一关有时间轴**且**当前相态允许改日期（Flying/Result 时必须是 false）。 */
+	// ⚠️ 初始值**故意是 true/true**：Label 与按钮建出来本来就是"可见 + 可点"的，
+	//    所以这个初值如实反映了节点的实际状态。第一次 applyWarpState（setDate 里）因此
+	//    一定会真的跑一遍 —— 若把初值写成 false（"我想让它隐藏"），第一次 apply 会命中
+	//    "状态没变就早退"那条捷径，于是**没有时间轴的关卡会留下一个永远不隐藏的「发射日期」**
+	//    和一排能点的「◀ 回退 / 加速 ▶」（实测踩到：L1~L3/L5 的截图里它们都在）。
+	let warpOn = true;
+	let warpVisible = true;
+	/** 相态是否允许改日期（由主循环每帧 setTimeEnabled 同步）。 */
+	let warpAllowed = true;
+	/** 上次写进日期的文字（避免每帧重设 Label 文本）。 */
+	let lastDateText = '';
+	/** >0 = 正在按住这个方向（-1 回退 / +1 加速）；0 = 没按住。 */
+	let warpHoldDir = 0;
+	/** 距离下一次连按还有多久（秒）。 */
+	let warpRepeatIn = 0;
 	const WarpButtonW = 116;
 	const WarpButtonH = 64;
 	const warpButtons: UiButton[] = [];
+	const applyWarpState = (): void => {
+		const vis = dateSpan > 0;
+		const on = vis && warpAllowed;
+		if (vis === warpVisible && on === warpOn) return; // 每帧都会被调用，状态没变就别重绘
+		warpVisible = vis;
+		warpOn = on;
+		if (!on) warpHoldDir = 0;
+		for (const b of warpButtons) {
+			b.root.visible = vis;
+			b.setEnabled(on);
+		}
+		if (dateLabel !== undefined) dateLabel.visible = vis;
+	};
 	const makeWarpButton = (text: string, dir: number, x: number): void => {
 		const btn = createButton(root, {
 			w: WarpButtonW,
@@ -430,14 +472,28 @@ export function createAimInput(
 			bgHex: ResultButtonAltBgHex,
 			fgHex: ResultButtonFgHex,
 			borderHex: ResultButtonBorderHex,
-			onTap: (): void => {
-				// 按一次 = 时间走一步（步长在 Config.TimeWarpStep）
+			// ⚠️ `onTap` 故意留空：真正的动作在下面两个"按下 / 松手"钩子里。
+			//    `onTap` 带 0.5 秒防抖、而且只在松手时触发 —— 做不了"按住即走"。
+			onTap: (): void => {},
+			onPressBegan: (): void => {
+				// 证据打点（照 AGENTS 的规矩：点按一律留一行带状态的日志，不然"没反应"无法归因）
+				print('[escape-velocity] warp press dir=' + dir.toFixed(0) + ' on=' + (warpOn ? '1' : '0'));
+				if (!warpOn) return;
+				// ⚠️ 同一物理按压可能投递两次（鼠标 + 触摸两条路）⇒ 靠"已经在按住"挡住重复
+				if (warpHoldDir === dir) return;
+				warpHoldDir = dir;
+				warpRepeatIn = WarpHoldDelaySec;
 				if (warpHandler !== undefined) warpHandler(dir);
+			},
+			onPressEnded: (): void => {
+				print('[escape-velocity] warp release dir=' + dir.toFixed(0) + ' hold=' + warpHoldDir.toFixed(0));
+				// 幂等：这条回调会被投递两次，重复清零没有副作用
+				if (warpHoldDir === dir) warpHoldDir = 0;
 			},
 		});
 		// ⚠️ 不能自己往 root 上挂 onTapBegan/onTapEnded：`createButton` 内部已经注册过，
 		// 后注册会把它的处理器顶掉（实测：按下去既没视觉反馈、也拿不到回调）。
-		// 走它自己的 `onTap`（松手时触发）—— 这也是"两个按钮"该有的语义：按一次，时间走一步。
+		// 上面两个钩子是 `createButton` 自己在注册时调用的 —— 外部不碰节点。
 		btn.root.position = Vec2(x, viewH - 96 - WarpButtonH);
 		warpButtons.push(btn);
 	};
@@ -446,8 +502,11 @@ export function createAimInput(
 	makeWarpButton('加速 ▶', 1, warpLeftX + WarpButtonW + 8);
 	const dateLabel = createLabel(root, '发射日期 —', 30, ResultHintHex);
 	if (dateLabel !== undefined) {
-		dateLabel.position = Vec2(24, viewH - 96 - WarpButtonH + 16);
-		dateLabel.anchor = Vec2(0, 0);
+		// ⚠️ **右对齐到时间流按钮的左边**（不是从左往 24 起排）：601 宽的竖屏下
+		//    "发射日期 180 / 300" 约 270 px，从 x=24 起排会正好压在「◀ 回退」上（截图实测过）。
+		//    右对齐之后它向左生长，永远留出按钮那一列。
+		dateLabel.anchor = Vec2(1, 0);
+		dateLabel.position = Vec2(warpLeftX - 16, viewH - 96 - WarpButtonH + 18);
 	}
 
 	// ---- 「发射」按钮（S3.10，右下角拇指区；只在 Armed 态出现）----
@@ -517,13 +576,26 @@ export function createAimInput(
 		},
 		setDate: (t0: number, span: number): void => {
 			dateSpan = span > 0 ? span : 0;
+			applyWarpState(); // 隐藏 + 断触摸（AGENTS 硬约束 4）：这一关没有时间轴就整块收起来
 			const on = dateSpan > 0;
-			for (const b of warpButtons) {
-				b.root.visible = on;
-				b.setEnabled(on); // 隐藏 + 断触摸（AGENTS 硬约束 4）
+			const text = on ? '发射日期 ' + t0.toFixed(0) + ' / ' + dateSpan.toFixed(0) : '发射日期';
+			if (text !== lastDateText) {
+				lastDateText = text;
+				setLabelText(dateLabel, text);
 			}
-			if (dateLabel !== undefined) dateLabel.visible = on;
-			setLabelText(dateLabel, on ? '发射日期 ' + t0.toFixed(0) + ' / ' + dateSpan.toFixed(0) + ' 秒' : '发射日期');
+		},
+		setTimeEnabled: (on: boolean): void => {
+			if (warpAllowed === on) return; // 每帧调用：状态没变就别动
+			warpAllowed = on;
+			applyWarpState();
+		},
+		update: (dt: number): void => {
+			if (!warpOn || warpHoldDir === 0) return;
+			warpRepeatIn -= dt;
+			if (warpRepeatIn > 0) return;
+			// 连按速率 = TimeWarpRate 倍（步长 / 倍率 = 间隔秒数）
+			warpRepeatIn = TimeWarpStep / TimeWarpRate;
+			if (warpHandler !== undefined) warpHandler(warpHoldDir);
 		},
 		isDragging: (): boolean => dragging,
 		setBurnInfo: (burn: number, budget: number): void => {

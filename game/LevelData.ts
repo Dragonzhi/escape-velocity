@@ -316,9 +316,13 @@ const LEVELS: LevelDef[] = [
 		brief: '航行日志 · 第 1 天：离开地球。这一段路很干净，没有大天体捣乱 —— 先把拖拽瞄准练熟。月球在正前方。',
 		probeStart: { x: 0, y: 40 },
 		// S3.9.3：出发时探测器**已经在绕地球飞**（用户："飞行器也是一开始在运动的，围绕地球"）。
-		// 地球在这一关是**真天体**（有引力）：圆轨道速度 = sqrt(gm / 距离) = sqrt(4320 / 30) ≈ 12 单位/秒，
+		// 地球在这一关是**真天体**（有引力）：圆轨道速度 = sqrt(gm / 距离) = sqrt(2600 / 30) ≈ **9.31**，
 		// 方向 +x（切向）⇒ 预测线一上来就是一条弧线，玩家拖出来的那一下是"点火"。
-		probeVel0: { x: 12, y: 0 },
+		// ⚠️ 这里必须**正好是圆轨道速度**：早先 gm 是 4320（注释里那个 12 就是照它算的），
+		//    后来 gm 降到 2600 而速度没跟着改 ⇒ v/v_circ = 1.29，轨迹变成一条**大椭圆**
+		//    （远地点 147 = 地球半径的 84 倍），于是进关后探测器一路飞远、相机被迫拉到很大，
+		//    第一关的第一眼变成"一片星空里一个小点"（截图实测）。改成 9.31 之后是正圆，贴着地球转。
+		probeVel0: { x: 9.31, y: 0 },
 		homeAnchor: false, // 地球已经在 planets[0]，别再叠一个纯视觉锚点
 		planets: [
 			// 地球（真天体）：探测器在它上方 30 单位处绕行。
@@ -331,8 +335,10 @@ const LEVELS: LevelDef[] = [
 			{ r: 0.42, g: 0.62, b: 0.85, displayRadius: R_EARTH, ring: false, model: 'Planet_Earth' },
 			{ r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false },
 		],
-		// 教学关要宽容：环放宽到 18（月球半径 1.0，等于是"飞到月球附近就算"）
-		goal: { kind: 'planet', planetIndex: 1, tolerance: 24 },
+		// 教学关要宽容：环放宽到 30（月球半径只有 1.0 —— 等于是"飞到月球附近就算"）。
+		// 手写注释一度写着 18 而代码是 24（对不上），这里以代码为准并同步：24 → 30 使
+		// 首次上手的方向窗口从 ±12° 变成 ±17°（扫掠成功率 6.1% → 8.9%）。
+		goal: { kind: 'planet', planetIndex: 1, tolerance: 30 },
 		dvBudget: 45,
 		escapeRadius: 700,
 		maxSteps: 1200,
@@ -366,11 +372,14 @@ const LEVELS: LevelDef[] = [
 		planets: [
 			sun(),
 			// 木星：本关的"弹弓"（唯一的强引力源，站在地球到土星的路上）。
-			// 相位来自"设计航线"数值解（tools/level-sweep 的思路：先积出一条好弧线，再把行星摆到穿越点上）。
-			orbiter(4000, R_JUPITER, ORBIT.jupiter, 195.5),
-			// 土星：目标（无引力，掠过即可）。
+			// ⚠️ 相位 89.4 / 89.0 是**相位求解器**（tools/level-phases.mjs）解出来的"设计航线穿越角"：
+			// 从 (0,80) 向外飞、能依次穿过 105/135 环的那一族弧线，穿越点几乎都在 89°~90°
+			// （因为最好的那族弧线接近**径向**：θ 沿径向不变 ⇒ 行星必须摆在那条射线上）。
+			// 旧值 195.5/198 是照着「240° 方向、Δv 35 的绕日弧线」排的 —— 实测那条弧线**撞进太阳**
+			// （peakR 只有 80），于是相位和任何可行航线都对不上，成功率被压到 6%（修完约 30%+）。
+			orbiter(4000, R_JUPITER, ORBIT.jupiter, 89.4),
 			// 土星：终点站，有引力（捕获要算相对速度）
-			orbiter(12000, R_SATURN, ORBIT.saturn, 198),
+			orbiter(12000, R_SATURN, ORBIT.saturn, 89.0),
 		],
 		visuals: [
 			sunVisual(),
@@ -399,9 +408,15 @@ const LEVELS: LevelDef[] = [
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
 			sun(),
-			// t0=0 时两颗**故意错位**（设计航线要 195.5° / 198°）：必须拖日期把它们拨到航线上。
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 315.5),
-			orbiter(12000, R_SATURN, ORBIT.saturn, 288),
+			// 设计航线（≈ 径向射出、依次穿过 105/135 环）要求两颗都在 **89.5°** 附近。
+			// 把它们摆成"**第 180 秒**才对齐"：t0=0 时木星在 29.3°、土星在 48.2°（明显错开 40°~60°），
+			// 玩家每按一次「加速▶」世界时间 +15 秒 ⇒ 木星挪 5.0°、土星挪 3.4°，按 12 次正好对上。
+			// 为什么是 180 而不是更小：**可行日期带本身有 ~180 秒宽**（方向窗口 ±30° ÷ 木星 0.335°/s），
+			// 所以只有把答案放得足够远，t0=0 才真的是"错开的"（实测 t0*=90 时前半段全是可行解，
+			// 玩家不用碰时间轴就能过 —— 这一关的教学就没了）。
+			// （旧值 315.5/288 同样是照一条不存在的弧线排的，任何日期都对不上。）
+			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3),
+			orbiter(12000, R_SATURN, ORBIT.saturn, 48.2),
 		],
 		visuals: [
 			sunVisual(),
@@ -420,9 +435,10 @@ const LEVELS: LevelDef[] = [
 		escapeRadius: 700,
 		maxSteps: 1800,
 		homeRadius: 1.35,
-		// 时间轴跨度 = 木星周期 / 3（约 360 秒 ≈ 它走 120°）：既拖得动、又能看清它在挪；
-		// ⚠️ 别把 span 设成一整个周期 —— "两颗同时在航线上"的窗口只有几十秒宽，滑杆会拖不准。
-		timeWindow: { span: keplerPeriod(ORBIT.jupiter) / 3 },
+		// 时间轴跨度：300 秒 = 木星走 100°。可行日期带（约 35–215 秒）整段都在里面，
+		// 而尾巴上 215–300 秒是"来晚了"—— 玩家能亲眼看到木星已经转过那条线，掉头按「◀回退」即可。
+		// ⚠️ 别把 span 设成一整个周期（1076 秒）：那样一大半行程是纯死区，玩家会以为自己算错了。
+		timeWindow: { span: 300 },
 	},
 	{
 		id: 5,
@@ -431,12 +447,14 @@ const LEVELS: LevelDef[] = [
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
 			sun(),
-			// 四颗按"设计航线"（240° 方向、速度 35 的绕日弧线）的穿越角排成一线：
-			// 这正是真实 Grand Tour 能成立的原因 —— 八十年代外侧四颗巨行星恰好连珠。
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 195.5),
-			orbiter(2000, R_SATURN, ORBIT.saturn, 203.1),
-			orbiter(1200, R_URANUS, ORBIT.uranus, 209.7),
-			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 216.4),
+			// 四颗**连珠**：都在 89.5°（= 从地球向外那条射线的方位）。这正是真实 Grand Tour 能成立的原因
+			// —— 八十年代外侧四颗巨行星恰好挤在同一小段方位上。相位由 tools/level-phases.mjs 解出：
+			// 修掉旧值（195.5/203.1/209.7/216.4，照一条撞太阳的弧线排的）之后，
+			// 能走通的点火方向从 6° 宽变成 **60°+ 宽**，这才是"多条路线"（设计稿第五章的原话）。
+			orbiter(2500, R_JUPITER, ORBIT.jupiter, 89.5),
+			orbiter(2000, R_SATURN, ORBIT.saturn, 89.5),
+			orbiter(1200, R_URANUS, ORBIT.uranus, 89.5),
+			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 89.5),
 		],
 		visuals: [
 			sunVisual(),
@@ -448,11 +466,17 @@ const LEVELS: LevelDef[] = [
 		// 大巡游（S3.7）：一次点火，依次掠过木 → 土 → 天 → 海。
 		goal: {
 			kind: 'planet', planetIndex: 1, tolerance: R_JUPITER + FLYBY_PAD,
+			// 容差 40/50/60/70（≈ 20° 的角窗口）：这是**四站串联**，每一站都要在正确的时刻
+			// 被够到，容差给足才谈得上"多条路线"。扫掠实测 26.6/30.3/33/37 → 7.2%，
+			// 40/50/60/70 → 17.5%（环本身就是画在容差半径上的，玩家看得见这个"圈"）。
 			chain: [
-				{ planetIndex: 1, tolerance: R_JUPITER + 22, label: '木星' },
-				{ planetIndex: 2, tolerance: R_SATURN + 26, label: '土星' },
-				{ planetIndex: 3, tolerance: R_URANUS + 30, label: '天王星' },
-				{ planetIndex: 4, tolerance: R_NEPTUNE + 34, label: '海王星', capture: true },
+				{ planetIndex: 1, tolerance: 40, label: '木星' },
+				{ planetIndex: 2, tolerance: 50, label: '土星' },
+				{ planetIndex: 3, tolerance: 60, label: '天王星' },
+				// ⚠️ 这里**不设**捕获（L3 一样）：L5 的决策是"路线规划"（怎么摆这条弧线），
+				// 再叠一个"到海王星还得慢下来"就变成两件事，而实测那会把可行路线砍掉 4/5（280 → 60 量级）。
+				// 捕获留在 L4 的土星 —— 那一关本来就是"选对日期才慢得下来"。
+				{ planetIndex: 4, tolerance: 70, label: '海王星' },
 			],
 		},
 		dvBudget: 55,
@@ -463,14 +487,19 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 6,
 		title: '单程',
-		brief: '航行日志 · 第 12 年：没有回程了。穿过四颗巨行星，飞出太阳系 —— 越过 260 单位就算离开。',
+		brief: '航行日志 · 第 12 年：没有回程了。四颗巨行星还会连成一条线 —— 等到那一天（拖动时间轴），沿着这条线依次穿过去，再越过 260 单位，就是星际空间。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
 			sun(),
-			orbiter(9400, R_JUPITER, ORBIT.jupiter, 200),
-			orbiter(7000, R_SATURN, ORBIT.saturn, 245),
-			orbiter(3200, R_URANUS, ORBIT.uranus, 290),
-			orbiter(2200, R_NEPTUNE, ORBIT.neptune, 335),
+			// 四颗与 L5 一样**连珠**（都在 89.5°）：终章的"穿过四颗巨行星"必须是真目标，
+			// 而不是一句文案 —— 见下面 goal.chain。
+			// phase0 是"第 **180 秒**才连珠"的解（tools/level-phases.mjs 的 t0* 口径）：
+			// t0=0 时木星在 29.3°（差 60°），玩家必须先把日期拨到 180 秒附近，四颗才排到出射线上。
+			// ⇒ 终章 = **综合**：空间（对准连珠）+ 能量（逃逸）+ 时间（等窗口）+ 多节点（四站）。
+			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3),
+			orbiter(2000, R_SATURN, ORBIT.saturn, 48.2),
+			orbiter(1200, R_URANUS, ORBIT.uranus, 58.9),
+			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 65.7),
 		],
 		visuals: [
 			sunVisual(),
@@ -480,11 +509,31 @@ const LEVELS: LevelDef[] = [
 			{ r: 0.34, g: 0.50, b: 0.86, displayRadius: R_NEPTUNE, ring: false, model: 'Planet_Neptune' },
 		],
 		// 逃逸半径 260 = 海王星轨道（195）之外：不是"飞远一点"，是真的离开这几颗行星的地盘。
-		goal: { kind: 'escape', planetIndex: -1, tolerance: 0 },
+		// 单程（S3.11）：终章 = **综合** —— 先沿连珠**依次穿过四颗巨行星**，再飞出 260。
+		//   ⚠️ 这一关是"两个条件都要"：resolveResult 对 kind='escape' **且带 chain** 的判定是
+		//   「航线走完 **并且** 真的越界」，只走完航线 / 只飞出去都不算（S3.11 新增的规则）。
+		//   （改之前这里只有 kind:'escape'：朝任何方向猛推一下就能过 —— 32% 的样本可行、
+		//     270° 的方向都算赢，"穿过四颗巨行星"纯粹是文案。）
+		goal: {
+			kind: 'escape', planetIndex: -1, tolerance: 0,
+			// 容差与 L5 同一套（40/50/60/70）：同一批巨行星、同一个"圈"的读法。
+			chain: [
+				{ planetIndex: 1, tolerance: 40, label: '木星' },
+				{ planetIndex: 2, tolerance: 50, label: '土星' },
+				{ planetIndex: 3, tolerance: 60, label: '天王星' },
+				{ planetIndex: 4, tolerance: 70, label: '海王星' },
+			],
+		},
+		// Δv 预算 50：逃逸（r=80 处需 ~37，飞过 260 需 ~37.1）意味着"至少花掉 3/4 的点火量"，
+		// 这正是"单程"的另一半意思 —— 没有回程的燃料。
 		dvBudget: 50,
 		escapeRadius: 260,
 		maxSteps: 2400,
 		homeRadius: 1.00,
+		// 时间轴（与 L4 同一套读数）：四颗巨行星的连珠窗口在第 90~240 秒之间，
+		// 之前是"还没连上来"、之后是"已经转过去了"——扫掠逐档成功数：
+		// ..111.568999999999999544（每档 12.5 秒）= 窗口真的会关。
+		timeWindow: { span: 300 },
 	},
 ];
 
