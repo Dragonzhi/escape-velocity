@@ -2,6 +2,8 @@
 local ____lualib = require("lualib_bundle") -- 1
 local __TS__NumberToFixed = ____lualib.__TS__NumberToFixed -- 1
 local ____exports = {} -- 1
+local ____Dora = require("Dora") -- 26
+local Vec3 = ____Dora.Vec3 -- 26
 local ____Gravity = require("game.Gravity") -- 28
 local bodyPositionAt = ____Gravity.bodyPositionAt -- 28
 local simulate = ____Gravity.simulate -- 28
@@ -20,6 +22,8 @@ local waypointProgress = ____LevelData.waypointProgress -- 33
 local ____Config = require("game.Config") -- 34
 local AimMinSpeed = ____Config.AimMinSpeed -- 34
 local FlightPlayback = ____Config.FlightPlayback -- 34
+local IntroCloseDist = ____Config.IntroCloseDist -- 34
+local IntroDurationSec = ____Config.IntroDurationSec -- 34
 local PhysicsStep = ____Config.PhysicsStep -- 34
 local PredictSteps = ____Config.PredictSteps -- 34
 --- 结算三态判定（手册 §5.8）。
@@ -158,184 +162,219 @@ function ____exports.createGame(level, deps) -- 235
 	end -- 238
 	local predKey = "" -- 256
 	local predPoints = {} -- 257
+	local introT = IntroDurationSec -- 259
+	local introLogged = false -- 260
 	--- 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。
-	local function goalRingsAt(t, upto) -- 260
-		local wps = goalWaypoints(level.goal) -- 261
-		if #wps == 0 then -- 261
-			return {} -- 262
-		end -- 262
-		local passed = 0 -- 263
-		if upto ~= nil and core.flight ~= nil then -- 263
-			passed = waypointProgress( -- 265
-				core.flight.points, -- 265
-				level.bodies, -- 265
-				level.goal, -- 265
-				core.dt, -- 265
-				core.t0, -- 265
-				upto -- 265
-			).passed -- 265
+	local function goalRingsAt(t, upto) -- 263
+		local wps = goalWaypoints(level.goal) -- 264
+		if #wps == 0 then -- 264
+			return {} -- 265
 		end -- 265
-		local rings = {} -- 267
-		do -- 267
-			local i = 0 -- 268
-			while i < #wps do -- 268
-				do -- 268
-					local body = level.bodies[wps[i + 1].planetIndex + 1] -- 269
-					if body == nil then -- 269
-						goto __continue25 -- 270
-					end -- 270
-					rings[#rings + 1] = { -- 271
-						center = bodyPositionAt(body, t), -- 271
-						radius = wps[i + 1].tolerance, -- 271
-						passed = i < passed -- 271
-					} -- 271
-				end -- 271
-				::__continue25:: -- 271
-				i = i + 1 -- 268
-			end -- 268
+		local passed = 0 -- 266
+		if upto ~= nil and core.flight ~= nil then -- 266
+			passed = waypointProgress( -- 268
+				core.flight.points, -- 268
+				level.bodies, -- 268
+				level.goal, -- 268
+				core.dt, -- 268
+				core.t0, -- 268
+				upto -- 268
+			).passed -- 268
 		end -- 268
-		return rings -- 273
-	end -- 260
-	local function updateAiming() -- 276
-		deps.aim:setEnabled(true) -- 277
-		deps.scene.syncBodies(core.t0) -- 279
-		deps.scene.syncProbe(level.probeStart) -- 280
-		local planetPts = {} -- 282
-		for ____, p in ipairs(deps.scene.planets) do -- 283
-			planetPts[#planetPts + 1] = bodyPositionAt(p.def, core.t0) -- 283
-		end -- 283
-		local frame = deps.rig.step( -- 285
-			{ -- 285
-				level.probeStart, -- 285
-				table.unpack(planetPts) -- 285
-			}, -- 285
-			deps.scene.probeRadius -- 285
-		) -- 285
-		deps.rig.apply(deps.camera, frame) -- 286
-		deps.scene.syncBackdrop(frame.eye, frame.target) -- 287
-		local basis = makeBasis(frame) -- 288
-		local pp = projectPrepared( -- 291
-			planeToWorld(level.probeStart, 0), -- 291
-			basis -- 291
-		) -- 291
-		if pp ~= nil then -- 291
-			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 292
-		end -- 292
-		local key = (((__TS__NumberToFixed(core.aim.velocity.x, 3) .. "|") .. __TS__NumberToFixed(core.aim.velocity.y, 3)) .. "|") .. __TS__NumberToFixed(core.t0, 3) -- 300
-		if key ~= predKey then -- 300
-			predKey = key -- 302
-			predPoints = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = core.aim.velocity.x, y = core.aim.velocity.y}}, level.bodies, { -- 303
-				steps = PredictSteps, -- 306
-				dt = core.dt, -- 306
-				sampleEvery = 4, -- 306
-				escapeRadius = level.escapeRadius, -- 306
-				t0 = core.t0 -- 306
-			}).points -- 306
-		end -- 306
-		deps.trajectory:setPrediction(predPoints, basis) -- 309
-		deps.trajectory:setGoalRings( -- 310
-			goalRingsAt(core.t0), -- 310
-			basis -- 310
-		) -- 310
-		deps.trajectory:clearTrail() -- 311
-	end -- 276
-	local function updateFlying(dt) -- 314
-		deps.aim:setEnabled(false) -- 315
-		local entered = ____exports.coreUpdate(core, dt) -- 316
-		if core.flight == nil then -- 316
-			return entered -- 317
-		end -- 317
-		local idx = ____exports.coreProbeIndex(core) -- 319
-		local pos = core.flight.points[idx + 1] -- 320
-		local t = core.flightTime -- 321
-		deps.scene.syncBodies(t) -- 323
-		deps.scene.syncProbe(pos) -- 324
-		if idx > 0 then -- 324
-			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 326
-		end -- 326
-		local planetPts = {} -- 329
-		for ____, p in ipairs(deps.scene.planets) do -- 330
-			planetPts[#planetPts + 1] = bodyPositionAt(p.def, t) -- 330
-		end -- 330
-		local frame = deps.rig.step( -- 332
-			{ -- 332
-				pos, -- 332
-				table.unpack(planetPts) -- 332
-			}, -- 332
-			deps.scene.probeRadius -- 332
-		) -- 332
-		deps.rig.apply(deps.camera, frame) -- 333
-		deps.scene.syncBackdrop(frame.eye, frame.target) -- 334
-		local basis = makeBasis(frame) -- 335
-		local trail = {} -- 338
-		do -- 338
-			local i = 0 -- 339
-			while i <= idx do -- 339
-				trail[#trail + 1] = core.flight.points[i + 1] -- 339
-				i = i + 1 -- 339
-			end -- 339
-		end -- 339
-		deps.trajectory:setTrail(trail, basis) -- 340
-		deps.trajectory:setGoalRings( -- 341
-			goalRingsAt(t, idx), -- 341
-			basis -- 341
-		) -- 341
-		return entered -- 343
-	end -- 314
-	local function update(dt) -- 346
-		if core.phase == "Aiming" then -- 346
-			updateAiming() -- 348
-		elseif core.phase == "Flying" then -- 348
-			local entered = updateFlying(dt) -- 350
-			if entered and core.result ~= nil then -- 350
-				deps:onResult(core.result) -- 352
-				deps:onPhase("Result") -- 353
-			end -- 353
-		end -- 353
+		if passed >= #wps then -- 268
+			return {} -- 273
+		end -- 273
+		local nextWp = wps[passed + 1] -- 274
+		local body = level.bodies[nextWp.planetIndex + 1] -- 275
+		if body == nil then -- 275
+			return {} -- 276
+		end -- 276
+		return {{ -- 277
+			center = bodyPositionAt(body, t), -- 277
+			radius = nextWp.tolerance, -- 277
+			passed = false -- 277
+		}} -- 277
+	end -- 263
+	local function updateAiming(dt) -- 280
+		deps.aim:setEnabled(true) -- 281
+		deps.scene.syncBodies(core.t0) -- 283
+		deps.scene.syncProbe(level.probeStart) -- 284
+		local planetPts = {} -- 286
+		for ____, p in ipairs(deps.scene.planets) do -- 287
+			planetPts[#planetPts + 1] = bodyPositionAt(p.def, core.t0) -- 287
+		end -- 287
+		local frame = deps.rig.step( -- 289
+			{ -- 289
+				level.probeStart, -- 289
+				table.unpack(planetPts) -- 289
+			}, -- 289
+			deps.scene.probeRadius -- 289
+		) -- 289
+		if introT < IntroDurationSec then -- 289
+			introT = introT + dt -- 292
+			local k = introT / IntroDurationSec -- 293
+			if k > 1 then -- 293
+				k = 1 -- 294
+			end -- 294
+			if k >= 1 and not introLogged then -- 294
+				introLogged = true -- 297
+				local t = frame.target -- 298
+				print((("[escape-velocity] intro camera: close=" .. __TS__NumberToFixed(IntroCloseDist, 0)) .. " -> wide=") .. __TS__NumberToFixed( -- 299
+					math.sqrt((frame.eye.x - t.x) * (frame.eye.x - t.x) + (frame.eye.y - t.y) * (frame.eye.y - t.y) + (frame.eye.z - t.z) * (frame.eye.z - t.z)), -- 299
+					0 -- 299
+				)) -- 299
+			end -- 299
+			local ease = 1 - (1 - k) * (1 - k) * (1 - k) -- 301
+			local pw = planeToWorld(level.probeStart, 0) -- 302
+			local dx = frame.eye.x - frame.target.x -- 303
+			local dy = frame.eye.y - frame.target.y -- 304
+			local dz = frame.eye.z - frame.target.z -- 305
+			local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 306
+			if len > 0.000001 then -- 306
+				local s = IntroCloseDist / len -- 308
+				dx = dx * s -- 309
+				dy = dy * s -- 309
+				dz = dz * s -- 309
+			end -- 309
+			local ctx = pw.x -- 311
+			local cty = pw.y -- 311
+			local ctz = pw.z -- 311
+			local cex = pw.x + dx -- 312
+			local cey = pw.y + dy -- 312
+			local cez = pw.z + dz -- 312
+			frame = { -- 313
+				target = Vec3(ctx + (frame.target.x - ctx) * ease, cty + (frame.target.y - cty) * ease, ctz + (frame.target.z - ctz) * ease), -- 314
+				eye = Vec3(cex + (frame.eye.x - cex) * ease, cey + (frame.eye.y - cey) * ease, cez + (frame.eye.z - cez) * ease) -- 315
+			} -- 315
+		end -- 315
+		deps.rig.apply(deps.camera, frame) -- 318
+		deps.scene.syncBackdrop(frame.eye, frame.target) -- 319
+		local basis = makeBasis(frame) -- 320
+		local pp = projectPrepared( -- 323
+			planeToWorld(level.probeStart, 0), -- 323
+			basis -- 323
+		) -- 323
+		if pp ~= nil then -- 323
+			deps.aim:setProbeOffset({x = pp.x, y = pp.y}) -- 324
+		end -- 324
+		local key = (((__TS__NumberToFixed(core.aim.velocity.x, 3) .. "|") .. __TS__NumberToFixed(core.aim.velocity.y, 3)) .. "|") .. __TS__NumberToFixed(core.t0, 3) -- 332
+		if key ~= predKey then -- 332
+			predKey = key -- 334
+			predPoints = simulate({pos = {x = level.probeStart.x, y = level.probeStart.y}, vel = {x = core.aim.velocity.x, y = core.aim.velocity.y}}, level.bodies, { -- 335
+				steps = PredictSteps, -- 338
+				dt = core.dt, -- 338
+				sampleEvery = 4, -- 338
+				escapeRadius = level.escapeRadius, -- 338
+				t0 = core.t0 -- 338
+			}).points -- 338
+		end -- 338
+		deps.trajectory:setPrediction(predPoints, basis) -- 341
+		deps.trajectory:setGoalRings( -- 342
+			goalRingsAt(core.t0), -- 342
+			basis -- 342
+		) -- 342
+		deps.trajectory:clearTrail() -- 343
+	end -- 280
+	local function updateFlying(dt) -- 346
+		deps.aim:setEnabled(false) -- 347
+		local entered = ____exports.coreUpdate(core, dt) -- 348
+		if core.flight == nil then -- 348
+			return entered -- 349
+		end -- 349
+		local idx = ____exports.coreProbeIndex(core) -- 351
+		local pos = core.flight.points[idx + 1] -- 352
+		local t = core.flightTime -- 353
+		deps.scene.syncBodies(t) -- 355
+		deps.scene.syncProbe(pos) -- 356
+		if idx > 0 then -- 356
+			deps.scene.faceVelocity(sub(pos, core.flight.points[idx])) -- 358
+		end -- 358
+		local planetPts = {} -- 361
+		for ____, p in ipairs(deps.scene.planets) do -- 362
+			planetPts[#planetPts + 1] = bodyPositionAt(p.def, t) -- 362
+		end -- 362
+		local frame = deps.rig.step( -- 364
+			{ -- 364
+				pos, -- 364
+				table.unpack(planetPts) -- 364
+			}, -- 364
+			deps.scene.probeRadius -- 364
+		) -- 364
+		deps.rig.apply(deps.camera, frame) -- 365
+		deps.scene.syncBackdrop(frame.eye, frame.target) -- 366
+		local basis = makeBasis(frame) -- 367
+		local trail = {} -- 370
+		do -- 370
+			local i = 0 -- 371
+			while i <= idx do -- 371
+				trail[#trail + 1] = core.flight.points[i + 1] -- 371
+				i = i + 1 -- 371
+			end -- 371
+		end -- 371
+		deps.trajectory:setTrail(trail, basis) -- 372
+		deps.trajectory:setGoalRings( -- 373
+			goalRingsAt(t, idx), -- 373
+			basis -- 373
+		) -- 373
+		return entered -- 375
 	end -- 346
-	return { -- 359
-		phase = function() return core.phase end, -- 360
-		result = function() return core.result end, -- 361
-		onAimDrag = function(____, a) -- 362
-			core.aim = a -- 363
-		end, -- 362
-		launch = function(____, v) -- 365
-			if core.phase ~= "Aiming" then -- 365
-				return -- 366
-			end -- 366
-			____exports.coreLaunch(core, v, level) -- 367
-			deps.trajectory:clearPrediction() -- 368
-			deps:onPhase("Flying") -- 369
-		end, -- 365
-		retry = function() -- 371
-			if core.phase ~= "Result" then -- 371
-				return -- 372
-			end -- 372
-			____exports.coreRetry(core) -- 373
-			deps.trajectory:clearTrail() -- 374
-			deps.trajectory:clearPrediction() -- 375
-			deps.trajectory:clearGoalRings() -- 376
-			deps:onPhase("Aiming") -- 377
-		end, -- 371
-		backToSelect = function() -- 379
-			if not ____exports.coreBackToSelect(core) then -- 379
-				return false -- 380
-			end -- 380
-			deps.aim:setEnabled(false) -- 382
-			deps.trajectory:clearTrail() -- 383
-			deps.trajectory:clearPrediction() -- 384
-			deps.trajectory:clearGoalRings() -- 385
-			deps:onPhase("LevelSelect") -- 386
-			return true -- 387
-		end, -- 379
-		startLevel = function() -- 389
-			____exports.coreRetry(core) -- 392
-			deps.trajectory:clearTrail() -- 393
-			deps.trajectory:clearPrediction() -- 394
-			deps.trajectory:clearGoalRings() -- 395
-			deps:onPhase("Aiming") -- 396
-		end, -- 389
-		update = function(____, frameDt) return update(frameDt) end -- 399
-	} -- 399
+	local function update(dt) -- 378
+		if core.phase == "Aiming" then -- 378
+			updateAiming(dt) -- 380
+		elseif core.phase == "Flying" then -- 380
+			local entered = updateFlying(dt) -- 382
+			if entered and core.result ~= nil then -- 382
+				deps:onResult(core.result) -- 384
+				deps:onPhase("Result") -- 385
+			end -- 385
+		end -- 385
+	end -- 378
+	return { -- 391
+		phase = function() return core.phase end, -- 392
+		result = function() return core.result end, -- 393
+		onAimDrag = function(____, a) -- 394
+			core.aim = a -- 395
+			introT = IntroDurationSec -- 396
+		end, -- 394
+		launch = function(____, v) -- 398
+			if core.phase ~= "Aiming" then -- 398
+				return -- 399
+			end -- 399
+			____exports.coreLaunch(core, v, level) -- 400
+			deps.trajectory:clearPrediction() -- 401
+			deps:onPhase("Flying") -- 402
+		end, -- 398
+		retry = function() -- 404
+			if core.phase ~= "Result" then -- 404
+				return -- 405
+			end -- 405
+			____exports.coreRetry(core) -- 406
+			deps.trajectory:clearTrail() -- 407
+			deps.trajectory:clearPrediction() -- 408
+			deps.trajectory:clearGoalRings() -- 409
+			deps:onPhase("Aiming") -- 410
+		end, -- 404
+		backToSelect = function() -- 412
+			if not ____exports.coreBackToSelect(core) then -- 412
+				return false -- 413
+			end -- 413
+			deps.aim:setEnabled(false) -- 415
+			deps.trajectory:clearTrail() -- 416
+			deps.trajectory:clearPrediction() -- 417
+			deps.trajectory:clearGoalRings() -- 418
+			deps:onPhase("LevelSelect") -- 419
+			return true -- 420
+		end, -- 412
+		startLevel = function() -- 422
+			____exports.coreRetry(core) -- 425
+			introT = 0 -- 426
+			introLogged = false -- 427
+			deps.trajectory:clearTrail() -- 428
+			deps.trajectory:clearPrediction() -- 429
+			deps.trajectory:clearGoalRings() -- 430
+			deps:onPhase("Aiming") -- 431
+		end, -- 422
+		update = function(____, frameDt) return update(frameDt) end -- 434
+	} -- 434
 end -- 235
 return ____exports -- 235

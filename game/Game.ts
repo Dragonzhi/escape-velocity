@@ -23,7 +23,7 @@
  *
  * 分层：`GameCore`（纯逻辑，可单测）+ `createGame`（驱动引擎对象）。
  */
-import { Camera3D } from 'Dora';
+import { Camera3D, Vec3 } from 'Dora';
 import { AimInput, AimResult } from 'game/Hud';
 import { Body, Outcome, P2, SimResult, bodyPositionAt, simulate, sub } from 'game/Gravity';
 import { GameScene, planeToWorld } from 'game/Scene';
@@ -31,7 +31,7 @@ import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { GoalSpec, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
-import { AimMinSpeed, FlightPlayback, PhysicsStep, PredictSteps } from 'game/Config';
+import { AimMinSpeed, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep, PredictSteps } from 'game/Config';
 
 /**
  * 游戏阶段。
@@ -255,6 +255,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	// （引擎启动时实测把主线程堵到 API 都超时）。所以只在"瞄准或日期变了"时重算，其余帧只重投影。
 	let predKey = '';
 	let predPoints: P2[] = [];
+	// 进关镜头（S3.9）：从"贴着探测器"缓动到"自动取景"（能看见下一站），1.4 秒；一拖就跳过。
+	let introT = IntroDurationSec;
+	let introLogged = false;
 
 	/** 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。 */
 	const goalRingsAt = (t: number, upto?: number): GoalRing[] => {
@@ -264,16 +267,17 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (upto !== undefined && core.flight !== undefined) {
 			passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, upto).passed;
 		}
-		const rings: GoalRing[] = [];
-		for (let i = 0; i < wps.length; i++) {
-			const body = level.bodies[wps[i].planetIndex];
-			if (body === undefined) continue;
-			rings.push({ center: bodyPositionAt(body, t), radius: wps[i].tolerance, passed: i < passed });
-		}
-		return rings;
+		// 只画**下一个**航点的环（S3.9 用户反馈："行星旁边的蓝色虚线圈是什么？"）。
+		// 四个航点同时亮四个圈，加上灰色的行星轨道圈，看起来像两套轨道 —— 目标环的语义只有"下一站"，
+		// 所以已经掠过的、还没轮到的都不画；掠过的航点靠 HUD 的航点灯表示。
+		if (passed >= wps.length) return [];
+		const nextWp = wps[passed];
+		const body = level.bodies[nextWp.planetIndex];
+		if (body === undefined) return [];
+		return [{ center: bodyPositionAt(body, t), radius: nextWp.tolerance, passed: false }];
 	};
 
-	const updateAiming = (): void => {
+	const updateAiming = (dt: number): void => {
 		deps.aim.setEnabled(true);
 		// D2 的时间模型 + S3.6.4 时间轴：瞄准态行星停在"发射日期"t0 的姿态（拖日期即改这一刻）
 		deps.scene.syncBodies(core.t0);
@@ -282,7 +286,35 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const planetPts: P2[] = [];
 		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, core.t0));
 
-		const frame = deps.rig.step([level.probeStart, ...planetPts], deps.scene.probeRadius);
+		let frame = deps.rig.step([level.probeStart, ...planetPts], deps.scene.probeRadius);
+		// 进关镜头（S3.9）：先贴住探测器（"你正在轨道上"），再缓动到能看见下一站的取景。
+		if (introT < IntroDurationSec) {
+			introT += dt;
+			let k = introT / IntroDurationSec;
+			if (k > 1) k = 1;
+			// 证据打点（只打一次）：进关镜头确实从"贴着探测器"拉到了"自动取景"。
+			if (k >= 1 && !introLogged) {
+				introLogged = true;
+				const t = frame.target;
+				print('[escape-velocity] intro camera: close=' + IntroCloseDist.toFixed(0) + ' -> wide=' + Math.sqrt((frame.eye.x - t.x) * (frame.eye.x - t.x) + (frame.eye.y - t.y) * (frame.eye.y - t.y) + (frame.eye.z - t.z) * (frame.eye.z - t.z)).toFixed(0));
+			}
+			const ease = 1 - (1 - k) * (1 - k) * (1 - k);
+			const pw = planeToWorld(level.probeStart, 0);
+			let dx = frame.eye.x - frame.target.x;
+			let dy = frame.eye.y - frame.target.y;
+			let dz = frame.eye.z - frame.target.z;
+			const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+			if (len > 1e-6) {
+				const s = IntroCloseDist / len;
+				dx *= s; dy *= s; dz *= s;
+			}
+			const ctx = pw.x, cty = pw.y, ctz = pw.z;
+			const cex = pw.x + dx, cey = pw.y + dy, cez = pw.z + dz;
+			frame = {
+				target: Vec3(ctx + (frame.target.x - ctx) * ease, cty + (frame.target.y - cty) * ease, ctz + (frame.target.z - ctz) * ease),
+				eye: Vec3(cex + (frame.eye.x - cex) * ease, cey + (frame.eye.y - cey) * ease, cez + (frame.eye.z - cez) * ease),
+			};
+		}
 		deps.rig.apply(deps.camera, frame);
 		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
@@ -345,7 +377,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	const update = (dt: number): void => {
 		if (core.phase === 'Aiming') {
-			updateAiming();
+			updateAiming(dt);
 		} else if (core.phase === 'Flying') {
 			const entered = updateFlying(dt);
 			if (entered && core.result !== undefined) {
@@ -361,6 +393,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		result: (): ResultKind | undefined => core.result,
 		onAimDrag: (a: AimResult): void => {
 			core.aim = a;
+			introT = IntroDurationSec; // 玩家一动手就跳过进关镜头（操作权优先）
 		},
 		launch: (v: P2): void => {
 			if (core.phase !== 'Aiming') return;
@@ -390,6 +423,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 复用 coreRetry 的“清空一切回到 Aiming”：它对相态没有守卫，
 			// 正好当作“重置本关”用（coreRetry 本身不改）。
 			coreRetry(core);
+			introT = 0; // 从选关进来才放一遍进关镜头（重试不重放）
+			introLogged = false;
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
 			deps.trajectory.clearGoalRings();

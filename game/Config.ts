@@ -30,6 +30,14 @@ export const PlaneToWorldX = 1;
 export const PlaneToWorldZ = 1;
 
 /**
+ * 进关镜头（S3.9 用户："小框是关卡一开始，然后逐渐变换到大的框，告知玩家目标地"）：
+ * 从贴着探测器（能看清它正在起飞）缓动到自动取景（能看见下一站）的时长与初始距离。
+ * 玩家一拖就跳过（见 Game.onAimDrag）。
+ */
+export const IntroDurationSec = 1.4;
+export const IntroCloseDist = 26;
+
+/**
  * 关卡轨道圈的着色（S3.9）：用户要求"行星要动，所以要有轨道指示，不起眼的灰就行"。
  * 开场用的是 0x3f5f88（偏蓝、更亮），关卡里要更沉 —— 它是背景参考线，不是 UI。
  */
