@@ -103,7 +103,9 @@ function sweepLevel(lv) {
 		for (let d = 0; d < dirCount; d++) {
 			const angle = (d * 2 * Math.PI) / dirCount;
 			for (const p of ps) {
-				const speed = AimMinSpeed + (AimMaxSpeed - AimMinSpeed) * p;
+				// 上限 = 这一关的 Δv 预算（S3.9.2b）；没写就用全局上限
+				const dvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
+				const speed = AimMinSpeed + (dvTop - AimMinSpeed) * p;
 				const vel = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
 				// ⚠️ sampleEvery=4 时必须把有效步长（4·dt）传给 findGoalIndex，
 				// 否则移动目标的时间轴是错的（测试里原来就是错的，已一并修）。

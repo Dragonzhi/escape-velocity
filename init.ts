@@ -195,7 +195,8 @@ if (levelTotal <= 0) {
 		// （竖屏 aspect 0.56 ⇒ 横向可用空间只有纵向一半，这两个值直接决定相机拉多远）
 		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio));
 		const trajectory = createTrajectoryView(levelLayers[index], trajectoryOptions());
-		const aim = createAimInput(levelLayers[index], viewW, viewH);
+		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
+		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget);
 
 		const game = createGame(level, {
 			scene,

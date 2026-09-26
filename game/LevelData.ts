@@ -83,6 +83,11 @@ export interface LevelDef {
 	planets: Body[];
 	visuals: PlanetVisualDef[];
 	goal: GoalSpec;
+	/**
+	 * Δv 预算（S3.9.2b，用户要求）：满力对应的速度就是它 —— "力大砖飞"要被挡住。
+	 * 有效上限 = `min(Config.AimMaxSpeed, dvBudget)`；刹车模式下两次点火共享这个数。
+	 */
+	dvBudget: number;
 	/** 越界半径（距原点 = 距太阳）。 */
 	escapeRadius: number;
 	maxSteps: number;
@@ -238,6 +243,7 @@ const LEVELS: LevelDef[] = [
 			{ r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false },
 		],
 		goal: { kind: 'planet', planetIndex: 0, tolerance: 14 },
+		dvBudget: 40,
 		escapeRadius: 700,
 		maxSteps: 1200,
 		homeRadius: 1.75,
@@ -257,6 +263,7 @@ const LEVELS: LevelDef[] = [
 			{ r: 0.90, g: 0.78, b: 0.55, displayRadius: R_VENUS, ring: false, model: 'Planet_Venus' },
 		],
 		goal: { kind: 'planet', planetIndex: 1, tolerance: R_VENUS + FLYBY_PAD },
+		dvBudget: 45,
 		escapeRadius: 700,
 		maxSteps: 1500,
 		homeRadius: 1.60,
@@ -287,6 +294,7 @@ const LEVELS: LevelDef[] = [
 				{ planetIndex: 2, tolerance: R_SATURN + 45, label: '土星' },
 			],
 		},
+		dvBudget: 55,
 		escapeRadius: 700,
 		maxSteps: 2400,
 		homeRadius: 1.45,
@@ -315,6 +323,7 @@ const LEVELS: LevelDef[] = [
 				{ planetIndex: 2, tolerance: R_SATURN + 30, label: '土星' },
 			],
 		},
+		dvBudget: 50,
 		escapeRadius: 700,
 		maxSteps: 1800,
 		homeRadius: 1.35,
@@ -353,6 +362,7 @@ const LEVELS: LevelDef[] = [
 				{ planetIndex: 4, tolerance: R_NEPTUNE + 34, label: '海王星' },
 			],
 		},
+		dvBudget: 55,
 		escapeRadius: 700,
 		maxSteps: 2400,
 		homeRadius: 1.25,
@@ -378,6 +388,7 @@ const LEVELS: LevelDef[] = [
 		],
 		// 逃逸半径 260 = 海王星轨道（195）之外：不是"飞远一点"，是真的离开这几颗行星的地盘。
 		goal: { kind: 'escape', planetIndex: -1, tolerance: 0 },
+		dvBudget: 50,
 		escapeRadius: 260,
 		maxSteps: 2400,
 		homeRadius: 1.00,

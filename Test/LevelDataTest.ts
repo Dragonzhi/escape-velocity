@@ -115,13 +115,18 @@ interface SweepStat {
  * 12 方向太粗会漏掉窄解（实测 L3/L5 的解在斜向速度上），所以非时间轴关用 24×6；
  * 时间轴关还要再乘 t0 档数，为控制引擎内耗时退回 12×4（× 24 档 t0 仍然有 1152 个样本）。
  */
+let levelDvTop = AimMaxSpeed;
+
 function grid(dirCount: number, powerCount: number): P2[] {
 	const out: P2[] = [];
 	for (let d = 0; d < dirCount; d++) {
 		const angle = (d * 2 * Math.PI) / dirCount;
 		for (let k = 0; k < powerCount; k++) {
-			const p = powerCount === 1 ? 1 : 0.35 + (0.65 * k) / (powerCount - 1);
-			const speed = AimMinSpeed + (AimMaxSpeed - AimMinSpeed) * p;
+			// 4 档用**历史网格**（0.35/0.6/0.85/1.0）—— tools/level-sweep.mjs 就是按它调数值的，
+			// 两边采样点必须一致，否则"工具说有解、测试说没解"（2026-09-26 实测踩到：L4 的窗口判据）。
+			const p = powerCount === 4 ? [0.35, 0.6, 0.85, 1.0][k] : (powerCount === 1 ? 1 : 0.35 + (0.65 * k) / (powerCount - 1));
+			// ⚠️ 上限要跟着**这一关的 Δv 预算**走，否则扫掠会给出玩家根本打不出来的解（S3.9.2b）
+			const speed = AimMinSpeed + (levelDvTop - AimMinSpeed) * p;
 			out.push({ x: Math.cos(angle) * speed, y: Math.sin(angle) * speed });
 		}
 	}
@@ -181,6 +186,7 @@ function testReachability(): SweepStat[] {
 		if (lv === undefined) { out.push(sweepLevel(lv, 12, 4, 1)); continue; }
 		// 时间轴关的 t0 要采密一点：L4 的"两颗巨行星同时在航线上"的窗口只有几十秒宽
 		const t0Count = lv.timeWindow !== undefined ? 24 : 1;
+		levelDvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
 		let stat = sweepLevel(lv, 12, 4, t0Count);
 		if (stat.solutions === 0) {
 			stat = sweepLevel(lv, 24, 6, lv.timeWindow !== undefined ? 24 : 1);

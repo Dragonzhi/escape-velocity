@@ -98,6 +98,14 @@ export const AimMinSpeed = 5;
 /** 发射速度上限（平面单位/秒）。满力时的速度。 */
 export const AimMaxSpeed = 55;
 
+/**
+ * 每关的 Δv 预算缺省值（没写 `LevelDef.dvBudget` 的关卡用它）。
+ *
+ * 用户 2026-09-26 的要求："需要一个 delta-v 之类的东西限制玩家可以施加给飞行器的力度，
+ * 避免力大砖飞、完全不顾及引力弹弓"。有效上限 = `min(AimMaxSpeed, dvBudget)`。
+ */
+export const DvBudgetDefault = 55;
+
 /** 拖动多远算“满力”（**视图像素**）。 */
 export const AimMaxDragPx = 380;
 

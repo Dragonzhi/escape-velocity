@@ -61,12 +61,15 @@ export interface AimResult {
  * @param probeOffset 探测器在投影偏移空间中的位置
  * @param touchOffset 触摸点在投影偏移空间中的位置
  * @param maxDragPx 拖动多少像素算满力
+ * @param maxSpeed 满力对应的速度（= 这一关的 Δv 预算）；省略 = 全局上限 `AimMaxSpeed`
  */
 export function computeAim(
 	probeOffset: ScreenOffset,
 	touchOffset: ScreenOffset,
 	maxDragPx: number,
+	maxSpeed?: number,
 ): AimResult {
+	const speedTop = maxSpeed !== undefined && maxSpeed > AimMinSpeed ? maxSpeed : AimMaxSpeed;
 	// 方向：从探测器指向触摸点（手册 §5.7）。
 	// 屏幕偏移空间是中心原点 +Y 向上（与 project() 一致，见 Projection.ts 约定 5）。
 	// 修正后的渲染方向：世界 -z（远离相机 = 平面 -y = 朝目标）在屏幕**上方**。
@@ -92,7 +95,7 @@ export function computeAim(
 	if (power < 0) power = 0;
 	if (power > 1) power = 1;
 
-	const speed = AimMinSpeed + (AimMaxSpeed - AimMinSpeed) * power;
+	const speed = AimMinSpeed + (speedTop - AimMinSpeed) * power;
 
 	return {
 		velocity: { x: ux * speed, y: uy * speed },
@@ -213,7 +216,10 @@ export function createAimInput(
 	parent: Node.Type,
 	viewW: number,
 	viewH: number,
+	/** 满力速度 = 这一关的 Δv 预算（S3.9.2b）；省略 = 全局上限 */
+	maxSpeed?: number,
 ): AimInput {
+	const speedTop = maxSpeed !== undefined && maxSpeed > AimMinSpeed ? maxSpeed : AimMaxSpeed;
 	const root = Node();
 	root.size = Size(viewW, viewH);
 	// ⚠️ anchor 必须是 (0,0)：子节点坐标以“位置 − anchor×尺寸”为原点，
@@ -257,7 +263,7 @@ export function createAimInput(
 
 	/** 用"相对按下点的位移"驱动一次瞄准（位移为 0 时即 computeAim 的中性解 = 直飞）。 */
 	const handleDelta = (delta: ScreenOffset): void => {
-		aim = computeAim({ x: 0, y: 0 }, delta, AimMaxDragPx);
+		aim = computeAim({ x: 0, y: 0 }, delta, AimMaxDragPx, speedTop);
 		if (dragHandler !== undefined) dragHandler(aim);
 	};
 

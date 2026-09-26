@@ -48,8 +48,13 @@ ____exports.CameraLerp = 0.1 -- 85
 ____exports.AimMinSpeed = 5 -- 96
 --- 发射速度上限（平面单位/秒）。满力时的速度。
 ____exports.AimMaxSpeed = 55 -- 99
+--- 每关的 Δv 预算缺省值（没写 `LevelDef.dvBudget` 的关卡用它）。
+-- 
+-- 用户 2026-09-26 的要求："需要一个 delta-v 之类的东西限制玩家可以施加给飞行器的力度，
+-- 避免力大砖飞、完全不顾及引力弹弓"。有效上限 = `min(AimMaxSpeed, dvBudget)`。
+____exports.DvBudgetDefault = 55 -- 107
 --- 拖动多远算“满力”（**视图像素**）。
-____exports.AimMaxDragPx = 380 -- 102
+____exports.AimMaxDragPx = 380 -- 110
 --- 飞行回放速度（模拟秒 / 真实秒）。1 = 实时；2 = 两倍速。
-____exports.FlightPlayback = 2 -- 105
-return ____exports -- 105
+____exports.FlightPlayback = 2 -- 113
+return ____exports -- 113
