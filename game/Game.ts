@@ -144,11 +144,19 @@ export function burnToMotion(
 	return { init, brake };
 }
 
-export function coreLaunch(core: GameCore, burn: P2, level: GameLevel): void {
+/**
+ * 发射：预推演整段飞行、判定目标与结算，并进入 Flying。只在 Aiming 态有效。
+ *
+ * `from`/`vel0` 是"点火那一刻探测器在哪、以什么速度前进"（S3.9.4：它会绕地球转，
+ * 所以不能写死 `level.probeStart`）；省略则退回出发姿态（无待机时钟的关卡/测试）。
+ */
+export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2, vel0?: P2): void {
 	if (core.phase !== 'Aiming') return;
-	const motion = burnToMotion(burn, level.probeVel0, core.brakeMode, level.maxSteps);
+	const base = vel0 !== undefined ? vel0 : level.probeVel0;
+	const motion = burnToMotion(burn, base, core.brakeMode, level.maxSteps);
+	const p0 = from !== undefined ? from : level.probeStart;
 	const flight = simulate(
-		{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: motion.init },
+		{ pos: { x: p0.x, y: p0.y }, vel: motion.init },
 		level.bodies,
 		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0, brake: motion.brake },
 	);
@@ -260,6 +268,11 @@ export interface Game {
 	 * 而选关是“开始一局新的”，必须能从 LevelSelect 进。
 	 */
 	startLevel: () => void;
+	/**
+	 * 设定发射日期（S3.9.2c，秒）：行星相位、预测线、待机轨迹都跟着它走。
+	 * 只有带 `timeWindow` 的关卡会调它。
+	 */
+	setLaunchDate: (t0: number) => void;
 	/** 刹车模式（S3.9.2）：开 = 一半点火、一半留给后半程反推。默认关。 */
 	setBrakeMode: (on: boolean) => void;
 	/** 读当前刹车模式（HUD 按钮同步用）。 */
@@ -297,6 +310,36 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let introT = IntroDurationSec;
 	let introLogged = false;
 
+	// ---- 待机时钟（S3.9.4）----
+	// 用户："飞行器不进行操控的时候会按照时间尺度绕地球转，在操控的时候时间变成超级慢或者干脆暂停。"
+	// 实现：`clock` 只在**没在拖**的时候走；`idlePath` 是"不点火时探测器自己会飞成什么样"（进关时算一次），
+	// 于是待机时探测器沿着它走、预测线就是它的后半段 —— 不用每帧重算，也不会和真实飞行分家。
+	let clock = 0;
+	let idlePath: SimResult | undefined = undefined;
+	/** 探测器**此刻**在哪 / 以什么速度前进（待机会绕着地球走，所以不能写死 probeStart）。 */
+	let probePos: P2 = { x: level.probeStart.x, y: level.probeStart.y };
+	let probeVel: P2 = level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 };
+	const prepareIdle = (): void => {
+		clock = 0;
+		if (level.probeVel0 === undefined) {
+			idlePath = undefined;
+			return;
+		}
+		idlePath = simulate(
+			{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: level.probeVel0.x, y: level.probeVel0.y } },
+			level.bodies,
+			{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0 },
+		);
+	};
+	const idleIndex = (): number => {
+		if (idlePath === undefined) return 0;
+		const n = idlePath.points.length;
+		if (n <= 1) return 0;
+		let i = Math.floor(clock / core.dt) % n;
+		if (i < 0) i = 0;
+		return i;
+	};
+
 	/** 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。 */
 	const goalRingsAt = (t: number, upto?: number): GoalRing[] => {
 		const wps = goalWaypoints(level.goal);
@@ -317,14 +360,24 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	const updateAiming = (dt: number): void => {
 		deps.aim.setEnabled(true);
-		// D2 的时间模型 + S3.6.4 时间轴：瞄准态行星停在"发射日期"t0 的姿态（拖日期即改这一刻）
-		deps.scene.syncBodies(core.t0);
-		deps.scene.syncProbe(level.probeStart);
+		// S3.9.4 待机时钟：**没在操控**时世界照常走（探测器沿自己的轨道绕地球转），一按下就冻结。
+		const dragging = deps.aim.isDragging();
+		if (!dragging && idlePath !== undefined) clock += dt;
+		const idx = idleIndex();
+		probePos = idlePath !== undefined ? idlePath.points[idx] : level.probeStart;
+		probeVel = idlePath !== undefined
+			? idlePath.velocities[idx]
+			: (level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 });
+		const tNow = core.t0 + clock;
+
+		deps.scene.syncBodies(tNow);
+		deps.scene.syncProbe(probePos);
+		if (idlePath !== undefined && idx > 0) deps.scene.faceVelocity(sub(probePos, idlePath.points[idx - 1]));
 
 		const planetPts: P2[] = [];
-		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, core.t0));
+		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, tNow));
 
-		let frame = deps.rig.step([level.probeStart, ...planetPts], deps.scene.probeRadius);
+		let frame = deps.rig.step([probePos, ...planetPts], deps.scene.probeRadius);
 		// 进关镜头（S3.9）：先贴住探测器（"你正在轨道上"），再缓动到能看见下一站的取景。
 		if (introT < IntroDurationSec) {
 			introT += dt;
@@ -337,7 +390,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				print('[escape-velocity] intro camera: close=' + IntroCloseDist.toFixed(0) + ' -> wide=' + Math.sqrt((frame.eye.x - t.x) * (frame.eye.x - t.x) + (frame.eye.y - t.y) * (frame.eye.y - t.y) + (frame.eye.z - t.z) * (frame.eye.z - t.z)).toFixed(0));
 			}
 			const ease = 1 - (1 - k) * (1 - k) * (1 - k);
-			const pw = planeToWorld(level.probeStart, 0);
+			const pw = planeToWorld(probePos, 0);
 			let dx = frame.eye.x - frame.target.x;
 			let dy = frame.eye.y - frame.target.y;
 			let dz = frame.eye.z - frame.target.z;
@@ -358,7 +411,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const basis = makeBasis(frame);
 
 		// 探测器屏幕位置（拖动方向的基准）
-		const pp = projectPrepared(planeToWorld(level.probeStart, 0), basis);
+		const pp = projectPrepared(planeToWorld(probePos, 0), basis);
 		if (pp !== undefined) deps.aim.setProbeOffset({ x: pp.x, y: pp.y });
 
 		// ⚠️ 预测线必须**每帧**重画，不能只在拖动时重画：
@@ -367,19 +420,26 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 看起来“不是从探测器出发”（实测踩过）。
 		// 代价：每帧 600 步 simulate + ~150 点投影，可忽略。
 		// 只在瞄准/日期变化时重算（同一次拖动里每帧都算一遍是浪费；投影仍然每帧做）。
-		const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + core.t0.toFixed(3) + '|' + (core.brakeMode ? 'B' : 'C');
-		if (key !== predKey) {
-			predKey = key;
-			// ⚠️ 与 coreLaunch 共用 burnToMotion：预测线里必须带上反推段，否则"看到的 ≠ 飞到的"
-			const motion = burnToMotion(core.aim.velocity, level.probeVel0, core.brakeMode, level.maxSteps);
-			predPoints = simulate(
-				{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: motion.init },
-				level.bodies,
-				{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: core.t0, brake: motion.brake },
-			).points;
+		if (!dragging && idlePath !== undefined) {
+			// 待机：预测线 = "什么都不做会飞到哪" = 待机轨迹的**后半段**（不必重算）
+			deps.trajectory.setPrediction(idlePath.points.slice(idx), basis);
+		} else {
+			const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + core.t0.toFixed(3) +
+				'|' + (core.brakeMode ? 'B' : 'C') + '|' + idx.toFixed(0);
+			if (key !== predKey) {
+				predKey = key;
+				// ⚠️ 与 coreLaunch 共用 burnToMotion：预测线里必须带上反推段，否则"看到的 ≠ 飞到的"
+				// 基准是**此刻**的探测器状态（待机时它在动，不是 probeStart）。
+				const motion = burnToMotion(core.aim.velocity, probeVel, core.brakeMode, level.maxSteps);
+				predPoints = simulate(
+					{ pos: { x: probePos.x, y: probePos.y }, vel: motion.init },
+					level.bodies,
+					{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: tNow, brake: motion.brake },
+				).points;
+			}
+			deps.trajectory.setPrediction(predPoints, basis);
 		}
-		deps.trajectory.setPrediction(predPoints, basis);
-		deps.trajectory.setGoalRings(goalRingsAt(core.t0), basis);
+		deps.trajectory.setGoalRings(goalRingsAt(tNow), basis);
 		deps.trajectory.clearTrail();
 	};
 
@@ -437,7 +497,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		launch: (v: P2): void => {
 			if (core.phase !== 'Aiming') return;
-			coreLaunch(core, v, level); // v 是"点火"，折算成初速 + 反推段在 coreLaunch 里统一做
+			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）
+			coreLaunch(core, v, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
 			deps.onPhase('Flying');
 		},
@@ -465,10 +526,16 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			coreRetry(core);
 			introT = 0; // 从选关进来才放一遍进关镜头（重试不重放）
 			introLogged = false;
+			prepareIdle();
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
 			deps.trajectory.clearGoalRings();
 			deps.onPhase('Aiming');
+		},
+		setLaunchDate: (t0: number): void => {
+			core.t0 = t0;
+			// 待机轨迹要按新日期重算（行星相位变了 ⇒ 探测器局部的轨道几乎不变，但预测线的相位要对）
+			prepareIdle();
 		},
 		setBrakeMode: (on: boolean): void => {
 			core.brakeMode = on;

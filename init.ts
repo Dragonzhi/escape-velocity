@@ -115,6 +115,11 @@ if (levelTotal <= 0) {
 	let activeIndex = -1;
 	let select: LevelSelect | undefined = undefined;
 	let resultPanel: ResultPanel | undefined = undefined;
+	// ⚠️ 面板是**全局唯一**的，但结算属于某一关：记住这个 index，
+	// 点按只作用在**它自己那一关**的运行时上。
+	// 之前用 activeRuntime()：一旦 activeIndex 与面板显示的关卡不一致（切关/自动回归序列），
+	// 回调就会作用到另一关（那一关在 Aiming 态）⇒ 点了完全没反应（用户报的"有时没效果"）。
+	let resultIndex = -1;
 
 	const activeRuntime = (): LevelRuntime | undefined => {
 		if (activeIndex < 0) return undefined;
@@ -202,6 +207,14 @@ if (levelTotal <= 0) {
 		const trajectory = createTrajectoryView(levelLayers[index], trajectoryOptions());
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
 		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget);
+		// 进关先给一个初值：满力 = 这一关的 Δv 预算
+		aim.setBurnInfo(0, def.dvBudget);
+		// 发射日期滑杆（S3.9.2c）：只有带 timeWindow 的关卡才启用
+		aim.setDate(0, def.timeWindow !== undefined ? def.timeWindow.span : 0);
+		aim.onDate((t0: number): void => {
+			game.setLaunchDate(t0);
+			print('[escape-velocity] launch date t0=' + t0.toFixed(0) + ' (L' + (index + 1).toFixed(0) + ')');
+		});
 
 		const game = createGame(level, {
 			scene,
@@ -227,6 +240,7 @@ if (levelTotal <= 0) {
 					}
 				}
 				print('[escape-velocity] result = ' + r + ' on ' + levelNames[index]);
+				resultIndex = index; // 面板显示的是**这一关**的结算（见 resultIndex 的说明）
 				if (resultPanel !== undefined) resultPanel.show(r, levelNames[index]);
 			},
 		});
@@ -234,7 +248,11 @@ if (levelTotal <= 0) {
 		// ⚠️ 把瞄准层接到状态机上（S2.2 重写 init.ts 时漏掉这两行，真机表现为
 		// “进关卡拖不动飞行器”：触摸收到了，但 aim 的拖动/松手回调没人接，
 		// 于是预测线不跟手、松手也不发射。旧版 init.ts(7cb72b0) 里就是这两行。）
-		aim.onDrag((a: AimResult): void => { game.onAimDrag(a); });
+		aim.onDrag((a: AimResult): void => {
+			game.onAimDrag(a);
+			// Δv 读数：本次点火的大小（拖动时实时变）
+			aim.setBurnInfo(Math.sqrt(a.velocity.x * a.velocity.x + a.velocity.y * a.velocity.y), def.dvBudget);
+		});
 		aim.onRelease((a: AimResult): void => { game.launch(a.velocity); });
 		// 刹车模式（S3.9.2）：按钮只表达意图，状态在 GameCore 里；顺手打一行日志便于回归验证。
 		aim.onBrake((on: boolean): void => {
@@ -275,15 +293,28 @@ if (levelTotal <= 0) {
 		print('[escape-velocity] enter ' + runtime.name);
 	};
 
+/** 结算面板那一关的运行时（面板显示的 index；越界就退回当前关）。 */
+	const resultRuntime = (): LevelRuntime | undefined => {
+		if (resultIndex >= 0 && resultIndex < levelTotal) {
+			const rt = slots[resultIndex].runtime;
+			if (rt !== undefined) return rt;
+		}
+		return activeRuntime();
+	};
+
 	const onRetryTap = (): void => {
+		// 打点：区分"按钮没触发"与"触发了但状态机没动"（用户报过"结算按钮有时没反应"）
+		const rt = resultRuntime();
+		print('[escape-velocity] tap: retry (resultIndex=' + resultIndex.toFixed(0) + ' phase=' + (rt !== undefined ? rt.game.phase() : 'none') + ')');
 		if (resultPanel !== undefined) resultPanel.hide();
-		const runtime = activeRuntime();
-		if (runtime !== undefined) runtime.game.retry();
+		if (rt !== undefined) rt.game.retry();
 	};
 
 	const onBackToSelectTap = (): void => {
-		const runtime = activeRuntime();
-		if (runtime === undefined) return;
+		const rt = resultRuntime();
+		print('[escape-velocity] tap: back-to-select (resultIndex=' + resultIndex.toFixed(0) + ' phase=' + (rt !== undefined ? rt.game.phase() : 'none') + ')');
+		if (rt === undefined) return;
+		const runtime = rt;
 		// 只有 Result 态才允许返回（coreBackToSelect 会把关），否则这次点按作废
 		if (!runtime.game.backToSelect()) return;
 		runtime.world.visible = false;
@@ -313,6 +344,7 @@ if (levelTotal <= 0) {
 		const created = createLevelSelect(uiLayer, viewW, viewH, {
 			levels: levelEntries,
 			onPick: (index: number): void => {
+				print('[escape-velocity] tap: pick L' + (index + 1).toFixed(0));
 				if (select !== undefined) select.hide();
 				enterLevel(index);
 			},

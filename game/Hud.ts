@@ -29,7 +29,7 @@
  * 全部使用**属性式箭头函数类型**，避免 TSTL 为对象成员函数引入隐式 self
  * （见手册 §7.2.1 坑 1）。
  */
-import { Node, Size, Vec2 } from 'Dora';
+import { Color, DrawNode, Node, Size, Touch, Vec2 } from 'Dora';
 import { CameraBasis, screenToPlaneY } from 'game/Projection';
 import { P2 } from 'game/Gravity';
 import { AimMaxDragPx, AimMaxSpeed, AimMinSpeed, PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
@@ -201,6 +201,23 @@ export interface AimInput {
 	onBrake: (callback: (on: boolean) => void) => void;
 	/** 由主循环同步当前刹车状态（切关卡/重试后按钮文字要跟着变）。 */
 	setBrake: (on: boolean) => void;
+	/**
+	 * 是否正在操控（S3.9.4）：没在拖的时候世界照常走（探测器绕地球转），
+	 * 一按下就冻结 —— 玩家看到的预测线永远是他"此刻"要发的这一发。
+	 */
+	isDragging: () => boolean;
+	/** 更新 Δv 读数（本次点火要花多少 / 这一关给了多少），拖动时由主循环调用。 */
+	setBurnInfo: (burn: number, budget: number) => void;
+	/**
+	 * 发射日期滑杆（S3.9.2c）：注册"日期变了"的回调（参数是秒）。
+	 * 只有带 `timeWindow` 的关卡才有这条滑杆，别的关卡它整块隐藏且**断触摸**。
+	 */
+	onDate: (callback: (t0: number) => void) => void;
+	/**
+	 * 设置滑杆的量程与当前值：`span <= 0` = 这一关没有时间轴 ⇒ 滑杆整块隐藏且**断触摸**。
+	 * （隐藏而不关触摸的层会吞掉整个区域的点击 —— 真机验收踩过，见 AGENTS 硬约束 4。）
+	 */
+	setDate: (t0: number, span: number) => void;
 	/** 根节点：调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
 }
@@ -340,6 +357,60 @@ export function createAimInput(
 		brakeButtons[0].setColors(brakeOn ? ResultButtonAltBgHex : ResultButtonBgHex, ResultButtonFgHex);
 		brakeButtons[1].setColors(brakeOn ? ResultButtonBgHex : ResultButtonAltBgHex, ResultButtonFgHex);
 	};
+	// ---- Δv 读数（S3.9.2b 用户："德塔V的限制没有 UI 的显示，不明不白"）----
+	// 左上角一行字：本次点火要花多少 / 这一关给了多少；拖动时实时更新。
+	const dvLabel = createLabel(root, 'Δv — / —', 30, ResultHintHex);
+	if (dvLabel !== undefined) {
+		dvLabel.position = Vec2(24, viewH - 44);
+		dvLabel.anchor = Vec2(0, 0);
+	}
+
+	// ---- 发射日期滑杆（S3.9.2c）----
+	// 只有 L4 这种"行星位置随日期变"的关卡才建；别的关卡 setDateEnabled(false) ⇒ 隐藏 + 断触摸。
+	let dateHandler: ((t0: number) => void) | undefined = undefined;
+	let dateSpan = 0;
+	let dateValue = 0;
+	const SliderH = 72;
+	const SliderW = Math.max(220, viewW - 48);
+	const slider = Node();
+	slider.size = Size(SliderW, SliderH);
+	slider.anchor = Vec2(0, 0);
+	slider.touchEnabled = false; // 默认关（没有 timeWindow 的关卡不启用）
+	slider.swallowTouches = true;
+	slider.position = Vec2(24, viewH - 96 - SliderH);
+	const sliderDraw = DrawNode();
+	slider.addChild(sliderDraw);
+	const sliderLabel = createLabel(slider, '发射日期', 30, ResultHintHex);
+	if (sliderLabel !== undefined) {
+		sliderLabel.position = Vec2(0, SliderH - 4);
+		sliderLabel.anchor = Vec2(0, 0);
+	}
+	const paintSlider = (): void => {
+		sliderDraw.clear();
+		// 轨道
+		sliderDraw.drawPolygon([Vec2(0, 10), Vec2(SliderW, 10), Vec2(SliderW, 22), Vec2(0, 22)], Color(40, 55, 74, 255));
+		// 滑块（当前日期位置）
+		const k = dateSpan > 0 ? dateValue / dateSpan : 0;
+		const kx = k * (SliderW - 18);
+		sliderDraw.drawPolygon([Vec2(kx, 4), Vec2(kx + 18, 4), Vec2(kx + 18, 28), Vec2(kx, 28)], Color(120, 200, 255, 255));
+	};
+	const setDateFromLocal = (localX: number): void => {
+		if (dateSpan <= 0) return;
+		let k = localX / SliderW;
+		if (k < 0) k = 0;
+		if (k > 1) k = 1;
+		dateValue = k * dateSpan;
+		paintSlider();
+		setLabelText(sliderLabel, '发射日期 ' + dateValue.toFixed(0) + ' / ' + dateSpan.toFixed(0) + ' 秒');
+		if (dateHandler !== undefined) dateHandler(dateValue);
+	};
+	slider.onTapBegan((touch: Touch.Type): void => { setDateFromLocal(touch.location.x); });
+	slider.onTapMoved((touch: Touch.Type): void => { setDateFromLocal(touch.location.x); });
+	// ⚠️ 注册完回调后再关触摸（引擎会把 onTapXxx 的节点 touchEnabled 置 true）
+	slider.touchEnabled = false;
+	paintSlider();
+	root.addChild(slider);
+
 	const brakeRightX = viewW - BrakeButtonW - 20;
 	makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
 	makeBrakeButton('刹车', true, brakeRightX);
@@ -367,6 +438,24 @@ export function createAimInput(
 		setBrake: (on: boolean): void => {
 			brakeOn = on;
 			paintBrake();
+		},
+		onDate: (callback: (t0: number) => void): void => {
+			dateHandler = callback;
+		},
+		setDate: (t0: number, span: number): void => {
+			dateSpan = span > 0 ? span : 0;
+			dateValue = t0 < 0 ? 0 : (t0 > dateSpan ? dateSpan : t0);
+			// 没有时间轴的关卡：整块隐藏 + 断触摸（AGENTS 硬约束 4）
+			slider.visible = dateSpan > 0;
+			slider.touchEnabled = dateSpan > 0;
+			setLabelText(sliderLabel, dateSpan > 0
+				? '发射日期 ' + dateValue.toFixed(0) + ' / ' + dateSpan.toFixed(0) + ' 秒'
+				: '发射日期');
+			paintSlider();
+		},
+		isDragging: (): boolean => dragging,
+		setBurnInfo: (burn: number, budget: number): void => {
+			setLabelText(dvLabel, 'Δv ' + burn.toFixed(1) + ' / ' + budget.toFixed(0));
 		},
 		current: (): AimResult => aim,
 		setProbeOffset: (offset: ScreenOffset): void => {
