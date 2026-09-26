@@ -14,6 +14,27 @@
 
 ## 变更日志
 
+### 会话 35 · S3.9.2 捕获入轨：实施顺序与锚点（本轮上下文用尽，实现留下一轮）
+
+**本轮结论（重要）**：捕获判据「相对速度 ≤ k × 该处圆轨道速度」（用户选的 k = 1.0）**必须和「刹车模式」一起上**，
+否则单次点火的到达速度压不下来（转移的接近速度 ~10–20 单位/秒，而捕获阈值 ≈ sqrt(gm/d) 只有 3–5）。
+实施顺序因此固定为：**推力剖面（coast/brake）→ 逐关打开捕获 → 时间滑杆**。
+
+**下一轮照做的三件事（含锚点，省得重新找）**：
+
+1. `game/LevelData.ts`：`WaypointSpec` 加 `capture?` / `captureFactor?`（锚点 `label?: string;` + `}`）；
+   新增 `bodyVelocityAt(b, t)`（插在 `export function goalWaypoints` 之前）；`waypointProgress` 的命中分支加捕获
+   （锚点：`next += 1;` / `lastIndex = i;` 两行，插在它们前面）；速度用相邻采样点差分，行星自身速度用 `bodyVelocityAt`。
+   ⚠️ 踩过：这三个编辑被**重复应用**过一次（多编辑程序中途失败时，前面的编辑其实已经落盘）⇒ 报 `Duplicate identifier`
+   与 `Cannot redeclare bodyVelocityAt`。教训：**多编辑失败后先 `git diff` 看哪些已生效，再决定重放哪些**。
+2. `SimOptions.thrust = { dv, profile }`（`game/Gravity.ts`）：沿速度方向逐帧加/减速；预测线与真实飞行共用；
+   两次点火**共享 `dvBudget`**。
+3. 时间滑杆（S3.9.2c）：底部滑杆 + 触摸分层（建在瞄准层之后、只在 `Aiming` 且有 `timeWindow` 时开），
+   拖动 ⇒ `core.t0` ⇒ 行星相位实时挪位。
+
+**本轮已提交**：Δv 预算 `b47e1f3`、绕地球出发 `f90ffed`、进关镜头 + 到达环收窄 `b0e10c4`、轨道圈 `c112a37`、
+参考图标定 `060c995`、S3.9 计划 `0f808bb`。工作区干净、构建 41/41。
+
 ### 会话 34 · 绕地球出发（S3.9.3，用户"飞行器一开始就在运动，围绕地球"）
 
 - `LevelDef.probeVel0`：出发时**已经有的速度**。L1 = 绕地球的圆轨道速度（`{x:12,y:0}`，切向）。
