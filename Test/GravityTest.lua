@@ -274,36 +274,124 @@ local function testGravityBends() -- 199
 		((("y=" .. __TS__NumberToFixed(r.state.pos.y, 4)) .. " 应小于 ") .. tostring(straightY)) .. "（被吸向原点）" -- 208
 	) -- 208
 end -- 199
+--- 10) 反推段（S3.9.2「刹车模式」）：`SimOptions.brake` 的契约。
+-- 
+-- 不变量（这些就是"刹车"在游戏里能被信任的理由）：
+--   ① `brake: { dv: 0 }` 与"完全不传 brake"**逐点一致**（旧行为逐位不变）；
+--   ② 无引力时，末速度 = 初速度 − dv（总量准确，不是"看起来慢了点"）；
+--   ③ 反推开始之前，轨迹与 coast **逐点一致**（前段不受影响 ⇒ 预测线前半段可信）；
+--   ④ 反推不会把速度推成反向（0 处夹住）。
+local function testBrake() -- 220
+	local dtLike = 1 / 120 -- 222
+	local none = {} -- 223
+	local base = {steps = 600, dt = dtLike, sampleEvery = 1, escapeRadius = 0} -- 224
+	local init = {pos = {x = 0, y = 0}, vel = {x = 10, y = 0}} -- 225
+	local coast = simulate(init, none, base) -- 227
+	local zero = simulate(init, none, { -- 228
+		steps = 600, -- 228
+		dt = dtLike, -- 228
+		sampleEvery = 1, -- 228
+		escapeRadius = 0, -- 228
+		brake = {dv = 0} -- 228
+	}) -- 228
+	local same = #coast.points == #zero.points -- 229
+	if same then -- 229
+		do -- 229
+			local i = 0 -- 231
+			while i < #coast.points do -- 231
+				if coast.points[i + 1].x ~= zero.points[i + 1].x or coast.points[i + 1].y ~= zero.points[i + 1].y then -- 231
+					same = false -- 232
+					break -- 232
+				end -- 232
+				i = i + 1 -- 231
+			end -- 231
+		end -- 231
+	end -- 231
+	check( -- 235
+		"brake-zero-identical", -- 235
+		same, -- 235
+		((("dv=0 应与不传 brake 逐点一致（" .. tostring(#coast.points)) .. " vs ") .. tostring(#zero.points)) .. " 点）" -- 235
+	) -- 235
+	local braked = simulate(init, none, { -- 237
+		steps = 600, -- 237
+		dt = dtLike, -- 237
+		sampleEvery = 1, -- 237
+		escapeRadius = 0, -- 237
+		brake = {dv = 4} -- 237
+	}) -- 237
+	local vEnd = math.sqrt(braked.state.vel.x * braked.state.vel.x + braked.state.vel.y * braked.state.vel.y) -- 238
+	check( -- 239
+		"brake-total-dv", -- 239
+		math.abs(vEnd - 6) < 0.000001, -- 239
+		("末速度=" .. __TS__NumberToFixed(vEnd, 6)) .. " 期望 10-4=6" -- 239
+	) -- 239
+	check( -- 241
+		"brake-distance", -- 241
+		math.abs(braked.state.pos.x - 45) < 0.05, -- 241
+		("brake x=" .. __TS__NumberToFixed(braked.state.pos.x, 3)) .. " 期望 45" -- 241
+	) -- 241
+	check( -- 242
+		"brake-shorter", -- 242
+		braked.state.pos.x < coast.state.pos.x, -- 242
+		(("brake=" .. __TS__NumberToFixed(braked.state.pos.x, 1)) .. " coast=") .. __TS__NumberToFixed(coast.state.pos.x, 1) -- 242
+	) -- 242
+	local frontSame = true -- 245
+	do -- 245
+		local i = 0 -- 246
+		while i < 300 and i < #braked.points do -- 246
+			if braked.points[i + 1].x ~= coast.points[i + 1].x or braked.points[i + 1].y ~= coast.points[i + 1].y then -- 246
+				frontSame = false -- 247
+				break -- 247
+			end -- 247
+			i = i + 1 -- 246
+		end -- 246
+	end -- 246
+	check("brake-front-untouched", frontSame, "反推开始之前的轨迹应与 coast 逐点一致") -- 249
+	local stop = simulate(init, none, { -- 252
+		steps = 600, -- 252
+		dt = dtLike, -- 252
+		sampleEvery = 1, -- 252
+		escapeRadius = 0, -- 252
+		brake = {dv = 999} -- 252
+	}) -- 252
+	local vStop = math.sqrt(stop.state.vel.x * stop.state.vel.x + stop.state.vel.y * stop.state.vel.y) -- 253
+	check( -- 254
+		"brake-clamps-at-zero", -- 254
+		vStop < 0.000001, -- 254
+		"反推过量时应停在 0：末速度=" .. __TS__NumberToFixed(vStop, 9) -- 254
+	) -- 254
+end -- 220
 --- 入口：运行全部测试并返回报告。首行为 passed / failed。
-function ____exports.runTests() -- 212
-	testDeterminism() -- 213
-	testStraightLine() -- 214
-	testCircularOrbit() -- 215
-	testCrash() -- 216
-	testEscape() -- 217
-	testOrbit() -- 218
-	testInverseSquare() -- 219
-	testScales() -- 220
-	testSampling() -- 221
-	testGravityBends() -- 222
-	local lines = {} -- 224
-	if #failures == 0 then -- 224
-		lines[#lines + 1] = "passed" -- 226
-	else -- 226
-		lines[#lines + 1] = "failed" -- 228
-	end -- 228
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 230
-	local limit = #failures < 12 and #failures or 12 -- 231
-	do -- 231
-		local i = 0 -- 232
-		while i < limit do -- 232
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 233
-			i = i + 1 -- 232
-		end -- 232
-	end -- 232
-	if #failures > limit then -- 232
-		lines[#lines + 1] = ("... and " .. tostring(#failures - limit)) .. " more failures" -- 235
-	end -- 235
-	return table.concat(lines, "\n") -- 236
-end -- 212
-return ____exports -- 212
+function ____exports.runTests() -- 258
+	testDeterminism() -- 259
+	testStraightLine() -- 260
+	testCircularOrbit() -- 261
+	testCrash() -- 262
+	testEscape() -- 263
+	testOrbit() -- 264
+	testInverseSquare() -- 265
+	testScales() -- 266
+	testSampling() -- 267
+	testGravityBends() -- 268
+	testBrake() -- 269
+	local lines = {} -- 271
+	if #failures == 0 then -- 271
+		lines[#lines + 1] = "passed" -- 273
+	else -- 273
+		lines[#lines + 1] = "failed" -- 275
+	end -- 275
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 277
+	local limit = #failures < 12 and #failures or 12 -- 278
+	do -- 278
+		local i = 0 -- 279
+		while i < limit do -- 279
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 280
+			i = i + 1 -- 279
+		end -- 279
+	end -- 279
+	if #failures > limit then -- 279
+		lines[#lines + 1] = ("... and " .. tostring(#failures - limit)) .. " more failures" -- 282
+	end -- 282
+	return table.concat(lines, "\n") -- 283
+end -- 258
+return ____exports -- 258

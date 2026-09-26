@@ -136,6 +136,8 @@ if (levelTotal <= 0) {
 			const active = i === index;
 			slot.runtime.world.visible = active;
 			slot.runtime.aim.setEnabled(active);
+			// 切到这一关时把刹车按钮同步成它的当前状态（每关一份 runtime ⇒ 按钮文字会各记一份）
+			if (active) slot.runtime.aim.setBrake(slot.runtime.game.brakeMode());
 		}
 	};
 
@@ -234,6 +236,12 @@ if (levelTotal <= 0) {
 		// 于是预测线不跟手、松手也不发射。旧版 init.ts(7cb72b0) 里就是这两行。）
 		aim.onDrag((a: AimResult): void => { game.onAimDrag(a); });
 		aim.onRelease((a: AimResult): void => { game.launch(a.velocity); });
+		// 刹车模式（S3.9.2）：按钮只表达意图，状态在 GameCore 里；顺手打一行日志便于回归验证。
+		aim.onBrake((on: boolean): void => {
+			game.setBrakeMode(on);
+			print('[escape-velocity] brake mode = ' + (on ? 'on' : 'off') + ' (L' + (index + 1).toFixed(0) + ')');
+		});
+		aim.setBrake(game.brakeMode());
 
 			const runtime: LevelRuntime = {
 			index,

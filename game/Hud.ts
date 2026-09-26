@@ -194,6 +194,13 @@ export interface AimInput {
 	debugProbeOffset: () => ScreenOffset;
 	/** 直接以“投影偏移空间坐标”驱动一次拖动（测试用，跳过坐标转换）。 */
 	handleOffset: (offset: ScreenOffset) => void;
+	/**
+	 * 刹车模式（S3.9.2）：注册"点了刹车按钮"的回调；init 把它接到 `Game.setBrakeMode`。
+	 * 按钮只负责表达意图，不碰 GameCore（分层原则见手册 §4.1）。
+	 */
+	onBrake: (callback: (on: boolean) => void) => void;
+	/** 由主循环同步当前刹车状态（切关卡/重试后按钮文字要跟着变）。 */
+	setBrake: (on: boolean) => void;
 	/** 根节点：调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
 }
@@ -296,6 +303,48 @@ export function createAimInput(
 	// “切到第二关后怎么拖都没反应”。
 	touchLayer.touchEnabled = false;
 
+	// ---- 刹车模式开关（S3.9.2）----
+	// 位置：右上角。⚠️ 必须在 touchLayer **之后** addChild：Dora 的命中按节点顺序取最上面的那个，
+	// 放在前面会被全屏的触摸层独吞（"按钮点不到、只当成一次瞄准拖动"）。
+	let brakeHandler: ((on: boolean) => void) | undefined = undefined;
+	const BrakeButtonW = 116;
+	const BrakeButtonH = 64;
+	const brakeGap = 8;
+	// ⚠️ 为什么是**两个按钮**而不是一个开关：实测一次合成点击会被引擎投递两次
+	//    （鼠标 + 触摸两条路）⇒ 单按钮的"取反"会开了又关（净效果 = 没反应）。
+	//    两段式天然幂等：双击同一侧只是把同一个状态设两遍。
+	const brakeButtons: UiButton[] = [];
+	const makeBrakeButton = (text: string, on: boolean, x: number): void => {
+		const btn = createButton(root, {
+			w: BrakeButtonW,
+			h: BrakeButtonH,
+			text,
+			fontSize: 30,
+			bgHex: ResultButtonAltBgHex,
+			fgHex: ResultButtonFgHex,
+			borderHex: ResultButtonBorderHex,
+			onTap: (): void => {
+				// 先更新本地状态并重绘，再通知外面 —— 只通知的话按钮颜色不会跟着变
+				// （实测：状态切了、日志也对，但玩家看不出自己点中了哪一个）。
+				brakeOn = on;
+				paintBrake();
+				if (brakeHandler !== undefined) brakeHandler(on);
+			},
+		});
+		btn.root.position = Vec2(x, viewH - BrakeButtonH - 20);
+		brakeButtons.push(btn);
+	};
+	let brakeOn = false;
+	const paintBrake = (): void => {
+		if (brakeButtons.length < 2) return;
+		brakeButtons[0].setColors(brakeOn ? ResultButtonAltBgHex : ResultButtonBgHex, ResultButtonFgHex);
+		brakeButtons[1].setColors(brakeOn ? ResultButtonBgHex : ResultButtonAltBgHex, ResultButtonFgHex);
+	};
+	const brakeRightX = viewW - BrakeButtonW - 20;
+	makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
+	makeBrakeButton('刹车', true, brakeRightX);
+	paintBrake();
+
 	parent.addChild(root);
 
 	return {
@@ -311,6 +360,13 @@ export function createAimInput(
 			// 底下的关卡层永远收不到（多关并存时这是致命的）
 			touchLayer.touchEnabled = value;
 			if (!value) dragging = false;
+		},
+		onBrake: (callback: (on: boolean) => void): void => {
+			brakeHandler = callback;
+		},
+		setBrake: (on: boolean): void => {
+			brakeOn = on;
+			paintBrake();
 		},
 		current: (): AimResult => aim,
 		setProbeOffset: (offset: ScreenOffset): void => {

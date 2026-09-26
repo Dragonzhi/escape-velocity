@@ -81,6 +81,27 @@ export interface SimOptions {
 	 * ⚠️ 预测线与真实飞行必须传同一个 t0，否则又是「看到的 ≠ 飞到的」。
 	 */
 	t0?: number;
+	/**
+	 * 反推段（S3.9.2「刹车模式」）：从第 startStep 步起，每步沿 **-v̂** 扣掉固定 Δv。
+	 *
+	 * 为什么用"恒定推力"而不是一次性反向脉冲：① 视觉上预测线**后半段变平**（用户要的"前半段加速、
+	 * 后半段减速"）；② 总量 = brake.dv（只跟步数有关、与帧率无关，确定性不破）。
+	 * 省略 = 不反推（= 旧的"点火后惯性滑行"）。
+	 */
+	brake?: BrakeThrust;
+}
+
+/**
+ * 反推段参数。
+ *
+ * ⚠️ Δv 预算是**共享**的：点火用它、反推也用它（`Game.dvSplit` 决定怎么分），
+ * 所以"刹得越狠 ⇒ 冲得越慢"是算术，不是口号。
+ */
+export interface BrakeThrust {
+	/** 反推总 Δv（速度单位）。 */
+	dv: number;
+	/** 从第几步开始反推；省略 = steps / 2（"后半程减速"）。 */
+	startStep?: number;
 }
 
 export interface SimResult {
@@ -199,10 +220,28 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 
 	const escape2 = opts.escapeRadius > 0 ? opts.escapeRadius * opts.escapeRadius : 0;
 
+	// 反推段（见 SimOptions.brake）：总 Δv 均摊到剩余步数 ⇒ 每步固定的减速度。
+	const brake = opts.brake;
+	const brakeStart = brake !== undefined ? (brake.startStep !== undefined ? brake.startStep : Math.floor(opts.steps / 2)) : -1;
+	const brakeSteps = brake !== undefined ? Math.max(1, opts.steps - brakeStart) : 1;
+	const brakeDvPerStep = brake !== undefined ? brake.dv / brakeSteps : 0;
+
 	for (let i = 0; i < opts.steps; i++) {
 		s = step(s, bodies, t, opts.dt);
 		t += opts.dt;
 		stepsRun += 1;
+
+		if (brake !== undefined && i >= brakeStart) {
+			const sp = Math.sqrt(s.vel.x * s.vel.x + s.vel.y * s.vel.y);
+			if (sp > 1e-9) {
+				// 不越过 0：反推不会把探测器推成"倒着走"（那读起来像 bug，而且不物理）
+				const dv = sp > brakeDvPerStep ? brakeDvPerStep : sp;
+				s = {
+					pos: s.pos,
+					vel: { x: s.vel.x - (s.vel.x / sp) * dv, y: s.vel.y - (s.vel.y / sp) * dv },
+				};
+			}
+		}
 
 		const hit = collisionIndex(bodies, s.pos, t);
 		if (hit >= 0) {

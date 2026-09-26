@@ -208,6 +208,52 @@ function testGravityBends(): void {
 	check('gravity-pulls-inward', r.state.pos.y < straightY, `y=${r.state.pos.y.toFixed(4)} 应小于 ${straightY}（被吸向原点）`);
 }
 
+/**
+ * 10) 反推段（S3.9.2「刹车模式」）：`SimOptions.brake` 的契约。
+ *
+ * 不变量（这些就是"刹车"在游戏里能被信任的理由）：
+ *   ① `brake: { dv: 0 }` 与"完全不传 brake"**逐点一致**（旧行为逐位不变）；
+ *   ② 无引力时，末速度 = 初速度 − dv（总量准确，不是"看起来慢了点"）；
+ *   ③ 反推开始之前，轨迹与 coast **逐点一致**（前段不受影响 ⇒ 预测线前半段可信）；
+ *   ④ 反推不会把速度推成反向（0 处夹住）。
+ */
+function testBrake(): void {
+	// 本模块不依赖 Config（纯逻辑单测）⇒ dt 自己写一个和游戏一致的固定步长
+	const dtLike = 1 / 120;
+	const none: Body[] = [];
+	const base: SimOptions = { steps: 600, dt: dtLike, sampleEvery: 1, escapeRadius: 0 };
+	const init: ProbeState = { pos: { x: 0, y: 0 }, vel: { x: 10, y: 0 } };
+
+	const coast = simulate(init, none, base);
+	const zero = simulate(init, none, { steps: 600, dt: dtLike, sampleEvery: 1, escapeRadius: 0, brake: { dv: 0 } });
+	let same = coast.points.length === zero.points.length;
+	if (same) {
+		for (let i = 0; i < coast.points.length; i++) {
+			if (coast.points[i].x !== zero.points[i].x || coast.points[i].y !== zero.points[i].y) { same = false; break; }
+		}
+	}
+	check('brake-zero-identical', same, `dv=0 应与不传 brake 逐点一致（${coast.points.length} vs ${zero.points.length} 点）`);
+
+	const braked = simulate(init, none, { steps: 600, dt: dtLike, sampleEvery: 1, escapeRadius: 0, brake: { dv: 4 } });
+	const vEnd = Math.sqrt(braked.state.vel.x * braked.state.vel.x + braked.state.vel.y * braked.state.vel.y);
+	check('brake-total-dv', Math.abs(vEnd - 6) < 1e-6, `末速度=${vEnd.toFixed(6)} 期望 10-4=6`);
+	// 无引力下距离可以精确预测：前 2.5 秒 ×10 + 后 2.5 秒 ×(10→6 均速 8) = 25 + 20 = 45（coast 是 50）
+	check('brake-distance', Math.abs(braked.state.pos.x - 45) < 0.05, `brake x=${braked.state.pos.x.toFixed(3)} 期望 45`);
+	check('brake-shorter', braked.state.pos.x < coast.state.pos.x, `brake=${braked.state.pos.x.toFixed(1)} coast=${coast.state.pos.x.toFixed(1)}`);
+
+	// 前半段（前 300 步）必须与 coast 一致：反推默认从 steps/2 开始
+	let frontSame = true;
+	for (let i = 0; i < 300 && i < braked.points.length; i++) {
+		if (braked.points[i].x !== coast.points[i].x || braked.points[i].y !== coast.points[i].y) { frontSame = false; break; }
+	}
+	check('brake-front-untouched', frontSame, '反推开始之前的轨迹应与 coast 逐点一致');
+
+	// 强到把速度推光的反推：夹在 0，不倒着飞
+	const stop = simulate(init, none, { steps: 600, dt: dtLike, sampleEvery: 1, escapeRadius: 0, brake: { dv: 999 } });
+	const vStop = Math.sqrt(stop.state.vel.x * stop.state.vel.x + stop.state.vel.y * stop.state.vel.y);
+	check('brake-clamps-at-zero', vStop < 1e-6, `反推过量时应停在 0：末速度=${vStop.toFixed(9)}`);
+}
+
 /** 入口：运行全部测试并返回报告。首行为 passed / failed。 */
 export function runTests(): string {
 	testDeterminism();
@@ -220,6 +266,7 @@ export function runTests(): string {
 	testScales();
 	testSampling();
 	testGravityBends();
+	testBrake();
 
 	const lines: string[] = [];
 	if (failures.length === 0) {

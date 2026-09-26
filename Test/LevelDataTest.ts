@@ -8,7 +8,7 @@
  */
 import { P2, simulate } from 'game/Gravity';
 import { GoalSpec, findGoalIndex, getLevel, levelCount, scaledPlanets } from 'game/LevelData';
-import { AimMaxSpeed, AimMinSpeed, PhysicsStep } from 'game/Config';
+import { AimMaxSpeed, AimMinSpeed, BrakeShare, PhysicsStep } from 'game/Config';
 import { resolveResult } from 'game/Game';
 
 interface Failure {
@@ -118,9 +118,14 @@ interface SweepStat {
 let levelDvTop = AimMaxSpeed;
 /** 出发时已有的速度（S3.9.3，L1 = 绕地球的圆轨道）；扫掠的初速度 = 它 + 这一次点火。 */
 let levelVel0: P2 = { x: 0, y: 0 };
+/** 这一遍扫掠用不用**刹车模式**（S3.9.2：两次点火共享 Δv ⇒ 点火只拿一半）。 */
+let levelBrake = false;
 
-function grid(dirCount: number, powerCount: number): P2[] {
-	const out: P2[] = [];
+/** 一个采样：初速度向量 + 留给后半程反推的 Δv（0 = 纯惯性）。 */
+interface Sample { vel: P2; brakeDv: number }
+
+function grid(dirCount: number, powerCount: number): Sample[] {
+	const out: Sample[] = [];
 	for (let d = 0; d < dirCount; d++) {
 		const angle = (d * 2 * Math.PI) / dirCount;
 		for (let k = 0; k < powerCount; k++) {
@@ -129,7 +134,13 @@ function grid(dirCount: number, powerCount: number): P2[] {
 			const p = powerCount === 4 ? [0.35, 0.6, 0.85, 1.0][k] : (powerCount === 1 ? 1 : 0.35 + (0.65 * k) / (powerCount - 1));
 			// ⚠️ 上限要跟着**这一关的 Δv 预算**走，否则扫掠会给出玩家根本打不出来的解（S3.9.2b）
 			const speed = AimMinSpeed + (levelDvTop - AimMinSpeed) * p;
-			out.push({ x: Math.cos(angle) * speed + levelVel0.x, y: Math.sin(angle) * speed + levelVel0.y });
+			// 与 Game.burnToMotion 同一套折算：刹车模式下点火只拿 BrakeShare，其余留给反推段。
+			// （这段镜像关系由 tools/level-sweep.mjs 与 GameTest 一起守着 —— 两边不一致会让扫掠骗人。）
+			const share = levelBrake ? BrakeShare : 1;
+			out.push({
+				vel: { x: Math.cos(angle) * speed * share + levelVel0.x, y: Math.sin(angle) * speed * share + levelVel0.y },
+				brakeDv: levelBrake ? speed * (1 - share) : 0,
+			});
 		}
 	}
 	return out;
@@ -153,11 +164,14 @@ function sweepLevel(lv: ReturnType<typeof getLevel>, dirCount: number, powerCoun
 		const t0 = t0s[ti];
 		stat.t0s.push(t0);
 		let hits = 0;
-		for (const v of vs) {
+		for (const sample of vs) {
 			const sim = simulate(
-				{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel: v },
+				{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel: sample.vel },
 				bodies,
-				{ steps: lv.maxSteps, dt: PhysicsStep, sampleEvery: sampleEvery, escapeRadius: lv.escapeRadius, t0 },
+				{
+					steps: lv.maxSteps, dt: PhysicsStep, sampleEvery: sampleEvery, escapeRadius: lv.escapeRadius, t0,
+					brake: sample.brakeDv > 0 ? { dv: sample.brakeDv, startStep: Math.floor(lv.maxSteps / 2) } : undefined,
+				},
 			);
 			// ⚠️ 有效步长必须是 sampleEvery · dt：传 PhysicsStep 会让移动目标的时间轴错位
 			// （采样点 i 的真实时刻是 t0 + i · sampleEvery · dt）。
@@ -167,8 +181,8 @@ function sweepLevel(lv: ReturnType<typeof getLevel>, dirCount: number, powerCoun
 				stat.solutions += 1;
 				hits += 1;
 				if (stat.best === '') {
-					const angle = Math.atan2(v.y, v.x) * 180 / Math.PI;
-					stat.best = `dir=${angle.toFixed(0)}deg v=${Math.sqrt(v.x * v.x + v.y * v.y).toFixed(1)} t0=${t0.toFixed(1)}`;
+					const angle = Math.atan2(sample.vel.y, sample.vel.x) * 180 / Math.PI;
+					stat.best = `dir=${angle.toFixed(0)}deg v=${Math.sqrt(sample.vel.x * sample.vel.x + sample.vel.y * sample.vel.y).toFixed(1)} t0=${t0.toFixed(1)}${levelBrake ? ' brake' : ''}`;
 				}
 			}
 		}
@@ -190,9 +204,16 @@ function testReachability(): SweepStat[] {
 		const t0Count = lv.timeWindow !== undefined ? 24 : 1;
 		levelDvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
 		levelVel0 = lv.probeVel0 !== undefined ? lv.probeVel0 : { x: 0, y: 0 };
+		// 三级升级：① 12×4 惯性；② 密网格 惯性；③ 12×4 **刹车模式**（S3.9.2 —— 两次点火共享 Δv，
+		// 是"到达时能减速"的另一条路，捕放入轨要靠它）。任何一级过了就算这一关有解。
+		levelBrake = false;
 		let stat = sweepLevel(lv, 12, 4, t0Count);
 		if (stat.solutions === 0) {
 			stat = sweepLevel(lv, 24, 6, lv.timeWindow !== undefined ? 24 : 1);
+		}
+		if (stat.solutions === 0) {
+			levelBrake = true;
+			stat = sweepLevel(lv, 12, 4, t0Count);
 		}
 		out.push(stat);
 		check(`lv${lv.id}-reachable`, stat.solutions > 0,

@@ -53,8 +53,11 @@ ____exports.AimMaxSpeed = 55 -- 99
 -- 用户 2026-09-26 的要求："需要一个 delta-v 之类的东西限制玩家可以施加给飞行器的力度，
 -- 避免力大砖飞、完全不顾及引力弹弓"。有效上限 = `min(AimMaxSpeed, dvBudget)`。
 ____exports.DvBudgetDefault = 55 -- 107
+--- 刹车模式下的 Δv 分配（S3.9.2）：拖动力度 = 总 Δv，其中这一份用于**点火**，
+-- 剩下的留给后半程反推 —— 于是"刹得越狠 ⇒ 冲得越慢"是算术（共享同一个预算）。
+____exports.BrakeShare = 0.75 -- 113
 --- 拖动多远算“满力”（**视图像素**）。
-____exports.AimMaxDragPx = 380 -- 110
+____exports.AimMaxDragPx = 380 -- 120
 --- 飞行回放速度（模拟秒 / 真实秒）。1 = 实时；2 = 两倍速。
-____exports.FlightPlayback = 2 -- 113
-return ____exports -- 113
+____exports.FlightPlayback = 2 -- 123
+return ____exports -- 123

@@ -19,7 +19,7 @@
  * 字体：`Label()` 可能返回 undefined（字体缺失）。所有创建函数都把 undefined
  * 原样交给调用方，由调用方决定是“跳过这一行字”还是报错（手册 §7.1）。
  */
-import { Color, DrawNode, Label, Node, Size, Vec2 } from 'Dora';
+import { App, Color, DrawNode, Label, Node, Size, Vec2 } from 'Dora';
 
 /** 项目统一字体（与现有 UI 一致）。 */
 export const FontName = 'sarasa-mono-sc-regular';
@@ -211,6 +211,9 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 	const draw = DrawNode();
 	root.addChild(draw);
 
+	// 防抖时间戳（秒）：见 onTapEnded 里的说明
+	let lastTapAt = -1;
+
 	// 居中锚点的文字，位置取按钮的几何中心
 	const label = createLabel(root, opts.text, opts.fontSize, opts.fgHex);
 	if (label !== undefined) label.position = Vec2(opts.w / 2, opts.h / 2);
@@ -239,6 +242,12 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 		if (!enabled) return;
 		pressed = false;
 		repaint();
+		// ⚠️ 实测（2026-09-26，合成点击点「刹车」按钮）：**一次点击会被投递两次** ——
+		//    引擎的鼠标与触摸两条路都会走到 onTapEnded，切换型按钮因此"开了又立刻关"。
+		//    0.5 秒防抖：双投递是同一瞬间，而人不可能 0.5 秒内在同一按钮上点两次。
+		const now = App.elapsedTime;
+		if (lastTapAt >= 0 && now - lastTapAt < 0.5) return;
+		lastTapAt = now;
 		opts.onTap();
 	});
 

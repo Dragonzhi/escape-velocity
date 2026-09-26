@@ -1,6 +1,7 @@
 -- [ts]: Ui.ts
 local ____exports = {} -- 1
 local ____Dora = require("Dora") -- 22
+local App = ____Dora.App -- 22
 local Color = ____Dora.Color -- 22
 local DrawNode = ____Dora.DrawNode -- 22
 local Label = ____Dora.Label -- 22
@@ -161,62 +162,68 @@ function ____exports.createButton(parent, opts) -- 204
 	root.swallowTouches = true -- 209
 	local draw = DrawNode() -- 211
 	root:addChild(draw) -- 212
-	local label = ____exports.createLabel(root, opts.text, opts.fontSize, opts.fgHex) -- 215
-	if label ~= nil then -- 215
-		label.position = Vec2(opts.w / 2, opts.h / 2) -- 216
-	end -- 216
-	local bgHex = opts.bgHex -- 218
-	local fgHex = opts.fgHex -- 219
-	local enabled = true -- 220
-	local pressed = false -- 221
-	local function repaint() -- 223
-		local bg = pressed and ____exports.shadeHex(bgHex, 1.45) or bgHex -- 224
-		draw:clear() -- 225
-		draw:drawPolygon( -- 226
-			____exports.rectVerts(opts.w, opts.h), -- 226
-			____exports.colorFromHex(bg, 1) -- 226
-		) -- 226
-		if opts.borderHex ~= nil then -- 226
-			draw:drawPolygon( -- 228
-				____exports.rectVerts(opts.w, opts.h), -- 228
-				____exports.colorFromHex(0, 0), -- 228
-				2, -- 228
-				____exports.colorFromHex(opts.borderHex, 1) -- 228
-			) -- 228
-		end -- 228
-		____exports.setLabelColor(label, fgHex) -- 230
-	end -- 223
-	root:onTapBegan(function() -- 233
-		if not enabled then -- 233
-			return -- 234
-		end -- 234
-		pressed = true -- 235
-		repaint() -- 236
-	end) -- 233
-	root:onTapEnded(function() -- 238
-		if not enabled then -- 238
-			return -- 239
-		end -- 239
-		pressed = false -- 240
-		repaint() -- 241
-		opts:onTap() -- 242
-	end) -- 238
-	repaint() -- 245
-	parent:addChild(root) -- 246
-	return { -- 248
-		root = root, -- 249
-		setText = function(____, text) return ____exports.setLabelText(label, text) end, -- 250
-		setEnabled = function(____, value) -- 251
-			enabled = value -- 252
-			root.touchEnabled = value -- 255
-			pressed = false -- 256
-			repaint() -- 257
-		end, -- 251
-		setColors = function(____, bg, fg) -- 259
-			bgHex = bg -- 260
-			fgHex = fg -- 261
-			repaint() -- 262
-		end -- 259
-	} -- 259
+	local lastTapAt = -1 -- 215
+	local label = ____exports.createLabel(root, opts.text, opts.fontSize, opts.fgHex) -- 218
+	if label ~= nil then -- 218
+		label.position = Vec2(opts.w / 2, opts.h / 2) -- 219
+	end -- 219
+	local bgHex = opts.bgHex -- 221
+	local fgHex = opts.fgHex -- 222
+	local enabled = true -- 223
+	local pressed = false -- 224
+	local function repaint() -- 226
+		local bg = pressed and ____exports.shadeHex(bgHex, 1.45) or bgHex -- 227
+		draw:clear() -- 228
+		draw:drawPolygon( -- 229
+			____exports.rectVerts(opts.w, opts.h), -- 229
+			____exports.colorFromHex(bg, 1) -- 229
+		) -- 229
+		if opts.borderHex ~= nil then -- 229
+			draw:drawPolygon( -- 231
+				____exports.rectVerts(opts.w, opts.h), -- 231
+				____exports.colorFromHex(0, 0), -- 231
+				2, -- 231
+				____exports.colorFromHex(opts.borderHex, 1) -- 231
+			) -- 231
+		end -- 231
+		____exports.setLabelColor(label, fgHex) -- 233
+	end -- 226
+	root:onTapBegan(function() -- 236
+		if not enabled then -- 236
+			return -- 237
+		end -- 237
+		pressed = true -- 238
+		repaint() -- 239
+	end) -- 236
+	root:onTapEnded(function() -- 241
+		if not enabled then -- 241
+			return -- 242
+		end -- 242
+		pressed = false -- 243
+		repaint() -- 244
+		local now = App.elapsedTime -- 248
+		if lastTapAt >= 0 and now - lastTapAt < 0.5 then -- 248
+			return -- 249
+		end -- 249
+		lastTapAt = now -- 250
+		opts:onTap() -- 251
+	end) -- 241
+	repaint() -- 254
+	parent:addChild(root) -- 255
+	return { -- 257
+		root = root, -- 258
+		setText = function(____, text) return ____exports.setLabelText(label, text) end, -- 259
+		setEnabled = function(____, value) -- 260
+			enabled = value -- 261
+			root.touchEnabled = value -- 264
+			pressed = false -- 265
+			repaint() -- 266
+		end, -- 260
+		setColors = function(____, bg, fg) -- 268
+			bgHex = bg -- 269
+			fgHex = fg -- 270
+			repaint() -- 271
+		end -- 268
+	} -- 268
 end -- 204
 return ____exports -- 204

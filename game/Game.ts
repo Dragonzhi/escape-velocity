@@ -25,13 +25,13 @@
  */
 import { Camera3D, Vec3 } from 'Dora';
 import { AimInput, AimResult } from 'game/Hud';
-import { Body, Outcome, P2, SimResult, bodyPositionAt, simulate, sub } from 'game/Gravity';
+import { Body, BrakeThrust, Outcome, P2, SimResult, bodyPositionAt, simulate, sub } from 'game/Gravity';
 import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { GoalSpec, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
-import { AimMinSpeed, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep, PredictSteps } from 'game/Config';
+import { AimMinSpeed, BrakeShare, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep, PredictSteps } from 'game/Config';
 
 /**
  * 游戏阶段。
@@ -82,6 +82,11 @@ export interface GameCore {
 	/** 物理步长（回放索引用）。 */
 	dt: number;
 	/**
+	 * 刹车模式（S3.9.2）：开 = 点火只拿一半 Δv，另一半留给后半程反推（`maxSteps / 2` 起）。
+	 * 玩家用 HUD 上的一颗按钮切；默认关（关 = 旧的"点火后惯性滑行"，手感不变）。
+	 */
+	brakeMode: boolean;
+	/**
 	 * 发射时刻（秒）= S3.6.4 时间轴上的"发射日期"。
 	 * 行星位置、预测线、真实飞行**必须**用同一个 t0（否则又变成"看到的 ≠ 飞到的"）。
 	 */
@@ -100,6 +105,7 @@ export function createCore(): GameCore {
 		aim: { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } },
 		flight: undefined,
 		dt: PhysicsStep,
+		brakeMode: false,
 		t0: 0,
 		flightTime: 0,
 		goalIndex: -1,
@@ -108,18 +114,43 @@ export function createCore(): GameCore {
 }
 
 /**
+ * 把"点火"折算成 (初始速度, 反推段) —— **预测线与真实发射共用这一份**（S3.9.2）。
+ *
+ * - 总初速度 = 出发时已有的速度（L1 = 绕地球的圆轨道）+ 点火；
+ * - 刹车模式下点火只拿 `BrakeShare`，剩下的 Δv 交给后半程反推（开始于 `maxSteps / 2`）。
+ *
+ * 两边各写一份是这类系统最容易烂的地方：改了一边忘了另一边，就变成"看到的 ≠ 飞到的"。
+ */
+/**
  * 发射：预推演整段飞行、判定目标与结算，并进入 Flying。
  * 只在 Aiming 态有效。
  *
  * 结算在**这一刻**就完全确定（确定性设计的直接推论）：
  * 轨迹、目标到达点、撞毁/逃逸/超时，全部已知。
  */
-export function coreLaunch(core: GameCore, velocity: P2, level: GameLevel): void {
+export function burnToMotion(
+	burn: P2,
+	probeVel0: P2 | undefined,
+	brakeMode: boolean,
+	maxSteps: number,
+): { init: P2; brake: BrakeThrust | undefined } {
+	const v0 = probeVel0 !== undefined ? probeVel0 : { x: 0, y: 0 };
+	const share = brakeMode ? BrakeShare : 1;
+	const init: P2 = { x: v0.x + burn.x * share, y: v0.y + burn.y * share };
+	const mag = Math.sqrt(burn.x * burn.x + burn.y * burn.y);
+	const brake = brakeMode && mag > 0
+		? { dv: mag * (1 - share), startStep: Math.floor(maxSteps / 2) }
+		: undefined;
+	return { init, brake };
+}
+
+export function coreLaunch(core: GameCore, burn: P2, level: GameLevel): void {
 	if (core.phase !== 'Aiming') return;
+	const motion = burnToMotion(burn, level.probeVel0, core.brakeMode, level.maxSteps);
 	const flight = simulate(
-		{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: velocity.x, y: velocity.y } },
+		{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: motion.init },
 		level.bodies,
-		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0 },
+		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0, brake: motion.brake },
 	);
 	core.flight = flight;
 	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0);
@@ -229,6 +260,10 @@ export interface Game {
 	 * 而选关是“开始一局新的”，必须能从 LevelSelect 进。
 	 */
 	startLevel: () => void;
+	/** 刹车模式（S3.9.2）：开 = 一半点火、一半留给后半程反推。默认关。 */
+	setBrakeMode: (on: boolean) => void;
+	/** 读当前刹车模式（HUD 按钮同步用）。 */
+	brakeMode: () => boolean;
 	/** 每帧调用一次。 */
 	update: (dt: number) => void;
 }
@@ -237,14 +272,6 @@ export interface Game {
 export function createGame(level: GameLevel, deps: GameDeps): Game {
 	const core = createCore();
 
-	/**
-	 * 玩家的点火（Δv）落在"出发时已有的速度"上 = 真正的初始速度（S3.9.3）。
-	 * L1 的 probeVel0 = 绕地球的圆轨道速度；其余关卡省略 = 静止出发（与旧行为逐位一致）。
-	 */
-	const launchVelocity = (burn: P2): P2 => {
-		const v0 = level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 };
-		return { x: burn.x + v0.x, y: burn.y + v0.y };
-	};
 
 	const makeBasis = (frame: { eye: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } }): CameraBasis => {
 		return prepareCamera(
@@ -340,13 +367,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 看起来“不是从探测器出发”（实测踩过）。
 		// 代价：每帧 600 步 simulate + ~150 点投影，可忽略。
 		// 只在瞄准/日期变化时重算（同一次拖动里每帧都算一遍是浪费；投影仍然每帧做）。
-		const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + core.t0.toFixed(3);
+		const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + core.t0.toFixed(3) + '|' + (core.brakeMode ? 'B' : 'C');
 		if (key !== predKey) {
 			predKey = key;
+			// ⚠️ 与 coreLaunch 共用 burnToMotion：预测线里必须带上反推段，否则"看到的 ≠ 飞到的"
+			const motion = burnToMotion(core.aim.velocity, level.probeVel0, core.brakeMode, level.maxSteps);
 			predPoints = simulate(
-				{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: launchVelocity(core.aim.velocity) },
+				{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: motion.init },
 				level.bodies,
-				{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: core.t0 },
+				{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: core.t0, brake: motion.brake },
 			).points;
 		}
 		deps.trajectory.setPrediction(predPoints, basis);
@@ -408,7 +437,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		launch: (v: P2): void => {
 			if (core.phase !== 'Aiming') return;
-			coreLaunch(core, launchVelocity(v), level);
+			coreLaunch(core, v, level); // v 是"点火"，折算成初速 + 反推段在 coreLaunch 里统一做
 			deps.trajectory.clearPrediction();
 			deps.onPhase('Flying');
 		},
@@ -441,6 +470,11 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.trajectory.clearGoalRings();
 			deps.onPhase('Aiming');
 		},
+		setBrakeMode: (on: boolean): void => {
+			core.brakeMode = on;
+			// 预测线要跟着重算（缓存键里带了 brakeMode，下一帧自然会重算）
+		},
+		brakeMode: (): boolean => core.brakeMode,
 		// 包一层箭头函数：简写属性会触发 TS100016（见 Hud.ts 同名注释）
 		update: (frameDt: number): void => update(frameDt),
 	};
