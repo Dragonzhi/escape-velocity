@@ -30,15 +30,43 @@ for i = 0, 8 do
     break
   end
 end
+-- ⚠️ 2026-09-26 补：引擎**刚起来、本项目没在跑**时（例如 cli run 之后又被 /run 顶掉，
+--    或者冷启动直接 /run 探针），searchPaths 可能整个是空的 —— 于是 root=nil，
+--    下一行 Path(root, ...) 直接报 "argument 2 is 'nil', 'string' expected"。
+--    两级兜底：① 单文件入口 searchPaths[0]=<proj>/Test ⇒ 上跳一级；
+--              ② 项目就躺在 writablePath 下（<writablePath>/escape-velocity）。
+if root == nil and searchPaths[0] ~= nil then
+  local up = Path(searchPaths[0], "..")
+  if Content:exist(Path(up, "init.lua")) and Content:exist(Path(up, "game", "Scene.lua")) then
+    root = up
+  end
+end
+if root == nil then
+  local byWritable = Path(Content.writablePath, "escape-velocity")
+  if Content:exist(Path(byWritable, "init.lua")) and Content:exist(Path(byWritable, "game", "Scene.lua")) then
+    root = byWritable
+  end
+end
 if root == nil then
   root = searchPaths[0]
 end
+if root == nil then
+  root = "."
+end
+-- 冷引擎的 searchPaths 里没有项目根 ⇒ "Assets/..." 这类相对路径会解析失败（实测），补上。
+Content:addSearchPath(root)
 
 local outDir = Path(root, ".agent/test-results")
 if not Content:exist(outDir) then
   Content:mkdir(outDir)
 end
 local marker = Path(outDir, "unit-summary.txt")
+-- 冷引擎下 root 找不到时这会写进相对路径 ⇒ 静默失败；所以先把诊断打到引擎日志（POST /log 能读到）。
+print("[dsh-unit] root=" .. tostring(root)
+  .. " wp=" .. tostring(Content.writablePath)
+  .. " sp0=" .. tostring(searchPaths[0])
+  .. " sp1=" .. tostring(searchPaths[1])
+  .. " marker=" .. tostring(marker))
 
 local lines = { "root=" .. tostring(root) }
 for i = 0, 4 do

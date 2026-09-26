@@ -73,6 +73,14 @@ export interface SimOptions {
 	sampleEvery: number;
 	/** 越界半径（距原点的距离）；<=0 表示不检查。 */
 	escapeRadius: number;
+	/**
+	 * 起始时刻（秒，S3.6.4 时间轴）。
+	 *
+	 * 时间轴的**唯一**物理入口：行星位置本来就是 t 的函数，从 t0 起积分
+	 * 就等于「把发射时刻往后拨 t0」。省略 = 0（与旧行为逐位一致）。
+	 * ⚠️ 预测线与真实飞行必须传同一个 t0，否则又是「看到的 ≠ 飞到的」。
+	 */
+	t0?: number;
 }
 
 export interface SimResult {
@@ -187,7 +195,7 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 	let outcome: Outcome = 'running';
 	let hitIndex = -1;
 	let stepsRun = 0;
-	let t = 0;
+	let t = opts.t0 !== undefined ? opts.t0 : 0;
 
 	const escape2 = opts.escapeRadius > 0 ? opts.escapeRadius * opts.escapeRadius : 0;
 

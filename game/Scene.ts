@@ -138,6 +138,8 @@ export interface SceneOptions {
 	 * 省略 = 不放地球（天线也不转）。
 	 */
 	home?: P2;
+	/** 家园锚点（地球）的显示半径（世界单位）；省略 = 1.15（旧行为）。 */
+	homeRadius?: number;
 	/** 探测器**身体**文件（去掉天线）。与 probeAntennaPath 同时给出才启用分体。 */
 	probeBodyPath?: string;
 	/** 探测器**天线**文件（仅 8 个天线零件，转轴在文件原点）。 */
@@ -471,7 +473,8 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		const earth = Model3D('Assets/Model/Planet_Earth.glb');
 		if (earth !== undefined) {
 			const ke = modelRadius('Planet_Earth');
-			const es = 1.15 / ke;
+			const hr = options.homeRadius !== undefined ? options.homeRadius : 1.15;
+			const es = hr / ke;
 			earth.scale = Vec3(es, es, es);
 			let emi = 0;
 			while (emi < 64) {

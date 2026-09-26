@@ -35,24 +35,51 @@
 8. **不要只在启动时读 `View.size`**：手机浏览器的画布启动后还会变一次，视口变化必须整体重建（`Director.entry.onAppChange(name === 'Size')`）。
    重建时**必须清掉旧运行时的预测线/尾迹**（`trajectory.clearPrediction/clearTrail`——DrawNode 挂在关卡 2D 层上，不随 runtime 消失；
    横屏截图实测残留一段游离旧线）。
-9. **Windows PowerShell 脚本用 CRLF**（here-string 在纯 LF 下解析失败，`tools/input-inject/set-window.ps1` 踩过）。
+9. **Windows PowerShell 脚本带 here-string 的必须 CRLF**（here-string 在纯 LF 下解析失败，`tools/input-inject/set-window.ps1` 踩过）。
+   只用普通字符串的脚本（`tools/engine-run.ps1`、`tools/level-shots.ps1`）纯 LF 也能跑。
 
 ## 验证纪律（写了代码 ≠ 通过）
 
 构建通过只证明编译过，进程存活只证明没崩。输入、状态迁移、输赢流程、持久化、时序、视觉各自需要证据。
 
+**先看三条现成的脚本**（都是会话 29 建的，把下面这些坑都封在注释里了）：
+
 ```powershell
-# 单测（引擎内批跑）→ .agent/test-results/unit-summary.txt，基线 SUMMARY passed=8 failed=0 total=8（202 条断言）
-# 先 POST /run {"file":"<proj>/Test/UnitRunner","asProj":false}，再读标记文件，最后 POST /stop
+# ① 引擎内跑一次入口（起引擎 → /run → 等 phase=done → 读标记 → 打印日志尾 → 停引擎）
+pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt -LogTail 6
+pwsh tools/engine-run.ps1 -Run Test/XxxProbe   -WaitFile .agent/test-results/xxx.txt
 
-# 运行时探针：同上，换成 Test/XxxProbe；标记文件里找 RESULT=PASS
+# ② 逐关截图（每关重启引擎 + enter-request 进关 + GameShot 抓帧 + TGA→PNG）
+pwsh tools/level-shots.ps1 -Levels 1,2,3,4,5,6      # 产物 .agent/test-results/level-N.png
 
-# 引擎 API（8866）需要引擎设置里「访问验证 / Auth Required」为关闭；
-# /ts/build 还要求 Web IDE 浏览器已连接（TS 编译实际发生在浏览器里）
-
-# 看截图：引擎截图是未压缩 TGA
-python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"
+# ③ 关卡数值秒级扫掠（Node 里跑**同一套公式**，不用起引擎；调数值先用它，再进引擎验收）
+node tools/level-sweep.mjs                          # 仓库六关，12 方向 × 4 档力度
+node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
 ```
+
+单测基线：`SUMMARY passed=8 failed=0 total=8`（**219 条断言**）→ `.agent/test-results/unit-summary.txt`。
+引擎 API（8866）需要引擎设置里「访问验证 / Auth Required」为关闭；`/ts/build` 还要求 Web IDE 浏览器已连接
+（TS 编译实际发生在浏览器里 —— 本地构建用 `tools/dora-build/` 即可，不要依赖它）。
+截图是未压缩 TGA，转 PNG：`python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"`。
+
+⚠️ **引擎的四个运行时坑（会话 29 实测，脚本已封好，手写命令时要记住）**：
+
+1. **引擎的工作目录必须是引擎目录**（`<引擎>`）：拿项目目录当 cwd 启动，引擎会去跑项目的 `init.lua`，
+   报 `module 'lualib_bundle' not found` 然后死在半路（3 秒后进程还在、API 已经废了）。
+2. **冷引擎的 `Content.searchPaths` 是空的**（`sp0=nil`，只有一个 `sp1=<proj>/Test`）⇒ 驱动器里
+   `Path(root, ...)` 直接报 `argument 2 is 'nil', 'string' expected`，`root` 也会退化成 `"."` 让
+   `Content:save` 静默失败。`UnitRunner`/`GameShot` 已加两级兜底（`searchPaths[0]` 上跳一级、
+   `Content.writablePath/escape-velocity`）+ `Content:addSearchPath(root)`（不然 `Assets/...` 解析不了）。
+3. **标记文件要在 `/run` 之前删**：入口一开始就写一次 `phase=running`，跑完才改写 `phase=done`；
+   在 `/run` 之后删会把第一次写入吃掉，而第二次写入**不会重新建文件** —— 于是永远等不到 `phase=done`。
+   （另：一次 pwsh 调用结束后，它派生的进程会被一起收走 —— 起引擎、`/run`、读结果必须在**同一次调用**里。）
+4. **进游戏别用 `require("init")`**：Dora 的全局 `require` 按 `Content.searchPaths` 顺序找模块，
+   而冷引擎的搜索路径里**没有项目根**（只有 `<proj>/Test` 与引擎的 `Script/`）⇒ `require("init")` 命中的是
+   **引擎自带的 `Script/init.lua`**（返回一个表、游戏一行都不跑）：进程活着、`/run` 报 success、
+   `pcall` 返回 `ok=true`，但**日志里一条 `[escape-velocity]` 都没有、截图整屏只有清屏色**
+   （2026-09-26 实测 `uniq=1, mean=[26,26,26]`，排查了两小时）。`Test/GameShot.lua` 现在按绝对路径
+   `Content:load` + `load` 执行，绕开模块解析。**判断"游戏到底跑没跑"最快的办法：看日志里有没有
+   `[escape-velocity] started: 6 levels`。**
 
 ✅ **触摸可以自动验收（Windows 桌面）**：`Touch` 是私有构造，探针注入不了，
 但 Dora 的触摸事件**同时代表鼠标点击** —— 用 `tools/input-inject/mousectl.ps1` 合成鼠标事件即可驱动真实命中判定与状态机。
@@ -69,4 +96,4 @@ python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"
 - 提交前清理：不带入 `.agent/test-results/*`、临时日志、密钥或个人配置。
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
 - ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 41 个文件，
-  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（202 条断言）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
+  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**219 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。

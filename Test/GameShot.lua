@@ -32,7 +32,27 @@ for i = 0, 8 do
     break
   end
 end
+-- ⚠️ 2026-09-26 补：引擎**刚起来、本项目没在跑**时（例如 cli run 之后又被 /run 顶掉，
+--    或者冷启动直接 /run 探针），searchPaths 可能整个是空的 —— 于是 root=nil，
+--    下一行 Path(root, ...) 直接报 "argument 2 is 'nil', 'string' expected"。
+--    两级兜底：① 单文件入口 searchPaths[0]=<proj>/Test ⇒ 上跳一级；
+--              ② 项目就躺在 writablePath 下（<writablePath>/escape-velocity）。
+if root == nil and searchPaths[0] ~= nil then
+  local up = Path(searchPaths[0], "..")
+  if Content:exist(Path(up, "init.lua")) and Content:exist(Path(up, "game", "Scene.lua")) then
+    root = up
+  end
+end
+if root == nil then
+  local byWritable = Path(Content.writablePath, "escape-velocity")
+  if Content:exist(Path(byWritable, "init.lua")) and Content:exist(Path(byWritable, "game", "Scene.lua")) then
+    root = byWritable
+  end
+end
 if root == nil then root = searchPaths[0] end
+if root == nil then root = "." end
+-- 冷引擎的 searchPaths 里没有项目根 ⇒ "Assets/..." 这类相对路径会解析失败（实测），补上。
+Content:addSearchPath(root)
 
 local outDir = Path(root, ".agent/test-results")
 if not Content:exist(outDir) then Content:mkdir(outDir) end
@@ -54,8 +74,35 @@ log("assetsAbs=" .. tostring(Content:exist(Path(root, "Assets/Model/Planet_Mars.
 
 package.path = Path(root, "?.lua") .. ";" .. Path(root, "?", "init.lua") .. ";" .. package.path
 
-local ok, err = pcall(require, "init")
-log("require init ok=" .. tostring(ok) .. " err=" .. tostring(err))
+-- ⚠️ 引擎启动时会**自动跑一遍本项目**（开机日志里就有 "started: 6 levels ..."）——
+--    那一次是在**同一个 Lua 状态**里把 "init" 放进了 package.loaded。若不清掉，
+--    下面的 require("init") 会直接返回**缓存**、一行代码都不执行 ⇒ 屏幕上什么都没有、
+--    截图整屏只有清屏色（2026-09-26 实测：uniq=1、mean=[26,26,26]，排查了两个小时）。
+--    ⚠️ pairs 迭代中置 nil 会改表结构，先收集再删。
+local stale = {}
+for k in pairs(package.loaded) do
+  if k == "init" or string.sub(k, 1, 5) == "game." then stale[#stale + 1] = k end
+end
+for i = 1, #stale do package.loaded[stale[i]] = nil end
+log("cleared stale modules: " .. tostring(#stale) .. " (init=" .. tostring(package.loaded["init"]) .. ")")
+
+-- ⚠️ 不能写 require("init")：Dora 的全局 require 是按 Content.searchPaths 顺序找模块的，
+--    而冷引擎里 <proj> **不在**搜索路径里（只有 <proj>/Test 与引擎的 Script/）——
+--    于是 require("init") 命中的是**引擎自带的 Script/init.lua**（返回一个表、游戏一行都不跑），
+--    屏幕上什么都没有、截图整屏只有清屏色（2026-09-26 实测：uniq=1、mean=[26,26,26]）。
+--    改成按**绝对路径**读文件 + load 执行，跳过模块解析这一层。
+local initPath = Path(root, "init.lua")
+local loader = load or loadstring
+local src = Content:load(initPath)
+local chunk, lerr = loader(src, "@" .. initPath)
+local ok = false
+if chunk == nil then
+  log("init chunk failed: " .. tostring(lerr))
+else
+  local runOk, runErr = pcall(chunk)
+  ok = runOk
+  log("init run ok=" .. tostring(runOk) .. " err=" .. tostring(runErr))
+end
 print("[gameshot] driver ready ok=" .. tostring(ok) .. " root=" .. tostring(root))
 
 local last = ""

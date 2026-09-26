@@ -177,8 +177,10 @@ if (levelTotal <= 0) {
 			spherePath: 'Assets/Model/Sphere.gltf',
 			ringPath: 'Assets/Model/Ring.gltf',
 			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
-			// 地球锚点（纯视觉）：出发点正下方 ≈4 格——大天线"回头指向"的目标
+			// 地球锚点（纯视觉）：出发点正下方 ≈4 格——大天线"回头指向"的目标。
+			// homeRadius 逐关变小（S3.6.1 尺寸层次）：越飞越远，回头时它越小。
 			home: { x: level.probeStart.x, y: level.probeStart.y + 4.2 },
+			homeRadius: def.homeRadius,
 			// [二分测试 C：临时禁用分体]
 			probeBodyPath: 'Assets/Model/Probe_Body.glb',
 			probeAntennaPath: 'Assets/Model/Probe_Antenna.glb',

@@ -36,6 +36,12 @@ function testValidity(): void {
 		check(`lv${lv.id}-visuals-aligned`, lv.planets.length === lv.visuals.length,
 			`planets=${lv.planets.length} visuals=${lv.visuals.length}`);
 
+		// 尺寸层次硬约束（S3.6.1）：玩家靠肉眼判断「会不会撞上」，显示半径 ≠ 撞毁半径就是不公。
+		for (let k = 0; k < lv.planets.length && k < lv.visuals.length; k++) {
+			check(`lv${lv.id}-planet${k}-radius-fair`, lv.planets[k].radius === lv.visuals[k].displayRadius,
+				`radius=${lv.planets[k].radius} displayRadius=${lv.visuals[k].displayRadius}（必须相等）`);
+		}
+
 		const goal = lv.goal;
 		if (goal.kind === 'planet') {
 			const gp = lv.planets[goal.planetIndex];
@@ -94,53 +100,129 @@ function testFindGoalIndex(): void {
 	}
 }
 
-/** 3) 可玩性扫掠：每关至少一个速度向量能达成目标。
+/** 扫掠统计（返回值给「时间轴确实有影响」那条判据复用）。 */
+interface SweepStat {
+	solutions: number;
+	total: number;
+	/** 每个 t0 档的成功数（非 timeWindow 关只有一档）。 */
+	perT0: number[];
+	t0s: number[];
+	best: string;
+}
+
+/** 角度 × 力度的采样网格。
  *
- * 用**角度 × 力度**采样（12 方向 × 4 档力度），真实覆盖玩家的连续输入空间。
- * 轴向网格会漏掉斜向解（实测 L3/L5 的解在 v=(-16,-14) 这类斜向速度上）。
+ * 12 方向太粗会漏掉窄解（实测 L3/L5 的解在斜向速度上），所以非时间轴关用 24×6；
+ * 时间轴关还要再乘 t0 档数，为控制引擎内耗时退回 12×4（× 24 档 t0 仍然有 1152 个样本）。
  */
-function testReachability(): void {
-	const n = levelCount();
-	const powers = [0.35, 0.6, 0.85, 1.0];
-	const dirCount = 12;
+function grid(dirCount: number, powerCount: number): P2[] {
+	const out: P2[] = [];
+	for (let d = 0; d < dirCount; d++) {
+		const angle = (d * 2 * Math.PI) / dirCount;
+		for (let k = 0; k < powerCount; k++) {
+			const p = powerCount === 1 ? 1 : 0.35 + (0.65 * k) / (powerCount - 1);
+			const speed = AimMinSpeed + (AimMaxSpeed - AimMinSpeed) * p;
+			out.push({ x: Math.cos(angle) * speed, y: Math.sin(angle) * speed });
+		}
+	}
+	return out;
+}
 
-	for (let i = 0; i < n; i++) {
-		const lv = getLevel(i);
-		if (lv === undefined) continue;
-		const bodies = scaledPlanets(lv);
+/** 3) 可玩性扫掠：每关至少一个速度向量能达成目标。 */
+function sweepLevel(lv: ReturnType<typeof getLevel>, dirCount: number, powerCount: number, t0Count: number): SweepStat {
+	const stat: SweepStat = { solutions: 0, total: 0, perT0: [], t0s: [], best: '' };
+	if (lv === undefined) return stat;
+	const bodies = scaledPlanets(lv);
+	const sampleEvery = 4;
+	const t0s: number[] = [];
+	if (lv.timeWindow !== undefined) {
+		for (let i = 0; i < t0Count; i++) t0s.push((lv.timeWindow.span * i) / t0Count);
+	} else {
+		t0s.push(0);
+	}
+	const vs = grid(dirCount, powerCount);
 
-		let best = '';
-		let found = false;
-		for (let d = 0; d < dirCount && !found; d++) {
-			const angle = (d * 2 * Math.PI) / dirCount;
-			const ux = Math.cos(angle);
-			const uy = Math.sin(angle);
-			for (const p of powers) {
-				const speed = AimMinSpeed + (AimMaxSpeed - AimMinSpeed) * p;
-				const v: P2 = { x: ux * speed, y: uy * speed };
-
-				const sim = simulate(
-					{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel: v },
-					bodies,
-					{ steps: lv.maxSteps, dt: PhysicsStep, sampleEvery: 4, escapeRadius: lv.escapeRadius },
-				);
-				const gi = findGoalIndex(sim.points, bodies, lv.goal, PhysicsStep);
-				const kind = resolveResult(sim.outcome, gi, lv.goal);
-				if (kind === 'success') {
-					found = true;
-					best = `dir=${(angle * 180 / Math.PI).toFixed(0)}deg power=${p}`;
-					break;
+	for (let ti = 0; ti < t0s.length; ti++) {
+		const t0 = t0s[ti];
+		stat.t0s.push(t0);
+		let hits = 0;
+		for (const v of vs) {
+			const sim = simulate(
+				{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel: v },
+				bodies,
+				{ steps: lv.maxSteps, dt: PhysicsStep, sampleEvery: sampleEvery, escapeRadius: lv.escapeRadius, t0 },
+			);
+			// ⚠️ 有效步长必须是 sampleEvery · dt：传 PhysicsStep 会让移动目标的时间轴错位
+			// （采样点 i 的真实时刻是 t0 + i · sampleEvery · dt）。
+			const gi = findGoalIndex(sim.points, bodies, lv.goal, PhysicsStep * sampleEvery, t0);
+			stat.total += 1;
+			if (resolveResult(sim.outcome, gi, lv.goal) === 'success') {
+				stat.solutions += 1;
+				hits += 1;
+				if (stat.best === '') {
+					const angle = Math.atan2(v.y, v.x) * 180 / Math.PI;
+					stat.best = `dir=${angle.toFixed(0)}deg v=${Math.sqrt(v.x * v.x + v.y * v.y).toFixed(1)} t0=${t0.toFixed(1)}`;
 				}
 			}
 		}
-		check(`lv${lv.id}-reachable`, found, `六关必须至少存在一个可行解（${lv.title}）${best !== '' ? ' found ' + best : ''}`);
+		stat.perT0.push(hits);
 	}
+	return stat;
+}
+
+function testReachability(): SweepStat[] {
+	const n = levelCount();
+	const out: SweepStat[] = [];
+	// **先粗后细**：粗网格（12×4，历史基线）能过就不升级 —— 引擎里的耗时按「样本数 × 步数」
+	// 线性增长，全用密网格会让这个批跑从几秒涨到分钟级（2026-09-26 实测）。
+	// 粗网格捞不到解（窄解）时才升到 24×6 / 24 档 t0。
+	for (let i = 0; i < n; i++) {
+		const lv = getLevel(i);
+		if (lv === undefined) { out.push(sweepLevel(lv, 12, 4, 1)); continue; }
+		const t0Count = lv.timeWindow !== undefined ? 12 : 1;
+		let stat = sweepLevel(lv, 12, 4, t0Count);
+		if (stat.solutions === 0) {
+			stat = sweepLevel(lv, 24, 6, lv.timeWindow !== undefined ? 24 : 1);
+		}
+		out.push(stat);
+		check(`lv${lv.id}-reachable`, stat.solutions > 0,
+			`每关至少要有一个可行解（${lv.title}）：${stat.solutions}/${stat.total} ${stat.best}`);
+	}
+	return out;
+}
+
+/** 4) 时间轴（S3.6.4 的数据侧判据）：窗口必须**真的会关**。
+ *
+ * PLAN 原来写的是「t0=0 无解」，实测做不到 —— 场里自由度太多，任何时机都能蒙中一条线
+ * （证据：24×6×24 的密网格下每个 t0 都有解）。所以判据改成**可观测的三条**：
+ *   ① 有 t0 档零解（窗口确实会关）；② 有解的 t0 档 ≥ 6；③ 该关总解数 ≥ 3。
+ */
+function testTimeWindow(stats: SweepStat[]): void {
+	const n = levelCount();
+	let withWindow = 0;
+	for (let i = 0; i < n; i++) {
+		const lv = getLevel(i);
+		if (lv === undefined || lv.timeWindow === undefined) continue;
+		withWindow += 1;
+		const st = stats[i];
+		let dead = 0;
+		let alive = 0;
+		for (const h of st.perT0) {
+			if (h === 0) dead += 1; else alive += 1;
+		}
+		check(`lv${lv.id}-window-closes`, dead >= 1,
+			`时间轴关必须有「发射了也没用」的时机：dead=${dead}/${st.perT0.length}`);
+		check(`lv${lv.id}-window-open`, alive >= 6 && st.solutions >= 3,
+			`时间轴必须有足够宽的窗口：alive=${alive} solutions=${st.solutions}`);
+	}
+	check('time-window-exists', withWindow >= 1, '至少有一关带时间轴（L4 窗口）');
 }
 
 export function runTests(): string {
 	testValidity();
 	testFindGoalIndex();
-	testReachability();
+	const stats = testReachability();
+	testTimeWindow(stats);
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');
