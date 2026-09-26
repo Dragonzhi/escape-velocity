@@ -57,7 +57,7 @@ node tools/level-sweep.mjs                          # 仓库六关，12 方向 �
 node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
 ```
 
-单测基线：`SUMMARY passed=8 failed=0 total=8`（**219 条断言**）→ `.agent/test-results/unit-summary.txt`。
+单测基线：`SUMMARY passed=8 failed=0 total=8`（**225 条断言**）→ `.agent/test-results/unit-summary.txt`。
 引擎 API（8866）需要引擎设置里「访问验证 / Auth Required」为关闭；`/ts/build` 还要求 Web IDE 浏览器已连接
 （TS 编译实际发生在浏览器里 —— 本地构建用 `tools/dora-build/` 即可，不要依赖它）。
 截图是未压缩 TGA，转 PNG：`python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"`。
@@ -81,6 +81,23 @@ node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
    `Content:load` + `load` 执行，绕开模块解析。**判断"游戏到底跑没跑"最快的办法：看日志里有没有
    `[escape-velocity] started: 6 levels`。**
 
+⚠️ **会话 38–39 的四个新坑（都是"看起来不像 bug"的那种）**：
+
+5. **面板/按钮的显隐必须由状态驱动，不能只由点按驱动**：一次"点重试没反应"的根因是 ——
+   状态被别的东西（切关、视口重建、自动回归序列）改掉之后，屏幕上仍留着一个"没东西可改"的面板；
+   点它当然毫无反应。规则：**`onPhase` 里一旦离开 `Result` 就收起结算面板**，状态是唯一事实来源；
+   且结算面板要认**它自己显示的那一关**（`resultIndex`），不要用 `activeRuntime()`。
+6. **别自己往 `createButton` 的节点挂 `onTapBegan/onTapEnded`**：`createButton` 内部已经注册过，
+   后注册会把它的处理器顶掉 —— 实测表现为"按下去既没有按下反馈、也拿不到回调"。要按钮行为就用它自己的 `onTap`。
+   另：d.ts 要求回调**必须收 `touch` 参数**（`(this: void, touch: Touch) => void`），零参数箭头函数会编译失败。
+7. **任何"世界时刻"都要带发射日期**：`tWorld = core.t0 + core.flightTime`。
+   踩过的现象：物理位置是对的、**行星模型却跳回 t=0**（瞄准段用了 `t0 + clock`，飞行段漏了 `t0`）——
+   用户一眼就能看出来"物理对、画面错"。飞行/结算/环/i 任何按时间取行星位置的地方，一律用 `tWorld`。
+8. **合成点击会整个丢事件**（本机引擎实测：6 次点击只有 1 次进入游戏，日志里连 `tap:` 都没有）——
+   所以自动化回归**不能以"点了一次"为判据**：要么多点几次（`for` 循环 + 间隔），要么以**日志行**或**像素差异**为判据。
+   ⚠️ 这条同时提醒：**真机上的"点了没反应"可能根本不在游戏逻辑里**。区分办法：每次点按都打一行带状态的日志
+   （本项目现在是 `[escape-velocity] tap: retry (resultIndex=0 phase=Result)`），有行 = 事件到了、没行 = 事件没到。
+
 ✅ **触摸可以自动验收（Windows 桌面）**：`Touch` 是私有构造，探针注入不了，
 但 Dora 的触摸事件**同时代表鼠标点击** —— 用 `tools/input-inject/mousectl.ps1` 合成鼠标事件即可驱动真实命中判定与状态机。
 坐标换算：`View.size`（W×H，用 `Test/SizeProbe.lua` 读，**不要写死** —— 横屏 2024×1230 / 竖屏 601×1066）是逻辑坐标，窗口客户区是缩放显示，
@@ -96,4 +113,4 @@ node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
 - 提交前清理：不带入 `.agent/test-results/*`、临时日志、密钥或个人配置。
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
 - ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 41 个文件，
-  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**219 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
+  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**225 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
