@@ -8,6 +8,7 @@ local DirectionalLight3D = ____Dora.DirectionalLight3D -- 24
 local Model3D = ____Dora.Model3D -- 24
 local Node = ____Dora.Node -- 24
 local Path = ____Dora.Path -- 24
+local PointLight3D = ____Dora.PointLight3D -- 24
 local Size = ____Dora.Size -- 24
 local Vec2 = ____Dora.Vec2 -- 24
 local Vec3 = ____Dora.Vec3 -- 24
@@ -320,246 +321,255 @@ function ____exports.createOpening(options) -- 327
 	ui.anchor = Vec2(0, 0) -- 339
 	ui.position = Vec2(0, 0) -- 340
 	layer:addChild(ui) -- 341
-	local light = DirectionalLight3D() -- 344
-	light.color = Color3(16774106) -- 345
-	light.intensity = 3.6 -- 346
-	light.angleX = -42 -- 347
-	light.angleY = 75 -- 348
-	root:addChild(light) -- 349
-	local backdrop = createStarBackdrop(root) -- 352
-	local sun = Model3D("Assets/Model/Sun.glb") -- 355
-	if sun ~= nil then -- 355
-		sun.scale = Vec3(SunRadius, SunRadius, SunRadius) -- 357
-		tint(sun, 16769434, 9071136) -- 358
-		root:addChild(sun) -- 359
-	end -- 359
-	local spherePath = options.spherePath ~= nil and options.spherePath or "Assets/Model/Sphere.gltf" -- 366
-	local buildQueue = {} -- 367
-	do -- 367
-		local i = 0 -- 368
-		while i < #____exports.Stations do -- 368
-			local st = ____exports.Stations[i + 1] -- 369
-			local p = ____exports.stationPlane(i) -- 370
-			buildQueue[#buildQueue + 1] = function() -- 371
-				local model = Model3D(st.model == "Sphere" and spherePath or ("Assets/Model/" .. st.model) .. ".glb") -- 373
-				if model == nil then -- 373
-					print("[escape-velocity] opening model MISSING: " .. st.model) -- 375
-					return -- 376
-				end -- 376
-				local scale = st.radius / modelRadius(st.model) -- 378
-				model.scale = Vec3(scale, scale, scale) -- 379
-				tint(model, st.colorHex, st.emissiveHex) -- 380
-				model.position = planeToWorld(p, 0) -- 381
-				root:addChild(model) -- 382
-			end -- 371
-			i = i + 1 -- 368
-		end -- 368
-	end -- 368
-	local rings = nil -- 387
-	if Content:exist(OrbitRingsPath) then -- 387
-		rings = Model3D(OrbitRingsPath) -- 389
-		if rings ~= nil then -- 389
-			local rm = rings:getMaterial(0) -- 391
-			if rm ~= nil then -- 391
-				rm.baseColor = Color(0, 0, 0, 255) -- 393
-				rm.emissive = Color3(OrbitRingsHex) -- 394
-			end -- 394
-			root:addChild(rings) -- 396
-		end -- 396
-	end -- 396
-	local probe = nil -- 401
-	buildQueue[#buildQueue + 1] = function() -- 402
-		probe = createProbe(root, {scale = ____exports.ProbeScale, probePath = options.probePath, bodyPath = options.probeBodyPath, antennaPath = options.probeAntennaPath}) -- 403
-	end -- 402
-	local titleSize = math.floor(clampNumber(viewH * 0.085, 54, 104) + 0.5) -- 413
-	local taglineSize = math.floor(clampNumber(viewH * 0.028, 22, 34) + 0.5) -- 414
-	local titleY = viewH * 0.63 -- 415
-	local title = createLabel(ui, "单程", titleSize, TitleHex) -- 416
-	setLabelCenter(title, viewW / 2, titleY) -- 417
-	local subtitle = createLabel(ui, "ESCAPE VELOCITY", taglineSize, SubtitleHex) -- 418
-	setLabelCenter(subtitle, viewW / 2, titleY - titleSize * 0.95) -- 419
-	local tagline = createLabel(ui, "一次没有返程的旅行", taglineSize, TaglineHex) -- 420
-	setLabelCenter(tagline, viewW / 2, titleY - titleSize * 0.95 - taglineSize * 1.8) -- 421
-	local narration = createLabel(ui, "地球轨道上，最后一次告别", taglineSize, NarrationHex) -- 422
-	setLabelCenter(narration, viewW / 2, viewH * 0.26) -- 423
-	local skip = createLabel(ui, "轻触跳过", taglineSize, SkipHex) -- 424
-	setLabelCenter( -- 425
-		skip, -- 425
-		viewW / 2, -- 425
-		clampNumber(viewH * 0.06, 34, 88) -- 425
-	) -- 425
-	local skipLayer = Node() -- 428
-	skipLayer.size = Size(viewW, viewH) -- 429
-	skipLayer.anchor = Vec2(0, 0) -- 430
-	skipLayer.position = Vec2(0, 0) -- 431
-	skipLayer.swallowTouches = true -- 432
-	skipLayer.touchEnabled = true -- 433
-	ui:addChild(skipLayer) -- 434
-	print((("[escape-velocity] opening assets: rings=" .. (rings ~= nil and "ok" or "MISSING")) .. " sky=") .. (backdrop ~= nil and "ok" or "MISSING")) -- 437
-	local earth = ____exports.stationPlane(____exports.EarthStationIndex) -- 440
-	local mode = "off" -- 442
-	local frame = -1 -- 443
-	local bodyYawDeg = 0 -- 444
-	local function probeNow() -- 449
-		return probe -- 449
-	end -- 449
+	local sunLight = PointLight3D() -- 347
+	sunLight.color = Color3(16774106) -- 348
+	sunLight.intensity = 0 -- 349
+	sunLight.range = 600 -- 350
+	sunLight.position = Vec3(0, 0, 0) -- 351
+	root:addChild(sunLight) -- 352
+	local fillLight = DirectionalLight3D() -- 358
+	fillLight.color = Color3(16774106) -- 359
+	fillLight.intensity = 3.6 -- 360
+	fillLight.angleX = -42 -- 361
+	fillLight.angleY = 75 -- 362
+	root:addChild(fillLight) -- 363
+	local backdrop = createStarBackdrop(root) -- 366
+	local sun = Model3D("Assets/Model/Sun.glb") -- 369
+	if sun ~= nil then -- 369
+		sun.scale = Vec3(SunRadius, SunRadius, SunRadius) -- 371
+		tint(sun, 16769434, 9071136) -- 372
+		root:addChild(sun) -- 373
+	end -- 373
+	local spherePath = options.spherePath ~= nil and options.spherePath or "Assets/Model/Sphere.gltf" -- 380
+	local buildQueue = {} -- 381
+	do -- 381
+		local i = 0 -- 382
+		while i < #____exports.Stations do -- 382
+			local st = ____exports.Stations[i + 1] -- 383
+			local p = ____exports.stationPlane(i) -- 384
+			buildQueue[#buildQueue + 1] = function() -- 385
+				local model = Model3D(st.model == "Sphere" and spherePath or ("Assets/Model/" .. st.model) .. ".glb") -- 387
+				if model == nil then -- 387
+					print("[escape-velocity] opening model MISSING: " .. st.model) -- 389
+					return -- 390
+				end -- 390
+				local scale = st.radius / modelRadius(st.model) -- 392
+				model.scale = Vec3(scale, scale, scale) -- 393
+				tint(model, st.colorHex, st.emissiveHex) -- 394
+				model.position = planeToWorld(p, 0) -- 395
+				root:addChild(model) -- 396
+			end -- 385
+			i = i + 1 -- 382
+		end -- 382
+	end -- 382
+	local rings = nil -- 401
+	if Content:exist(OrbitRingsPath) then -- 401
+		rings = Model3D(OrbitRingsPath) -- 403
+		if rings ~= nil then -- 403
+			local rm = rings:getMaterial(0) -- 405
+			if rm ~= nil then -- 405
+				rm.baseColor = Color(0, 0, 0, 255) -- 407
+				rm.emissive = Color3(OrbitRingsHex) -- 408
+			end -- 408
+			root:addChild(rings) -- 410
+		end -- 410
+	end -- 410
+	local probe = nil -- 415
+	buildQueue[#buildQueue + 1] = function() -- 416
+		probe = createProbe(root, {scale = ____exports.ProbeScale, probePath = options.probePath, bodyPath = options.probeBodyPath, antennaPath = options.probeAntennaPath}) -- 417
+	end -- 416
+	local titleSize = math.floor(clampNumber(viewH * 0.085, 54, 104) + 0.5) -- 427
+	local taglineSize = math.floor(clampNumber(viewH * 0.028, 22, 34) + 0.5) -- 428
+	local titleY = viewH * 0.63 -- 429
+	local title = createLabel(ui, "单程", titleSize, TitleHex) -- 430
+	setLabelCenter(title, viewW / 2, titleY) -- 431
+	local subtitle = createLabel(ui, "ESCAPE VELOCITY", taglineSize, SubtitleHex) -- 432
+	setLabelCenter(subtitle, viewW / 2, titleY - titleSize * 0.95) -- 433
+	local tagline = createLabel(ui, "一次没有返程的旅行", taglineSize, TaglineHex) -- 434
+	setLabelCenter(tagline, viewW / 2, titleY - titleSize * 0.95 - taglineSize * 1.8) -- 435
+	local narration = createLabel(ui, "地球轨道上，最后一次告别", taglineSize, NarrationHex) -- 436
+	setLabelCenter(narration, viewW / 2, viewH * 0.26) -- 437
+	local skip = createLabel(ui, "轻触跳过", taglineSize, SkipHex) -- 438
+	setLabelCenter( -- 439
+		skip, -- 439
+		viewW / 2, -- 439
+		clampNumber(viewH * 0.06, 34, 88) -- 439
+	) -- 439
+	local skipLayer = Node() -- 442
+	skipLayer.size = Size(viewW, viewH) -- 443
+	skipLayer.anchor = Vec2(0, 0) -- 444
+	skipLayer.position = Vec2(0, 0) -- 445
+	skipLayer.swallowTouches = true -- 446
+	skipLayer.touchEnabled = true -- 447
+	ui:addChild(skipLayer) -- 448
+	print((("[escape-velocity] opening assets: rings=" .. (rings ~= nil and "ok" or "MISSING")) .. " sky=") .. (backdrop ~= nil and "ok" or "MISSING")) -- 451
+	local earth = ____exports.stationPlane(____exports.EarthStationIndex) -- 454
+	local mode = "off" -- 456
+	local frame = -1 -- 457
+	local bodyYawDeg = 0 -- 458
+	local function probeNow() -- 463
+		return probe -- 463
+	end -- 463
 	--- 把某一帧的世界状态摆好。
-	local function updateWorld(f) -- 452
-		local hp = probeNow() -- 453
-		if hp ~= nil then -- 453
-			local p = ____exports.probeOrbitPos(f, earth) -- 455
-			hp.node.position = planeToWorld(p, 0) -- 456
-			local yaw = probeYawForVelocity(____exports.probeOrbitVel(f)) -- 457
-			if yaw ~= nil then -- 457
-				bodyYawDeg = yaw -- 459
-				hp.node.angleY = yaw -- 460
-			end -- 460
-			if hp.antenna ~= nil then -- 460
-				pointAntenna(hp.antenna, p, earth, bodyYawDeg) -- 462
-			end -- 462
-		end -- 462
-		local pose = ____exports.openingPose(f, earth) -- 465
-		options.camera:lookAt( -- 466
-			pose.eye, -- 466
-			pose.target, -- 466
-			Vec3(0, 1, 0) -- 466
-		) -- 466
-		if backdrop ~= nil then -- 466
-			backdrop:sync(pose.eye, pose.target) -- 467
-		end -- 467
-		if rings ~= nil then -- 467
-			rings.visible = ____exports.openingBlend(f) < OrbitRingsHideBlend -- 470
-		end -- 470
-	end -- 452
+	local function updateWorld(f) -- 466
+		local hp = probeNow() -- 467
+		if hp ~= nil then -- 467
+			local p = ____exports.probeOrbitPos(f, earth) -- 469
+			hp.node.position = planeToWorld(p, 0) -- 470
+			local yaw = probeYawForVelocity(____exports.probeOrbitVel(f)) -- 471
+			if yaw ~= nil then -- 471
+				bodyYawDeg = yaw -- 473
+				hp.node.angleY = yaw -- 474
+			end -- 474
+			if hp.antenna ~= nil then -- 474
+				pointAntenna(hp.antenna, p, earth, bodyYawDeg) -- 476
+			end -- 476
+		end -- 476
+		local pose = ____exports.openingPose(f, earth) -- 479
+		options.camera:lookAt( -- 480
+			pose.eye, -- 480
+			pose.target, -- 480
+			Vec3(0, 1, 0) -- 480
+		) -- 480
+		if backdrop ~= nil then -- 480
+			backdrop:sync(pose.eye, pose.target) -- 481
+		end -- 481
+		local k = ____exports.openingBlend(f) -- 484
+		fillLight.intensity = 3.6 * (1 - k) + 0.9 -- 485
+		sunLight.intensity = 90 * k * k -- 486
+		if rings ~= nil then -- 486
+			rings.visible = k < OrbitRingsHideBlend -- 489
+		end -- 489
+	end -- 466
 	--- 文案的呼吸节奏（帧号写死在这里 = 分镜表）。
-	local function updateLabels(f) -- 474
-		if mode == "idle" then -- 474
-			hideLabel(title) -- 477
-			hideLabel(subtitle) -- 478
-			hideLabel(tagline) -- 479
-			hideLabel(narration) -- 480
-			hideLabel(skip) -- 481
-			return -- 482
-		end -- 482
-		local outA = ____exports.WideFrames - 10 -- 484
-		local outB = ____exports.WideFrames + 40 -- 485
-		applyAlpha( -- 486
-			title, -- 486
-			TitleHex, -- 486
-			fadeWindow( -- 486
-				f, -- 486
-				14, -- 486
-				48, -- 486
-				outA, -- 486
-				outB -- 486
-			) -- 486
-		) -- 486
-		applyAlpha( -- 487
-			subtitle, -- 487
-			SubtitleHex, -- 487
-			fadeWindow( -- 487
-				f, -- 487
-				20, -- 487
-				54, -- 487
-				outA, -- 487
-				outB -- 487
-			) -- 487
-		) -- 487
-		applyAlpha( -- 488
-			tagline, -- 488
-			TaglineHex, -- 488
-			fadeWindow( -- 488
-				f, -- 488
-				26, -- 488
-				62, -- 488
-				outA, -- 488
-				outB -- 488
-			) -- 488
-		) -- 488
-		applyAlpha( -- 489
-			narration, -- 489
-			NarrationHex, -- 489
-			fadeWindow( -- 490
-				f, -- 490
-				____exports.WideFrames + 70, -- 490
-				____exports.WideFrames + 130, -- 490
-				____exports.TotalFrames - 70, -- 490
-				____exports.TotalFrames - 10 -- 490
-			) -- 490
-		) -- 490
-		applyAlpha( -- 491
-			skip, -- 491
-			SkipHex, -- 491
-			fadeWindow( -- 491
-				f, -- 491
-				60, -- 491
-				100, -- 491
-				____exports.TotalFrames - 40, -- 491
-				____exports.TotalFrames + 10 -- 491
-			) -- 491
-		) -- 491
-	end -- 474
-	local function update(f) -- 494
-		if #buildQueue > 0 then -- 494
-			local job = table.remove(buildQueue, 1) -- 497
-			if job ~= nil then -- 497
-				job() -- 498
-			end -- 498
-		end -- 498
-		updateWorld(f) -- 500
-		updateLabels(f) -- 501
-	end -- 494
-	local function finish() -- 504
-		if mode ~= "intro" then -- 504
-			return -- 505
-		end -- 505
-		mode = "idle" -- 506
-		skipLayer.touchEnabled = false -- 507
-		options:onFinish() -- 508
-	end -- 504
-	skipLayer:onTapEnded(function() -- 511
-		finish() -- 512
-	end) -- 511
-	skipLayer.touchEnabled = false -- 515
-	ui.visible = false -- 516
-	return { -- 518
-		start = function() -- 519
-			mode = "intro" -- 520
-			frame = 0 -- 521
-			root.visible = true -- 522
-			ui.visible = true -- 523
-			skipLayer.touchEnabled = true -- 524
-			update(0) -- 525
-		end, -- 519
-		step = function() -- 527
-			if mode == "off" then -- 527
-				return -- 528
-			end -- 528
-			frame = frame + 1 -- 529
-			update(frame) -- 530
-			if mode == "intro" and frame >= ____exports.TotalFrames then -- 530
-				finish() -- 531
-			end -- 531
-		end, -- 527
-		skip = function() -- 533
-			finish() -- 534
-		end, -- 533
-		frameIndex = function() return frame end, -- 536
-		idle = function() -- 537
-			mode = "idle" -- 538
-			root.visible = true -- 539
-			ui.visible = true -- 540
-			skipLayer.touchEnabled = false -- 541
-			update(frame < 0 and 0 or frame) -- 542
-		end, -- 537
-		phase = function() return mode == "off" and "off" or ____exports.openingPhase(frame) end, -- 544
-		running = function() return mode ~= "off" end, -- 545
-		hide = function() -- 546
-			mode = "off" -- 547
-			root.visible = false -- 548
-			ui.visible = false -- 549
-			skipLayer.touchEnabled = false -- 550
-		end -- 546
-	} -- 546
+	local function updateLabels(f) -- 493
+		if mode == "idle" then -- 493
+			hideLabel(title) -- 496
+			hideLabel(subtitle) -- 497
+			hideLabel(tagline) -- 498
+			hideLabel(narration) -- 499
+			hideLabel(skip) -- 500
+			return -- 501
+		end -- 501
+		local outA = ____exports.WideFrames - 10 -- 503
+		local outB = ____exports.WideFrames + 40 -- 504
+		applyAlpha( -- 505
+			title, -- 505
+			TitleHex, -- 505
+			fadeWindow( -- 505
+				f, -- 505
+				14, -- 505
+				48, -- 505
+				outA, -- 505
+				outB -- 505
+			) -- 505
+		) -- 505
+		applyAlpha( -- 506
+			subtitle, -- 506
+			SubtitleHex, -- 506
+			fadeWindow( -- 506
+				f, -- 506
+				20, -- 506
+				54, -- 506
+				outA, -- 506
+				outB -- 506
+			) -- 506
+		) -- 506
+		applyAlpha( -- 507
+			tagline, -- 507
+			TaglineHex, -- 507
+			fadeWindow( -- 507
+				f, -- 507
+				26, -- 507
+				62, -- 507
+				outA, -- 507
+				outB -- 507
+			) -- 507
+		) -- 507
+		applyAlpha( -- 508
+			narration, -- 508
+			NarrationHex, -- 508
+			fadeWindow( -- 509
+				f, -- 509
+				____exports.WideFrames + 70, -- 509
+				____exports.WideFrames + 130, -- 509
+				____exports.TotalFrames - 70, -- 509
+				____exports.TotalFrames - 10 -- 509
+			) -- 509
+		) -- 509
+		applyAlpha( -- 510
+			skip, -- 510
+			SkipHex, -- 510
+			fadeWindow( -- 510
+				f, -- 510
+				60, -- 510
+				100, -- 510
+				____exports.TotalFrames - 40, -- 510
+				____exports.TotalFrames + 10 -- 510
+			) -- 510
+		) -- 510
+	end -- 493
+	local function update(f) -- 513
+		if #buildQueue > 0 then -- 513
+			local job = table.remove(buildQueue, 1) -- 516
+			if job ~= nil then -- 516
+				job() -- 517
+			end -- 517
+		end -- 517
+		updateWorld(f) -- 519
+		updateLabels(f) -- 520
+	end -- 513
+	local function finish() -- 523
+		if mode ~= "intro" then -- 523
+			return -- 524
+		end -- 524
+		mode = "idle" -- 525
+		skipLayer.touchEnabled = false -- 526
+		options:onFinish() -- 527
+	end -- 523
+	skipLayer:onTapEnded(function() -- 530
+		finish() -- 531
+	end) -- 530
+	skipLayer.touchEnabled = false -- 534
+	ui.visible = false -- 535
+	return { -- 537
+		start = function() -- 538
+			mode = "intro" -- 539
+			frame = 0 -- 540
+			root.visible = true -- 541
+			ui.visible = true -- 542
+			skipLayer.touchEnabled = true -- 543
+			update(0) -- 544
+		end, -- 538
+		step = function() -- 546
+			if mode == "off" then -- 546
+				return -- 547
+			end -- 547
+			frame = frame + 1 -- 548
+			update(frame) -- 549
+			if mode == "intro" and frame >= ____exports.TotalFrames then -- 549
+				finish() -- 550
+			end -- 550
+		end, -- 546
+		skip = function() -- 552
+			finish() -- 553
+		end, -- 552
+		frameIndex = function() return frame end, -- 555
+		idle = function() -- 556
+			mode = "idle" -- 557
+			root.visible = true -- 558
+			ui.visible = true -- 559
+			skipLayer.touchEnabled = false -- 560
+			update(frame < 0 and 0 or frame) -- 561
+		end, -- 556
+		phase = function() return mode == "off" and "off" or ____exports.openingPhase(frame) end, -- 563
+		running = function() return mode ~= "off" end, -- 564
+		hide = function() -- 565
+			mode = "off" -- 566
+			root.visible = false -- 567
+			ui.visible = false -- 568
+			skipLayer.touchEnabled = false -- 569
+		end -- 565
+	} -- 565
 end -- 327
 return ____exports -- 327
