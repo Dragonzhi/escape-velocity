@@ -100,43 +100,43 @@ else -- 78
 		dragCount = dragCount + 1 -- 90
 	end) -- 88
 	local released = nil -- 92
-	aim:onRelease(function(a) -- 93
-		released = a -- 94
-	end) -- 93
-	local dragTo = {x = probeOffset.x + 40, y = probeOffset.y + 260} -- 98
-	aim:handleOffset(dragTo) -- 99
-	lines[#lines + 1] = ((("after drag to offset(" .. __TS__NumberToFixed(dragTo.x, 0)) .. ", ") .. __TS__NumberToFixed(dragTo.y, 0)) .. "):" -- 101
-	lines[#lines + 1] = "  dragCount=" .. tostring(dragCount) -- 102
-	lines[#lines + 1] = "  power=" .. __TS__NumberToFixed(lastAim.power, 3) -- 103
-	lines[#lines + 1] = ((("  unit=(" .. __TS__NumberToFixed(lastAim.unit.x, 3)) .. ", ") .. __TS__NumberToFixed(lastAim.unit.y, 3)) .. ")" -- 104
-	lines[#lines + 1] = ((("  velocity=(" .. __TS__NumberToFixed(lastAim.velocity.x, 2)) .. ", ") .. __TS__NumberToFixed(lastAim.velocity.y, 2)) .. ")" -- 105
-	lines[#lines + 1] = "  released=" .. tostring(released ~= nil) -- 108
-	local predicted = simulate({pos = probeStart, vel = lastAim.velocity}, bodies, {steps = 900, dt = 1 / 120, sampleEvery = 4, escapeRadius = 400}) -- 111
-	traj:setPrediction(predicted.points, basis) -- 116
-	traj:setTrail({probeStart}, basis) -- 117
-	lines[#lines + 1] = (("  predicted: outcome=" .. predicted.outcome) .. " points=") .. tostring(#predicted.points) -- 118
-	flush(false) -- 119
-	local frame = 0 -- 122
-	local requested = false -- 123
-	local analyzed = false -- 124
-	local shot = "" -- 125
-	threadLoop(function() -- 127
-		frame = frame + 1 -- 128
-		if not requested and frame > 3 then -- 128
-			requested = true -- 131
-			shot = App:saveScreenshot(Path(outDir, "s14-hud")) -- 132
-			lines[#lines + 1] = "shot requested at frame=" .. tostring(frame) -- 133
-			flush(false) -- 134
-		end -- 134
-		if requested and not analyzed and frame > 16 then -- 134
-			analyzed = true -- 138
-			lines[#lines + 1] = "" -- 139
+	aim:onAimReady(function(a) -- 94
+		released = a -- 95
+	end) -- 94
+	local dragTo = {x = probeOffset.x + 40, y = probeOffset.y + 260} -- 99
+	aim:handleOffset(dragTo) -- 100
+	lines[#lines + 1] = ((("after drag to offset(" .. __TS__NumberToFixed(dragTo.x, 0)) .. ", ") .. __TS__NumberToFixed(dragTo.y, 0)) .. "):" -- 102
+	lines[#lines + 1] = "  dragCount=" .. tostring(dragCount) -- 103
+	lines[#lines + 1] = "  power=" .. __TS__NumberToFixed(lastAim.power, 3) -- 104
+	lines[#lines + 1] = ((("  unit=(" .. __TS__NumberToFixed(lastAim.unit.x, 3)) .. ", ") .. __TS__NumberToFixed(lastAim.unit.y, 3)) .. ")" -- 105
+	lines[#lines + 1] = ((("  velocity=(" .. __TS__NumberToFixed(lastAim.velocity.x, 2)) .. ", ") .. __TS__NumberToFixed(lastAim.velocity.y, 2)) .. ")" -- 106
+	lines[#lines + 1] = "  released=" .. tostring(released ~= nil) -- 109
+	local predicted = simulate({pos = probeStart, vel = lastAim.velocity}, bodies, {steps = 900, dt = 1 / 120, sampleEvery = 4, escapeRadius = 400}) -- 112
+	traj:setPrediction(predicted.points, basis) -- 117
+	traj:setTrail({probeStart}, basis) -- 118
+	lines[#lines + 1] = (("  predicted: outcome=" .. predicted.outcome) .. " points=") .. tostring(#predicted.points) -- 119
+	flush(false) -- 120
+	local frame = 0 -- 123
+	local requested = false -- 124
+	local analyzed = false -- 125
+	local shot = "" -- 126
+	threadLoop(function() -- 128
+		frame = frame + 1 -- 129
+		if not requested and frame > 3 then -- 129
+			requested = true -- 132
+			shot = App:saveScreenshot(Path(outDir, "s14-hud")) -- 133
+			lines[#lines + 1] = "shot requested at frame=" .. tostring(frame) -- 134
+			flush(false) -- 135
+		end -- 135
+		if requested and not analyzed and frame > 16 then -- 135
+			analyzed = true -- 139
+			lines[#lines + 1] = "" -- 140
 			lines[#lines + 1] = "--- aim + prediction frame ---"
-			lines[#lines + 1] = captureReport(shot, {"aim-driven prediction line"}) -- 141
-			flush(true) -- 142
-			return true -- 143
-		end -- 143
-		return false -- 146
-	end) -- 127
-end -- 127
-return ____exports -- 127
+			lines[#lines + 1] = captureReport(shot, {"aim-driven prediction line"}) -- 142
+			flush(true) -- 143
+			return true -- 144
+		end -- 144
+		return false -- 147
+	end) -- 128
+end -- 128
+return ____exports -- 128

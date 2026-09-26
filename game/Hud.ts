@@ -167,8 +167,7 @@ export function offsetToLocal(offset: ScreenOffset, space: TouchSpace): ScreenOf
 export interface AimInput {
 	/** 注册拖动回调（拖动中每次移动触发）。 */
 	onDrag: (callback: (aim: AimResult) => void) => void;
-	/** 松手（发射）回调。不可撤销。 */
-	onRelease: (callback: (aim: AimResult) => void) => void;
+	// （S3.10 删掉了 onRelease：松手不再等于发射 —— 改走 onAimReady + 「发射」按钮的 onLaunch）
 	/** 是否监听输入（矄准态才开，飞行/结算态要关）。 */
 	setEnabled: (enabled: boolean) => void;
 	/** 当前矄准结果（未拖动时是默认值）。 */
@@ -208,6 +207,19 @@ export interface AimInput {
 	isDragging: () => boolean;
 	/** 更新 Δv 读数（本次点火要花多少 / 这一关给了多少），拖动时由主循环调用。 */
 	setBurnInfo: (burn: number, budget: number) => void;
+	/**
+	 * 瞄准完成（松手）：S3.10 起**不直接发射**，而是进入 Armed（由 Game 决定），
+	 * 屏幕上出现「发射」按钮，点它才真的打出去。
+	 */
+	onAimReady: (callback: (a: AimResult) => void) => void;
+	/** 观察拖动（每帧增量，像素）：非"探测器附近"的拖动会送到这里转相机。 */
+	onObserve: (callback: (dx: number, dy: number) => void) => void;
+	/** 捏合缩放（引擎的 onGesture 的 deltaDist）。 */
+	onZoom: (callback: (deltaDist: number) => void) => void;
+	/** 「发射」按钮被点（右下角，只在 Armed 态出现）。 */
+	onLaunch: (callback: () => void) => void;
+	/** 由主循环同步 Armed 状态：按钮显隐 + 触摸开关都跟着它走。 */
+	setArmed: (armed: boolean) => void;
 	/**
 	 * 时间流按钮（S3.9.4）：回调收到 -1（回退）/ 0（松手）/ +1（加速）。
 	 * 只有带 `timeWindow` 的关卡才启用；别的关卡整块隐藏**且断触摸**。
@@ -272,7 +284,10 @@ export function createAimInput(
 	let probeOffset: ScreenOffset = { x: 0, y: 0 };
 
 	let dragHandler: ((a: AimResult) => void) | undefined = undefined;
-	let releaseHandler: ((a: AimResult) => void) | undefined = undefined;
+	let readyHandler: ((a: AimResult) => void) | undefined = undefined;
+	let observeHandler: ((dx: number, dy: number) => void) | undefined = undefined;
+	let zoomHandler: ((deltaDist: number) => void) | undefined = undefined;
+	let launchHandler: (() => void) | undefined = undefined;
 
 	// ---- 相对拖动模型（用户 2026-09-24 真机反馈后确定）----
 	//
@@ -291,26 +306,58 @@ export function createAimInput(
 		if (dragHandler !== undefined) dragHandler(aim);
 	};
 
+	// ---- 瞄准 / 观察 分区（S3.10）----
+	// 用户定稿：**预测线默认不显示**，只有在"探测器附近"按下拖动才是瞄准；
+	// 其他地方拖动 = 转观察视角。只用一个全屏层，**按按下点判模式** ——
+	// 开两层（一层瞄准一层观察）必然互相吞点击（AGENTS 硬约束 4）。
+	const aimRadius = Math.max(96, viewW * 0.25); // 屏宽 1/4（用户拍板）
+	let mode: 'none' | 'aim' | 'observe' = 'none';
+	let observeLast: ScreenOffset = { x: 0, y: 0 };
 	touchLayer.onTapBegan((touch) => {
 		if (!enabled) return;
-		dragging = true;
-		pressOffset = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
-		// 按下即回到直飞：立刻让预测线显示中性方向（不等到第一次移动）
-		handleDelta({ x: 0, y: 0 });
+		const at = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
+		const dx = at.x - probeOffset.x;
+		const dy = at.y - probeOffset.y;
+		if (Math.sqrt(dx * dx + dy * dy) <= aimRadius) {
+			mode = 'aim';
+			dragging = true;
+			pressOffset = at;
+			// 按下即回到直飞：立刻让预测线显示中性方向（不等到第一次移动）
+			handleDelta({ x: 0, y: 0 });
+		} else {
+			mode = 'observe';
+			observeLast = at;
+		}
 	});
 
 	touchLayer.onTapMoved((touch) => {
-		if (!enabled || !dragging) return;
+		if (!enabled) return;
 		const cur = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
-		handleDelta({ x: cur.x - pressOffset.x, y: cur.y - pressOffset.y });
+		if (mode === 'aim' && dragging) {
+			handleDelta({ x: cur.x - pressOffset.x, y: cur.y - pressOffset.y });
+		} else if (mode === 'observe') {
+			// 观察：把增量交给相机（像素增量，Game 里换算成角度）
+			if (observeHandler !== undefined) observeHandler(cur.x - observeLast.x, cur.y - observeLast.y);
+			observeLast = cur;
+		}
 	});
 
 	touchLayer.onTapEnded((touch) => {
-		if (!enabled || !dragging) return;
-		dragging = false;
+		if (!enabled) return;
 		const cur = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
-		handleDelta({ x: cur.x - pressOffset.x, y: cur.y - pressOffset.y });
-		if (releaseHandler !== undefined) releaseHandler(aim);
+		if (mode === 'aim') {
+			dragging = false;
+			handleDelta({ x: cur.x - pressOffset.x, y: cur.y - pressOffset.y });
+			// ⚠️ S3.10：松手**不发射** —— 交给 Game 决定是不是进入 Armed（用户定的交互）
+			if (readyHandler !== undefined) readyHandler(aim);
+		}
+		mode = 'none';
+	});
+
+	// 捏合缩放：引擎自带的多点手势（d.ts: onGesture(center, numFingers, deltaDist, deltaAngle)）
+	touchLayer.onGesture((_center: Vec2.Type, numFingers: number, deltaDist: number, _deltaAngle: number): void => {
+		if (!enabled || numFingers < 2) return;
+		if (zoomHandler !== undefined) zoomHandler(deltaDist);
 	});
 
 	// ⚠️ 必须在**注册完触摸回调之后**再关掉触摸：onTapBegan/onTapMoved/onTapEnded
@@ -403,6 +450,27 @@ export function createAimInput(
 		dateLabel.anchor = Vec2(0, 0);
 	}
 
+	// ---- 「发射」按钮（S3.10，右下角拇指区；只在 Armed 态出现）----
+	// ⚠️ 用户已定：按钮之后都要换成**图标**（竖屏文字太占地方）。这里是文字占位。
+	const LaunchButtonW = 200;
+	const LaunchButtonH = 96;
+	const launchButton = createButton(root, {
+		w: LaunchButtonW,
+		h: LaunchButtonH,
+		text: '发射',
+		fontSize: 44,
+		bgHex: ResultButtonBgHex,
+		fgHex: ResultButtonFgHex,
+		borderHex: ResultButtonBorderHex,
+		onTap: (): void => {
+			// 防抖在 Ui.createButton 里（0.5 秒）；这里再加一道状态守卫（见 Game.launchArmed）
+			if (launchHandler !== undefined) launchHandler();
+		},
+	});
+	launchButton.root.position = Vec2(viewW - LaunchButtonW - 24, 96);
+	launchButton.root.visible = false;
+	launchButton.setEnabled(false); // 隐藏 + 断触摸（硬约束 4）
+
 	const brakeRightX = viewW - BrakeButtonW - 20;
 	makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
 	makeBrakeButton('刹车', true, brakeRightX);
@@ -413,9 +481,6 @@ export function createAimInput(
 	return {
 		onDrag: (callback: (a: AimResult) => void): void => {
 			dragHandler = callback;
-		},
-		onRelease: (callback: (a: AimResult) => void): void => {
-			releaseHandler = callback;
 		},
 		setEnabled: (value: boolean): void => {
 			enabled = value;
@@ -430,6 +495,22 @@ export function createAimInput(
 		setBrake: (on: boolean): void => {
 			brakeOn = on;
 			paintBrake();
+		},
+		onAimReady: (callback: (a: AimResult) => void): void => {
+			readyHandler = callback;
+		},
+		onObserve: (callback: (dx: number, dy: number) => void): void => {
+			observeHandler = callback;
+		},
+		onZoom: (callback: (deltaDist: number) => void): void => {
+			zoomHandler = callback;
+		},
+		onLaunch: (callback: () => void): void => {
+			launchHandler = callback;
+		},
+		setArmed: (armed: boolean): void => {
+			launchButton.root.visible = armed;
+			launchButton.setEnabled(armed);
 		},
 		onWarp: (callback: (dir: number) => void): void => {
 			warpHandler = callback;

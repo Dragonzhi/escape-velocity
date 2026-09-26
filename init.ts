@@ -263,7 +263,23 @@ if (levelTotal <= 0) {
 			// Δv 读数：本次点火的大小（拖动时实时变）
 			aim.setBurnInfo(Math.sqrt(a.velocity.x * a.velocity.x + a.velocity.y * a.velocity.y), def.dvBudget);
 		});
-		aim.onRelease((a: AimResult): void => { game.launch(a.velocity); });
+		// S3.10：松手**不发射** —— 进 Armed（出「发射」按钮），点按钮才真的打出去
+		aim.onAimReady((a: AimResult): void => {
+			game.onAimDrag(a);
+			game.aimReady();
+			print('[escape-velocity] aim ready -> Armed');
+		});
+		aim.onLaunch((): void => {
+			print('[escape-velocity] launch button tap');
+			game.launchArmed();
+		});
+		// 观察：拖动增量 -> 转相机；捏合 -> 远近
+		aim.onObserve((dx: number, dy: number): void => {
+			game.observeDrag(dx, dy);
+		});
+		aim.onZoom((deltaDist: number): void => {
+			game.observeZoom(deltaDist);
+		});
 		// 刹车模式（S3.9.2）：按钮只表达意图，状态在 GameCore 里；顺手打一行日志便于回归验证。
 		aim.onBrake((on: boolean): void => {
 			game.setBrakeMode(on);
@@ -574,6 +590,8 @@ if (levelTotal <= 0) {
 			if (runtime.levelHasTimeWindow) {
 				runtime.aim.setDate(runtime.game.dateNow(), runtime.dateSpan);
 			}
+			// Armed 是状态，按钮显隐跟着状态走（AGENTS 硬约束 5）
+			runtime.aim.setArmed(runtime.game.armed());
 			// 开发钩子的自动发射（见上方 enter-request 说明）
 			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0) {
 				autoFrame += 1;

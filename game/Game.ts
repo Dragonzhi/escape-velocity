@@ -32,7 +32,8 @@ import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { GoalSpec, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
 import {
-	AimMinSpeed, BrakeShare, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep, PredictSteps, TimeWarpStep,
+	AimMinSpeed, BrakeShare, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep,
+	PredictSteps, TimeWarpStep,
 } from 'game/Config';
 
 /**
@@ -41,7 +42,14 @@ import {
  * `LevelSelect`（S2.3）：关卡选择界面。核心状态机在这个阶段**什么也不推进**
  * （不跑物理、不画预测线），驱动它的只有 init.ts 的 UI 回调。
  */
-export type GamePhase = 'Aiming' | 'Flying' | 'Result' | 'LevelSelect';
+/**
+ * 游戏阶段。
+ *
+ * `Armed`（S3.10）："已经瞄好、等玩家按发射"。用户定的交互是**松手不发射** ——
+ * 松手进入 Armed，屏幕上出现「发射」按钮，点它才真的打出去。
+ * 它是**真正的状态**而不是一个布尔：面板/按钮的显隐必须由状态驱动（AGENTS 硬约束 5）。
+ */
+export type GamePhase = 'Aiming' | 'Armed' | 'Flying' | 'Result' | 'LevelSelect';
 
 /** 结算三态（手册 §5.8）。 */
 export type ResultKind = 'success' | 'missed' | 'crashed';
@@ -153,7 +161,8 @@ export function burnToMotion(
  * 所以不能写死 `level.probeStart`）；省略则退回出发姿态（无待机时钟的关卡/测试）。
  */
 export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2, vel0?: P2): void {
-	if (core.phase !== 'Aiming') return;
+	// 允许从 Aiming（老路径/回归脚本）或 Armed（松手后再按发射）出
+	if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
 	const base = vel0 !== undefined ? vel0 : level.probeVel0;
 	const motion = burnToMotion(burn, base, core.brakeMode, level.maxSteps);
 	const p0 = from !== undefined ? from : level.probeStart;
@@ -167,6 +176,25 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
 	core.flightTime = 0;
 	core.phase = 'Flying';
+}
+
+/**
+ * 进入 Armed（瞄准完成、等待发射）。只在 Aiming 态有效。
+ *
+ * 停在这里而不是直接发射，是用户 2026-09-26 定的交互：**松手不发射** ——
+ * 玩家可以先松手、转视角看看行星在哪，确认之后再按「发射」。
+ */
+export function coreArm(core: GameCore): boolean {
+	if (core.phase !== 'Aiming') return false;
+	core.phase = 'Armed';
+	return true;
+}
+
+/** 取消瞄准（从 Armed 回到 Aiming）。 */
+export function coreCancelArm(core: GameCore): boolean {
+	if (core.phase !== 'Armed') return false;
+	core.phase = 'Aiming';
+	return true;
 }
 
 /** 当前帧探测器在 flight.points 中的索引（夹紧到有效范围）。 */
@@ -255,6 +283,18 @@ export interface Game {
 	onAimDrag: (a: AimResult) => void;
 	/** 发射（接到 aim.onRelease）。 */
 	launch: (v: P2) => void;
+	/**
+	 * 瞄准完成（松手）→ 进入 Armed（S3.10：松手不发射，出「发射」按钮）。
+	 */
+	aimReady: () => void;
+	/** 「发射」按钮：从 Armed 真的打出去（带状态守卫 + Ui 的防抖）。 */
+	launchArmed: () => void;
+	/** 当前是否 Armed（HUD 按钮显隐同步用）。 */
+	armed: () => boolean;
+	/** 观察拖动（像素增量）→ 绕目标转。 */
+	observeDrag: (dx: number, dy: number) => void;
+	/** 捏合缩放（deltaDist；>0 放大/拉远，见 applyObserve）。 */
+	observeZoom: (deltaDist: number) => void;
 	/** 重试本关（仅 Result 态有效）。 */
 	retry: () => void;
 	/**
@@ -324,6 +364,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let orbitClock = 0;
 	/** 时间流方向：-1 回退 / 0 停 / +1 加速（按住即走）。 */
 	let warpDir = 0;
+	// ---- 自由观察（S3.10）----
+	// 不做"另起一套相机"，而是**在自动取景的基础上叠加**：绕目标转（yaw/pitch）+ 缩放。
+	// 好处：转完之后相机仍然跟着探测器走（自动取景每帧重算 ✓），玩家不会"看着看着丢了自己的船"。
+	let obsYawDeg = 0;
+	let obsPitchDeg = 0;
+	let obsZoom = 1;
 	/** 时间流量程（秒）：世界时钟夹在 [0, span]；0 = 不限制。 */
 	let warpSpan = 0;
 	let idlePath: SimResult | undefined = undefined;
@@ -369,14 +415,38 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		return [{ center: bodyPositionAt(body, t), radius: nextWp.tolerance, passed: false }];
 	};
 
+	/** 把自动取景按观察参数改写成"玩家的机位"（绕 target 转 + 缩放）。 */
+	const applyObserve = (f: { eye: Vec3.Type; target: Vec3.Type }): { eye: Vec3.Type; target: Vec3.Type } => {
+		if (obsYawDeg === 0 && obsPitchDeg === 0 && obsZoom === 1) return f;
+		const dx = f.eye.x - f.target.x;
+		const dy = f.eye.y - f.target.y;
+		const dz = f.eye.z - f.target.z;
+		const r = Math.sqrt(dx * dx + dy * dy + dz * dz) * obsZoom;
+		const yaw = Math.atan2(dx, dz) + (obsYawDeg * Math.PI) / 180;
+		let pitch = Math.asin(dy / (r > 1e-6 ? r / obsZoom : 1)) + (obsPitchDeg * Math.PI) / 180;
+		const lo = (CameraTiltMin * Math.PI) / 180;
+		const hi = (CameraTiltMax * Math.PI) / 180;
+		if (pitch < lo) pitch = lo;
+		if (pitch > hi) pitch = hi;
+		const cp = Math.cos(pitch);
+		return {
+			target: f.target,
+			eye: Vec3(
+				f.target.x + r * cp * Math.sin(yaw),
+				f.target.y + r * Math.sin(pitch),
+				f.target.z + r * cp * Math.cos(yaw),
+			),
+		};
+	};
+
 	const updateAiming = (dt: number): void => {
 		deps.aim.setEnabled(true);
 		// S3.9.4 待机时钟：**没在操控**时世界照常走（探测器沿自己的轨道绕地球转），一按下就冻结。
 		const dragging = deps.aim.isDragging();
-		if (!dragging && idlePath !== undefined) {
-			// 待机：两口钟一起走（探测器绕地球转）。
-			// ⚠️ 时间流是**离散步进**（按一次走 TimeWarpStep），这里只负责"平时的时间在流"；
-			// 步进时 orbitClock **不动** —— 探测器在轨道上等着发射窗口，而不是被一起快进。
+		// 只在**纯瞄准态**流时间：Armed（已瞄好等发射）时冻结 —— 否则目标会从瞄准线下面跑掉。
+		if (core.phase === 'Aiming' && !dragging && idlePath !== undefined) {
+			clock += dt;
+			orbitClock += dt;
 		}
 		const idx = idleIndex();
 		probePos = idlePath !== undefined ? idlePath.points[idx] : level.probeStart;
@@ -393,34 +463,79 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, tNow));
 
 		let frame = deps.rig.step([probePos, ...planetPts], deps.scene.probeRadius);
-		// 进关镜头（S3.9）：先贴住探测器（"你正在轨道上"），再缓动到能看见下一站的取景。
+		// 进关镜头（S3.10 三段，用户：「先聚焦飞行器，然后摄像头放大到需要前往的星球」）：
+		// ① 近景贴探测器 → ② 拉远看整条航线 → ③ 推向**下一站行星** → ④ 交还控制权。一拖就跳过（introT 被推到满）。
 		if (introT < IntroDurationSec) {
 			introT += dt;
 			let k = introT / IntroDurationSec;
 			if (k > 1) k = 1;
-			// 证据打点（只打一次）：进关镜头确实从"贴着探测器"拉到了"自动取景"。
 			if (k >= 1 && !introLogged) {
 				introLogged = true;
-				const t = frame.target;
-				print('[escape-velocity] intro camera: close=' + IntroCloseDist.toFixed(0) + ' -> wide=' + Math.sqrt((frame.eye.x - t.x) * (frame.eye.x - t.x) + (frame.eye.y - t.y) * (frame.eye.y - t.y) + (frame.eye.z - t.z) * (frame.eye.z - t.z)).toFixed(0));
+				print('[escape-velocity] intro camera done');
 			}
-			const ease = 1 - (1 - k) * (1 - k) * (1 - k);
-			const pw = planeToWorld(probePos, 0);
-			let dx = frame.eye.x - frame.target.x;
-			let dy = frame.eye.y - frame.target.y;
-			let dz = frame.eye.z - frame.target.z;
-			const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-			if (len > 1e-6) {
-				const s = IntroCloseDist / len;
-				dx *= s; dy *= s; dz *= s;
+			const wps0 = goalWaypoints(level.goal);
+			const wpBody = wps0.length > 0 ? level.bodies[wps0[0].planetIndex] : undefined;
+			const wide = frame;
+			let from: { eye: Vec3.Type; target: Vec3.Type } = wide;
+			let to: { eye: Vec3.Type; target: Vec3.Type } = wide;
+			let e = 0;
+			if (k < 0.35) {
+				const pw = planeToWorld(probePos, 0);
+				let dx = wide.eye.x - wide.target.x;
+				let dy = wide.eye.y - wide.target.y;
+				let dz = wide.eye.z - wide.target.z;
+				const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				if (len > 1e-6) {
+					const s = IntroCloseDist / len;
+					dx *= s; dy *= s; dz *= s;
+				}
+				from = { target: Vec3(pw.x, pw.y, pw.z), eye: Vec3(pw.x + dx, pw.y + dy, pw.z + dz) };
+				e = k / 0.35;
+			} else if (k < 0.72 && wpBody !== undefined) {
+				// 推向下一站：目标 = 它的世界位置；机位沿当前视线方向拉近到「半径 × 6」
+				const c = planeToWorld(bodyPositionAt(wpBody, tNow), 0);
+				let dx = wide.eye.x - wide.target.x;
+				let dy = wide.eye.y - wide.target.y;
+				let dz = wide.eye.z - wide.target.z;
+				const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				const want = Math.max(24, wpBody.radius * 6);
+				if (len > 1e-6) {
+					const s = want / len;
+					dx *= s; dy *= s; dz *= s;
+				}
+				to = { target: Vec3(c.x, c.y, c.z), eye: Vec3(c.x + dx, c.y + dy, c.z + dz) };
+				e = (k - 0.35) / 0.37;
+			} else if (wpBody !== undefined) {
+				// 交还：目标的特写缓动回全景
+				const c = planeToWorld(bodyPositionAt(wpBody, tNow), 0);
+				let dx = wide.eye.x - wide.target.x;
+				let dy = wide.eye.y - wide.target.y;
+				let dz = wide.eye.z - wide.target.z;
+				const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				const want = Math.max(24, wpBody.radius * 6);
+				if (len > 1e-6) {
+					const s = want / len;
+					dx *= s; dy *= s; dz *= s;
+				}
+				from = { target: Vec3(c.x, c.y, c.z), eye: Vec3(c.x + dx, c.y + dy, c.z + dz) };
+				e = (k - 0.72) / 0.28;
 			}
-			const ctx = pw.x, cty = pw.y, ctz = pw.z;
-			const cex = pw.x + dx, cey = pw.y + dy, cez = pw.z + dz;
+			const ease = 1 - (1 - e) * (1 - e) * (1 - e);
 			frame = {
-				target: Vec3(ctx + (frame.target.x - ctx) * ease, cty + (frame.target.y - cty) * ease, ctz + (frame.target.z - ctz) * ease),
-				eye: Vec3(cex + (frame.eye.x - cex) * ease, cey + (frame.eye.y - cey) * ease, cez + (frame.eye.z - cez) * ease),
+				target: Vec3(
+					from.target.x + (to.target.x - from.target.x) * ease,
+					from.target.y + (to.target.y - from.target.y) * ease,
+					from.target.z + (to.target.z - from.target.z) * ease,
+				),
+				eye: Vec3(
+					from.eye.x + (to.eye.x - from.eye.x) * ease,
+					from.eye.y + (to.eye.y - from.eye.y) * ease,
+					from.eye.z + (to.eye.z - from.eye.z) * ease,
+				),
 			};
 		}
+		// 自由观察的叠加（绕目标转 + 缩放）—— 转完相机依然跟着探测器走
+		frame = applyObserve(frame);
 		deps.rig.apply(deps.camera, frame);
 		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
@@ -494,7 +609,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	};
 
 	const update = (dt: number): void => {
-		if (core.phase === 'Aiming') {
+		if (core.phase === 'Aiming' || core.phase === 'Armed') {
 			updateAiming(dt);
 		} else if (core.phase === 'Flying') {
 			const entered = updateFlying(dt);
@@ -513,8 +628,33 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			core.aim = a;
 			introT = IntroDurationSec; // 玩家一动手就跳过进关镜头（操作权优先）
 		},
+		aimReady: (): void => {
+			if (!coreArm(core)) return;
+			deps.onPhase('Armed');
+		},
+		launchArmed: (): void => {
+			// 状态守卫：只有 Armed 才能打出去（连点/迟到的回调一律无效）
+			if (core.phase !== 'Armed') return;
+			coreLaunch(core, core.aim.velocity, level, probePos, probeVel);
+			deps.trajectory.clearPrediction();
+			deps.onPhase('Flying');
+		},
+		armed: (): boolean => core.phase === 'Armed',
+		observeDrag: (dx: number, dy: number): void => {
+			introT = IntroDurationSec; // 一动手就跳过进关镜头（操作权优先）
+			print('[escape-velocity] observe drag dx=' + dx.toFixed(0) + ' dy=' + dy.toFixed(0) + ' yaw=' + obsYawDeg.toFixed(0));
+			obsYawDeg += dx * 0.35;
+			obsPitchDeg += dy * 0.25;
+			if (obsPitchDeg > 40) obsPitchDeg = 40;
+			if (obsPitchDeg < -40) obsPitchDeg = -40;
+		},
+		observeZoom: (deltaDist: number): void => {
+			obsZoom *= 1 + deltaDist * 0.002;
+			if (obsZoom < 0.4) obsZoom = 0.4;
+			if (obsZoom > 1.8) obsZoom = 1.8;
+		},
 		launch: (v: P2): void => {
-			if (core.phase !== 'Aiming') return;
+			if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
 			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）
 			coreLaunch(core, v, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();

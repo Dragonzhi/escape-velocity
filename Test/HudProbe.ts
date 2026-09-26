@@ -90,7 +90,8 @@ if (probeProj === undefined) {
 		dragCount += 1;
 	});
 	let released: AimResult | undefined = undefined;
-	aim.onRelease((a) => {
+	// S3.10：松手回调改名（松手 = 进入 Armed，不再是发射）
+	aim.onAimReady((a) => {
 		released = a;
 	});
 

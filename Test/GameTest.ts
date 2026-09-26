@@ -7,7 +7,9 @@
 import { Body, P2 } from 'game/Gravity';
 import { FlightPlayback, PhysicsStep } from 'game/Config';
 import { GoalSpec } from 'game/LevelData';
-import { GameLevel, coreLaunch, coreProbeIndex, coreRetry, coreUpdate, createCore, resolveResult } from 'game/Game';
+import {
+	GameLevel, coreArm, coreCancelArm, coreLaunch, coreProbeIndex, coreRetry, coreUpdate, createCore, resolveResult,
+} from 'game/Game';
 
 interface Failure {
 	name: string;
@@ -201,9 +203,36 @@ function testGoalTruncation(): void {
 	check('goal-still-success', core.result === 'success', `result=${core.result}`);
 }
 
+/**
+ * 11) Armed 状态（S3.10）：松手进 Armed、点「发射」才真的打出去。
+ *
+ * 这几条是"松手不发射"这条交互的**纯逻辑证据** —— 合成鼠标那一路受引擎丢事件影响，
+ * 状态机这一路必须自己站稳。
+ */
+function testArmed(): void {
+	const level = testLevel();
+	const core = createCore();
+	check('arm-from-aiming', coreArm(core) === true && core.phase === 'Armed', `phase=${core.phase}`);
+	check('arm-idempotent', coreArm(core) === false, '已在 Armed 时 coreArm 应返回 false（不能重复 arm）');
+	// Armed 下依然可以发射（这就是「发射」按钮走的路径）
+	coreLaunch(core, { x: 0, y: -20 }, level);
+	check('launch-from-armed', core.phase === 'Flying', `phase=${core.phase}`);
+	// 取消瞄准：只在 Armed 有效
+	const core2 = createCore();
+	check('cancel-guard', coreCancelArm(core2) === false, 'Aiming 态调用 coreCancelArm 应返回 false');
+	coreArm(core2);
+	check('cancel-armed', coreCancelArm(core2) === true && core2.phase === 'Aiming', `phase=${core2.phase}`);
+	// 重试后回到 Aiming（不是 Armed）
+	const core3 = createCore();
+	coreArm(core3);
+	coreRetry(core3);
+	check('retry-clears-armed', core3.phase === 'Aiming', `phase=${core3.phase}`);
+}
+
 export function runTests(): string {
 	testResolveResult();
 	testLaunch();
+	testArmed();
 	testPlayback();
 	testRetry();
 	testIndexClamp();
