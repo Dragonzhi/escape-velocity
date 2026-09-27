@@ -10,7 +10,7 @@
  */
 import { Body } from 'game/Gravity';
 import { getLevel, scaledPlanets } from 'game/LevelData';
-import { computePlanMapping, planeToScreen, planFitRadius, screenToPlane } from 'game/PlanView';
+import { arrivalRingRadius, computePlanMapping, planeToScreen, planFitRadius, screenToPlane } from 'game/PlanView';
 
 interface Failure {
 	name: string;
@@ -138,20 +138,44 @@ function testFitRadius(): void {
 	if (l1 === undefined) {
 		check('fit-real-l1', false, 'getLevel(0) 返回 undefined');
 	} else {
-		const real1 = planFitRadius(scaledPlanets(l1), l1.probeStart, l1.goal.planetIndex, l1.goal.tolerance);
-		check('fit-real-l1', real1 >= 100 && real1 < 200, `L1 fit=${real1.toFixed(2)}（应 ≥ 月球最远 95 + 容差 5）`);
+		// S5：L1 以**地球**为中心取景（planCenter = 1）。整个世界只有 0.6 单位宽，
+		// 以太阳为中心的话探测器与月球只是屏幕中心的一个点（0.2/80 = 0.25% 视野）。
+		const real1 = planFitRadius(scaledPlanets(l1), l1.probeStart, l1.goal.planetIndex, l1.goal.tolerance, l1.planCenter);
+		// 应 ≈ 月球轨道 0.2056 + 容差 0.02
+		check('fit-real-l1-earth-centred', real1 > 0.2 && real1 < 0.26,
+			`L1 fit=${real1.toFixed(4)}（应 ≈ 0.2056 + 0.02 = 0.2256）`);
+		// 地心取景**不能**把太阳算进来（太阳离地球 80 单位，一算进来就退回太阳系全景）
+		check('fit-real-l1-excludes-sun', real1 < 1, `L1 fit=${real1.toFixed(4)}（若含太阳会是 80+）`);
 	}
 	const l6 = getLevel(5);
 	if (l6 === undefined) {
 		check('fit-real-l6', false, 'getLevel(5) 返回 undefined');
 	} else {
-		// 链式目标：取链上最大容差（= 最后那站的 70）
-		const real6 = planFitRadius(scaledPlanets(l6), l6.probeStart, l6.goal.planetIndex, 70);
-		check('fit-real-l6', real6 >= 265 && real6 < 300, `L6 fit=${real6.toFixed(2)}`);
+		// 链式目标：取链上最大容差（L6 最后一站 120）
+		const real6 = planFitRadius(scaledPlanets(l6), l6.probeStart, l6.goal.planetIndex, 120);
+		check('fit-real-l6', real6 >= 2400 && real6 < 2600, `L6 fit=${real6.toFixed(2)}（应 ≈ 海王星 2405.6 + 120）`);
+	}
+}
+
+/** S5 §3.8 规则 3：2D 到达圈画的必须是**真实容差**，不是视觉半径。 */
+function testArrivalRingIsRealTolerance(): void {
+	const l1 = getLevel(0);
+	if (l1 === undefined) { check('ring-l1', false, 'getLevel(0) undefined'); return; }
+	check('ring-l1-equals-tolerance', Math.abs(arrivalRingRadius(l1.goal) - l1.goal.tolerance) < 1e-12,
+		`ring=${arrivalRingRadius(l1.goal)} tol=${l1.goal.tolerance}`);
+	// L1 的月球视觉半径是 0.012，到达圈是 0.02 —— 两者**必须不等**（相等说明还画着视觉半径）
+	check('ring-l1-is-not-visual-radius', Math.abs(arrivalRingRadius(l1.goal) - l1.visuals[2].displayRadius) > 1e-6,
+		`ring=${arrivalRingRadius(l1.goal)} 视觉半径=${l1.visuals[2].displayRadius}`);
+	// 链式关卡取链上最大容差（L6：J40/S60/U90/N120 ⇒ 120）
+	const l6 = getLevel(5);
+	if (l6 !== undefined) {
+		check('ring-l6-chain-max', Math.abs(arrivalRingRadius(l6.goal) - 120) < 1e-9,
+			`ring=${arrivalRingRadius(l6.goal)}（链上最大容差）`);
 	}
 }
 
 export function runTests(): string {
+	testArrivalRingIsRealTolerance();
 	testMapping();
 	testPlaneToScreen();
 	testFitRadius();

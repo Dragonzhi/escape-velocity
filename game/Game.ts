@@ -84,11 +84,19 @@ export function resolveResult(outcome: Outcome, goalIndex: number, goal: GoalSpe
 export interface GameLevel {
 	bodies: Body[];
 	probeStart: P2;
-	/** 出发时已有的速度（S3.9.3，L1 = 绕地球的圆轨道）；省略 = 静止出发。 */
+	/** 出发时已有的速度（S3.9.3）；S5 起六关都必填 = 该点的圆轨速度。 */
 	probeVel0?: P2;
 	goal: GoalSpec;
 	escapeRadius: number;
 	maxSteps: number;
+	/**
+	 * 物理步长（S5，来自 Tuning.levelRuntime）。
+	 * 省略 = 全局 Config.PhysicsStep。**必须按关卡给**：L1 的探测器日心速度 30、
+	 * 绕地轨道半径 0.1 ⇒ 全局的 1/120 一步走 0.25，比整条轨道还大（实测把 0.1 算成 0.139~0.361）。
+	 */
+	physicsStep?: number;
+	/** 飞行回放的默认倍速（S5，来自 Tuning）：L1 要 0.05×，L6 要 16×。省略 = Config.FlightPlayback。 */
+	playback?: number;
 }
 
 /**
@@ -139,12 +147,12 @@ export interface GameCore {
 	slowmoBody: number;
 }
 
-export function createCore(): GameCore {
+export function createCore(dt?: number): GameCore {
 	return {
 		phase: 'Aiming',
 		aim: { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } },
 		flight: undefined,
-		dt: PhysicsStep,
+		dt: dt !== undefined && dt > 0 ? dt : PhysicsStep,
 		brakeMode: false,
 		t0: 0,
 		flightTime: 0,
@@ -583,7 +591,10 @@ export interface Game {
 
 /** 组装游戏（状态机 + 引擎驱动）。 */
 export function createGame(level: GameLevel, deps: GameDeps): Game {
-	const core = createCore();
+	const core = createCore(level.physicsStep);
+	// S5：飞行回放的默认倍速**按关卡**给。L1 的转移飞行只有 0.40 游戏秒，
+	// 2× 播放下是 0.2 真实秒 —— 玩家什么都看不见（这正是"每关一个播放速度"的理由）。
+	core.playback = level.playback !== undefined && level.playback > 0 ? level.playback : FlightPlayback;
 
 	/** 已经应用到节点上的视图（"" = 还没应用过）。每帧 applyView 都拿它对账。 */
 	let appliedMode: PlanViewMode | '' = '';

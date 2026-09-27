@@ -23,12 +23,14 @@ import { getLevel, goalWaypoints, levelCount, scaledPlanets } from 'game/LevelDa
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
-import { PlanView, createPlanView, defaultPlanOptions, planFitRadius } from 'game/PlanView';
+import { PlanView, arrivalRingRadius, createPlanView, defaultPlanOptions, planFitRadius } from 'game/PlanView';
 import { AimInput, AimResult, FinaleMainText, FinalePanel, LevelSelect, ResultPanel, createAimInput, createFinalePanel, createLevelSelect, createResultPanel, finaleSubtitle } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
 import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
 // 只为主循环推进 UI 时钟：按钮防抖不能依赖引擎那个冻结的 App.elapsedTime（见 game/Ui.ts）
 import { advanceUiClock } from 'game/Ui';
+// S5：每关的物理步长 / 播放倍速 / 相机夹紧 / 瞄准区间（"想调就调"的值都在那里）
+import { levelRuntime } from 'game/Tuning';
 import { Opening, createOpening, loadIntroSeen, saveIntroSeen } from 'game/Opening';
 
 /** 一关的运行时（惰性创建，切关只切 visible）。 */
@@ -179,6 +181,8 @@ if (levelTotal <= 0) {
 			probeVel0: def.probeVel0,
 			goal: def.goal,
 			escapeRadius: def.escapeRadius,
+			physicsStep: levelRuntime(index).physicsStep,
+			playback: levelRuntime(index).playback,
 			maxSteps: def.maxSteps,
 		};
 
@@ -217,22 +221,19 @@ if (levelTotal <= 0) {
 			return undefined;
 		}
 
+		const rt = levelRuntime(index);
 		const camera = Camera3D();
 		// 取景要按真实投影求解，所以必须把当前的视野角与宽高比一起传进去
 		// （竖屏 aspect 0.56 ⇒ 横向可用空间只有纵向一半，这两个值直接决定相机拉多远）
-		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio));
+		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio, rt.cameraMin, rt.cameraMax));
 		const trajectory = createTrajectoryView(levelLayers[index], trajectoryOptions());
 		// 2D 规划视图（S3.15）：与 trajectory 同一个 2D 层。视野 = 「最外圈轨道 + 目标容差」，
 		// 于是整条最外圈与它那个到达圈都装得下（设计稿第 6 条"够不够得着"要能一眼看出来）。
-		const plan = createPlanView(levelLayers[index], viewW, viewH, defaultPlanOptions());
-		let planTolerance = def.goal.tolerance;
-		const planChain = goalWaypoints(def.goal);
-		for (let w = 0; w < planChain.length; w++) {
-			if (planChain[w].tolerance > planTolerance) planTolerance = planChain[w].tolerance;
-		}
-		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance));
+		const plan = createPlanView(levelLayers[index], viewW, viewH, defaultPlanOptions(), def.planCenter);
+		const planTolerance = arrivalRingRadius(def.goal);
+		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter));
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
-		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget);
+		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds);
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
 		aim.setBurnInfo(0, def.dvBudget);
 		// 时间流按钮（S3.9.4）：只有带 timeWindow 的关卡才启用

@@ -73,8 +73,13 @@ export function computeAim(
 	touchOffset: ScreenOffset,
 	maxDragPx: number,
 	maxSpeed?: number,
+	minSpeed?: number,
 ): AimResult {
-	const speedTop = maxSpeed !== undefined && maxSpeed > AimMinSpeed ? maxSpeed : AimMaxSpeed;
+	// S5：下限也要按关卡给 —— L1 的 Δv 预算只有 0.35，全局 AimMinSpeed = 5 比整关预算还大，
+	//     不按关卡给下限的话 L1 的力度会从 5 起跳（直接飞出地月系）。
+	const speedMin = minSpeed !== undefined && minSpeed >= 0 && minSpeed < (maxSpeed !== undefined ? maxSpeed : AimMaxSpeed)
+		? minSpeed : AimMinSpeed;
+	const speedTop = maxSpeed !== undefined && maxSpeed > speedMin ? maxSpeed : AimMaxSpeed;
 	// 方向：从探测器指向触摸点（手册 §5.7）。
 	// 屏幕偏移空间是中心原点 +Y 向上（与 project() 一致，见 Projection.ts 约定 5）。
 	// 修正后的渲染方向：世界 -z（远离相机 = 平面 -y = 朝目标）在屏幕**上方**。
@@ -85,7 +90,7 @@ export function computeAim(
 	const len = Math.sqrt(dx * dx + dy * dy);
 	if (len < 1e-6) {
 		// 没有拖动：方向取“平面向前”（-y，朝目标），速度取最小值
-		return { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
+		return { velocity: { x: 0, y: -speedMin }, power: 0, unit: { x: 0, y: -1 } };
 	}
 
 	const ux = dx / len;
@@ -100,7 +105,7 @@ export function computeAim(
 	if (power < 0) power = 0;
 	if (power > 1) power = 1;
 
-	const speed = AimMinSpeed + (speedTop - AimMinSpeed) * power;
+	const speed = speedMin + (speedTop - speedMin) * power;
 
 	return {
 		velocity: { x: ux * speed, y: uy * speed },
@@ -123,6 +128,17 @@ export function screenToPlane(
 	if (world === undefined) return undefined;
 	// 世界 → 平面（与 Scene.planeToWorld 互为逆）
 	return { x: world.x / PlaneToWorldX, y: world.z / PlaneToWorldZ };
+}
+
+/**
+ * 倍速按钮上的文字。
+ *
+ * ⚠️ 不能一律 `toFixed(0)`：0.05× 会显示成「0×」（S5 的 L1 就是 0.02/0.05/0.1 三档）。
+ */
+export function playbackLabel(speed: number): string {
+	if (speed >= 1) return speed.toFixed(0) + '×';
+	if (speed >= 0.1) return speed.toFixed(1) + '×';
+	return speed.toFixed(2) + '×';
 }
 
 /** 默认的力度→拖动像素映射（供 UI 层统一引用）。 */
@@ -294,8 +310,14 @@ export function createAimInput(
 	viewH: number,
 	/** 满力速度 = 这一关的 Δv 预算（S3.9.2b）；省略 = 全局上限 */
 	maxSpeed?: number,
+	/** 力度下限（最小点火 Δv，S5 按关卡给）；省略 = 全局 AimMinSpeed */
+	minSpeed?: number,
+	/** 三颗倍速按钮的档位（S5 按关卡给：L1 = 0.02/0.05/0.1×，L6 = 8/16/32×）；省略 = 1/2/4 */
+	speedChoices?: number[],
 ): AimInput {
-	const speedTop = maxSpeed !== undefined && maxSpeed > AimMinSpeed ? maxSpeed : AimMaxSpeed;
+	const speedMin = minSpeed !== undefined && minSpeed >= 0 && minSpeed < (maxSpeed !== undefined ? maxSpeed : AimMaxSpeed)
+		? minSpeed : AimMinSpeed;
+	const speedTop = maxSpeed !== undefined && maxSpeed > speedMin ? maxSpeed : AimMaxSpeed;
 	const root = Node();
 	root.size = Size(viewW, viewH);
 	// ⚠️ anchor 必须是 (0,0)：子节点坐标以“位置 − anchor×尺寸”为原点，
@@ -320,7 +342,7 @@ export function createAimInput(
 	let dragging = false;
 	/** 整屏瞄准（2D 模式）；由 Game 按视图状态同步。 */
 	let fullScreenAim = false;
-	let aim: AimResult = { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
+	let aim: AimResult = { velocity: { x: 0, y: -speedMin }, power: 0, unit: { x: 0, y: -1 } };
 
 	// 探测器屏幕偏移：由调用方在拖动前/每帧设定。
 	let probeOffset: ScreenOffset = { x: 0, y: 0 };
@@ -344,7 +366,7 @@ export function createAimInput(
 
 	/** 用"相对按下点的位移"驱动一次瞄准（位移为 0 时即 computeAim 的中性解 = 直飞）。 */
 	const handleDelta = (delta: ScreenOffset): void => {
-		aim = computeAim({ x: 0, y: 0 }, delta, AimMaxDragPx, speedTop);
+		aim = computeAim({ x: 0, y: 0 }, delta, AimMaxDragPx, speedTop, speedMin);
 		if (dragHandler !== undefined) dragHandler(aim);
 	};
 
@@ -617,7 +639,10 @@ export function createAimInput(
 	const playbackButtons: UiButton[] = [];
 	const playbackSpeeds: number[] = [];
 	let playbackHandler: ((speed: number) => void) | undefined = undefined;
-	let playbackSpeed = FlightPlayback;
+	// S5：档位按关卡给。L1 的转移飞行只有 0.40 游戏秒，要 0.05× 才能看 8 秒；
+	// L6 要飞 513 秒，要 16× 才压到 32 秒。全局写死 1/2/4 两头都不成立。
+	const speedChoice = speedChoices !== undefined && speedChoices.length > 0 ? speedChoices : [1, 2, 4];
+	let playbackSpeed = speedChoice[0];
 	/** 已应用到节点上的显隐状态。初值 false 如实反映"建出来就隐藏"（照 warp 按钮的教训）。 */
 	let playbackVisible = false;
 	const paintPlayback = (): void => {
@@ -630,7 +655,7 @@ export function createAimInput(
 		const btn = createButton(root, {
 			w: PlaybackButtonW,
 			h: PlaybackButtonH,
-			text: speed.toFixed(0) + '×',
+			text: playbackLabel(speed),
 			fontSize: 30,
 			bgHex: ResultButtonAltBgHex,
 			fgHex: ResultButtonFgHex,
@@ -649,9 +674,9 @@ export function createAimInput(
 		playbackButtons.push(btn);
 		playbackSpeeds.push(speed);
 	};
-	makePlaybackButton(1, 24);
-	makePlaybackButton(2, 24 + PlaybackButtonW + playbackGap);
-	makePlaybackButton(4, 24 + (PlaybackButtonW + playbackGap) * 2);
+	for (let i = 0; i < speedChoice.length && i < 3; i++) {
+		makePlaybackButton(speedChoice[i], 24 + (PlaybackButtonW + playbackGap) * i);
+	}
 	paintPlayback();
 	// 飞行中才出现：建出来先隐藏 + 断触摸（只设 visible 不够 —— 硬约束 4）
 	for (const b of playbackButtons) {

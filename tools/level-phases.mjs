@@ -80,6 +80,7 @@ const require2 = createRequire(import.meta.url);
 const LD = require2(path.join(outDir, "LevelData.js"));
 const { simulate } = require2(path.join(outDir, "Gravity.js"));
 const { PhysicsStep, AimMinSpeed, AimMaxSpeed } = require2(path.join(outDir, "Config.js"));
+const TN = require2(path.join(outDir, "Tuning.js"));
 
 const TAU = Math.PI * 2;
 const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
@@ -109,6 +110,19 @@ const dvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudg
 const every = 4;
 
 // --- 2) 采样弧线：只留太阳（行星引力置 0），记下每条弧线穿过每个环的 (θ,t,v) ---
+//
+// ⚠️ S5 起两处关键改动：
+//   ① 初速必须叠加 `probeVel0`（六关都从日心共轨圆轨道出发，不再是静止）；
+//   ② 设计搜索用**粗步长**（默认 1/20）。这是解析近似，只用来产生相位；
+//      权威判定仍然是 tools/level-sweep.mjs（真实步长）与引擎内的 Test/UnitRunner。
+//      不这么做的话：L6 一次采样是 70000 步 × 14760 条 ≈ 10 亿步，跑不完。
+const dtSearch = Number(opt("dt", String(1 / 20)));
+const tMax = Number(opt("tmax", "0"));
+const stepsSearch = tMax > 0 ? Math.ceil(tMax / dtSearch) : lv.maxSteps;
+const v0 = lv.probeVel0 || { x: 0, y: 0 };
+console.log("设计搜索：dt=" + dtSearch.toFixed(4) + " steps=" + stepsSearch + "（覆盖 " +
+	(stepsSearch * dtSearch).toFixed(1) + " 秒）  dirs=" + dirCount + " dvs=" + dvCount +
+	"  初速=(" + v0.x.toFixed(3) + ", " + v0.y.toFixed(3) + ")");
 const onlySun = bodies.map((b) => (b.orbitRadius > 0 ? { ...b, gm: 0 } : b));
 const samples = [];
 for (let d = 0; d < dirCount; d++) {
@@ -117,9 +131,9 @@ for (let d = 0; d < dirCount; d++) {
 	for (let k = 0; k < dvCount; k++) {
 		const dv = AimMinSpeed + (dvTop - AimMinSpeed) * (dvCount === 1 ? 1 : k / (dvCount - 1));
 		const sim = simulate(
-			{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel: { x: Math.cos(a) * dv, y: Math.sin(a) * dv } },
+			{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel: { x: v0.x + Math.cos(a) * dv, y: v0.y + Math.sin(a) * dv } },
 			onlySun,
-			{ steps: lv.maxSteps, dt: PhysicsStep, sampleEvery: every, escapeRadius: lv.escapeRadius, t0: 0 },
+			{ steps: stepsSearch, dt: dtSearch, sampleEvery: every, escapeRadius: lv.escapeRadius, t0: 0 },
 		);
 		const cross = [];
 		let next = 0;
@@ -132,7 +146,7 @@ for (let d = 0; d < dirCount; d++) {
 				const py = sim.points[i - 1].y + (sim.points[i].y - sim.points[i - 1].y) * f;
 				cross.push({
 					angle: Math.atan2(py, px),
-					t: (i - 1 + f) * every * PhysicsStep,
+					t: (i - 1 + f) * every * dtSearch,
 					speed: Math.hypot(sim.velocities[i].x, sim.velocities[i].y),
 				});
 				next++;

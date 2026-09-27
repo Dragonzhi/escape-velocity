@@ -26,7 +26,7 @@
  * 见开发手册 §5.5 第 7 条）。所以这里直接用像素坐标，不加任何居中偏移。
  */
 import { Color, DrawNode, Node, Vec2 } from 'Dora';
-import { Body, P2, bodyPositionAt } from 'game/Gravity';
+import { Body, P2, bodyPositionAt, distance } from 'game/Gravity';
 import { FlowDotsPerOrbit, flowDotPosition } from 'game/OrbitFlow';
 import { GoalRing, decimate } from 'game/Trajectory';
 import { PlanetVisualDef } from 'game/LevelData';
@@ -46,6 +46,16 @@ export interface PlanMapping {
 	/** 平面原点 (0,0) 落在屏幕的哪个像素（左下原点、+Y 向上）。 */
 	originX: number;
 	originY: number;
+	/**
+	 * 落在屏幕正中的**平面点**（S5）。
+	 *
+	 * 默认 (0,0) = 以太阳为中心（L2–L6）。
+	 * L1 要设成**地球的位置**：那一关整个世界只有 0.6 单位宽，若仍以太阳为中心，
+	 * 探测器与月球会挤成屏幕中心的一个点（0.2 / 80 = 0.25% 视野），2D 视图就废了
+	 * —— 而用户明确说过「2D 视角负责让玩家知道东西在哪里」。
+	 */
+	centerX: number;
+	centerY: number;
 }
 
 /**
@@ -54,7 +64,7 @@ export interface PlanMapping {
  * 取 x / y 两个方向里**更紧**的那个比例 ⇒ 至少一个方向正好贴住边距，另一个方向更宽松。
  * `marginFrac` 夹在 [0, 0.45]：写 0.5 会让可用区域变成 0（映射退化）。
  */
-export function computePlanMapping(viewW: number, viewH: number, radius: number, marginFrac: number): PlanMapping {
+export function computePlanMapping(viewW: number, viewH: number, radius: number, marginFrac: number, centerX?: number, centerY?: number): PlanMapping {
 	let m = marginFrac;
 	if (m < 0) m = 0;
 	if (m > 0.45) m = 0.45;
@@ -64,7 +74,13 @@ export function computePlanMapping(viewW: number, viewH: number, radius: number,
 	const sy = (viewH * usable) / (2 * r);
 	let scale = sx < sy ? sx : sy;
 	if (!(scale > 0)) scale = 1; // NaN / 0 兜底（映射退化会让整张图消失）
-	return { scale, originX: viewW / 2, originY: viewH / 2 };
+	return {
+		scale,
+		originX: viewW / 2,
+		originY: viewH / 2,
+		centerX: centerX !== undefined ? centerX : 0,
+		centerY: centerY !== undefined ? centerY : 0,
+	};
 }
 
 /**
@@ -73,12 +89,13 @@ export function computePlanMapping(viewW: number, viewH: number, radius: number,
  * ⚠️ **y 取负**：平面 +y 画在屏幕**下方**（理由见文件头第 3 条）。
  */
 export function planeToScreen(p: P2, m: PlanMapping): P2 {
-	return { x: m.originX + p.x * m.scale, y: m.originY - p.y * m.scale };
+	// 减去中心：中心点落在屏幕正中（L1 以地球为中心，见 PlanMapping.centerX 的说明）
+	return { x: m.originX + (p.x - m.centerX) * m.scale, y: m.originY - (p.y - m.centerY) * m.scale };
 }
 
 /** `planeToScreen` 的逆（诊断、以及将来"点图定位"用）。 */
 export function screenToPlane(q: P2, m: PlanMapping): P2 {
-	return { x: (q.x - m.originX) / m.scale, y: (m.originY - q.y) / m.scale };
+	return { x: (q.x - m.originX) / m.scale + m.centerX, y: (m.originY - q.y) / m.scale + m.centerY };
 }
 
 /**
@@ -98,7 +115,33 @@ function bodyCenterDist(b: Body): number {
  * - 每颗天体：自己的最远距离 + `max(本体半径, 目标容差)`（目标那颗要留出圈的余量）；
  * - 探测器的出发点也要在画面内（L1 的探测器在 90，比地球轨道 80 还远）。
  */
-export function planFitRadius(bodies: Body[], probeStart: P2, goalIndex: number, goalTolerance: number): number {
+export function planFitRadius(bodies: Body[], probeStart: P2, goalIndex: number, goalTolerance: number, centerIndex?: number): number {
+	// 给了 centerIndex ⇒ 以那颗天体为中心取景（L1 用：那一关的全局尺度与局部尺度差 80 倍）
+	if (centerIndex !== undefined && centerIndex >= 0 && centerIndex < bodies.length) {
+		const c = bodies[centerIndex];
+		const cp = bodyPositionAt(c, 0);
+		let r = 0;
+		// 「局部系统」的判据用**尺度**而不是对象身份：
+		// ⚠️ scaledPlanets 会为每个天体**各自拷贝一份宿主链**，所以 b.host === c 永远是 false
+		//    （踩过：L1 的 fit 算成 0.1，月球被整个漏掉）。改用"轨道半径 < c 轨道半径的一半"
+		//    + "离 c 足够近"两条 —— L1 的地球 80 ⇒ 限 40，月球 0.2056 / 探测器 0.1 都在里面，
+		//    太阳（orbitRadius = 0）与别的行星被排除。
+		const lim = c.orbitRadius * 0.5;
+		for (let i = 0; i < bodies.length; i++) {
+			const b = bodies[i];
+			if (b !== c) {
+				if (b.orbitRadius <= 0 || b.orbitRadius >= lim) continue;
+				if (distance(bodyPositionAt(b, 0), cp) >= lim) continue;
+			}
+			const p = bodyPositionAt(b, 0);
+			const pad = i === goalIndex && goalTolerance > b.radius ? goalTolerance : b.radius;
+			const d = distance(p, cp) + pad;
+			if (d > r) r = d;
+		}
+		const pd = distance(probeStart, cp);
+		if (pd > r) r = pd;
+		return r > 1e-6 ? r : 1;
+	}
 	let r = 0;
 	for (let i = 0; i < bodies.length; i++) {
 		const b = bodies[i];
@@ -109,6 +152,28 @@ export function planFitRadius(bodies: Body[], probeStart: P2, goalIndex: number,
 	const pd = Math.sqrt(probeStart.x * probeStart.x + probeStart.y * probeStart.y);
 	if (pd > r) r = pd;
 	return r > 1e-6 ? r : 1;
+}
+
+/** 判定"这两个天体是不是同一个"（scaledPlanets 拷贝过宿主链 ⇒ 不能比对象身份，比位置与 gm）。 */
+export function sameBody(a: Body, b: Body): boolean {
+	return a.gm === b.gm && a.radius === b.radius && a.orbitRadius === b.orbitRadius;
+}
+
+/**
+ * 2D 到达圈的半径（平面单位）—— **就是航点容差，绝不是视觉半径**。
+ *
+ * S5 §3.8 规则 3：旧的硬约束「视觉半径必须等于物理半径」作废之后，
+ * 玩家判断"够不够得着"的唯一依据变成了这个圈。所以它必须由容差算出，
+ * 且**不随视觉半径变化** —— Test/PlanViewTest 有断言守着这两条。
+ */
+export function arrivalRingRadius(goal: { tolerance: number; chain?: { tolerance: number }[] }): number {
+	let r = goal.tolerance;
+	if (goal.chain !== undefined) {
+		for (let i = 0; i < goal.chain.length; i++) {
+			if (goal.chain[i].tolerance > r) r = goal.chain[i].tolerance;
+		}
+	}
+	return r;
 }
 
 /** 2D 规划视图的可调参数（配色与 3D 的 Trajectory 对齐：同一颗行星在两个视图里颜色一致）。 */
@@ -219,7 +284,7 @@ export interface PlanView {
  * @param viewW 视图逻辑宽（`View.size.width`）
  * @param viewH 视图逻辑高
  */
-export function createPlanView(layer: Node.Type, viewW: number, viewH: number, opts?: PlanOptions): PlanView {
+export function createPlanView(layer: Node.Type, viewW: number, viewH: number, opts?: PlanOptions, centerBodyIndex?: number): PlanView {
 	const options = opts !== undefined ? opts : defaultPlanOptions();
 
 	// 五层 DrawNode，自下而上：轨道 → 光点 → 到达圈 → 轨迹 → 图钉
@@ -385,6 +450,15 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			bodies = bs;
 			visuals = vs;
 			tWorld = t;
+			// S5：以某颗天体为中心时，**中心跟着它走** —— L1 的地球在绕日公转，
+			// 中心固定在地球 t=0 的位置会让整张图随时间漂出屏幕。
+			if (centerBodyIndex !== undefined && centerBodyIndex >= 0 && centerBodyIndex < bs.length) {
+				const cp = bodyPositionAt(bs[centerBodyIndex], t);
+				map.centerX = cp.x;
+				map.centerY = cp.y;
+				// 中心一动，圈与图钉的屏幕位全变 —— 不能沿用上一帧的绘制结果
+				dirty = true;
+			}
 			dirty = true;
 		},
 		syncProbe(p: P2, v: P2): void {

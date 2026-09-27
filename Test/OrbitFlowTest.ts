@@ -15,6 +15,7 @@ import {
 	FlowDotsPerOrbit, flowDotAngle, flowDotPosition, orbitAngleAt, orbitAngularRate, orbitCenterAt,
 } from 'game/OrbitFlow';
 import { getLevel, scaledPlanets } from 'game/LevelData';
+import { SunGm } from 'game/Scale';
 
 interface Failure {
 	name: string;
@@ -184,14 +185,19 @@ function testRealLevels(): void {
 		for (const b of bodies) {
 			if (b.orbitRadius > 0 && b.orbitPeriod > 0) movers.push(b);
 		}
-		if (movers.length < 2) allHaveOrbits = false;
-		// |omega| * r^1.5 = 2pi*KeplerK（同一条太阳系里每条**绕日**轨道同一个常数）。
-		// ⚠️ 卫星例外：L1 月球的周期是玩法参数（120 秒，见 LevelData 的 L1_MOON_PERIOD 注释），
-		//    不遵守开普勒 —— 只检查没有宿主的天体。
+		// S5：从 2 降到 1 —— L2/L3 只有一颗目标行星（旧的"家园地球"布景已移除，
+		// 理由见 LevelData 文件头第 4 条）。L1 仍有 2 个（地球 + 月球）。
+		if (movers.length < 1) allHaveOrbits = false;
+		// S5 归正：不变量从 **omega·r^1.5 = 2π·KeplerK**（那条手设公式）换成**真开普勒第三定律**
+		//    omega² · r³ = μ_host
+		// 也就是"每条绕日轨道的这个积必须等于**同一个**太阳 gm"。
+		// ⚠️ 卫星（有 host 的）用宿主自己的 gm —— L1 月球绕地球，μ = 地球 gm，不是太阳 gm。
+		//    它算出来仍是同一个常数（每颗行星的 gm 是固定的），所以照样能当不变量用。
 		for (const b of movers) {
-			if (b.host !== undefined) continue;
-			const kk = Math.abs(orbitAngularRate(b)) * Math.pow(b.orbitRadius, 1.5);
-			if (Math.abs(kk - 2 * Math.PI) > 1e-6) keplerOk = false;
+			const mu = b.host !== undefined ? b.host.gm : SunGm;
+			const om = Math.abs(orbitAngularRate(b));
+			const kk = om * om * b.orbitRadius * b.orbitRadius * b.orbitRadius;
+			if (Math.abs(kk - mu) > Math.abs(mu) * 1e-9) keplerOk = false;
 		}
 		// 按半径排序后 |omega| 必须严格递减（内圈快）
 		const sorted = movers.slice().sort((a, b2) => a.orbitRadius - b2.orbitRadius);
@@ -201,7 +207,7 @@ function testRealLevels(): void {
 		detail.push('L' + lv.id + ':' + movers.length);
 	}
 	check('every-level-has-flow-orbits', allHaveOrbits, 'movers per level = ' + detail.join(' '));
-	check('kepler-constant', keplerOk, '|omega|*r^1.5 = 2pi for every orbit（KeplerK = 1）');
+	check('kepler-third-law', keplerOk, 'omega^2 * r^3 = mu_host for every orbit（真开普勒，S5 归正）');
 	check('inner-orbit-faster', orderOk, '|omega| strictly decreases with orbit radius');
 }
 

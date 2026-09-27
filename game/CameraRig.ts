@@ -48,11 +48,13 @@ export interface RigOptions {
  * @param fovYDeg 垂直视野角，来自 `View.fieldOfView`；省略按 45（引擎默认）算。
  * @param aspect 宽高比，来自 `View.aspectRatio`；省略按 1（正方形）算。
  */
-export function defaultRigOptions(fovYDeg?: number, aspect?: number): RigOptions {
+export function defaultRigOptions(fovYDeg?: number, aspect?: number, minDistance?: number, maxDistance?: number): RigOptions {
 	return {
 		tiltDeg: CameraTiltDefault,
-		minDistance: CameraMinDistance,
-		maxDistance: CameraMaxDistance,
+		// S5：夹紧区间按关卡给 —— 六关的世界尺度跨 5 个数量级（L1 的 0.6 单位 vs L6 的 5000）。
+		// 全局常量在 L1 会把相机顶在 60 上（比整个世界还大 100 倍），画面里只剩一个点。
+		minDistance: minDistance !== undefined && minDistance > 0 ? minDistance : CameraMinDistance,
+		maxDistance: maxDistance !== undefined && maxDistance > 0 ? maxDistance : CameraMaxDistance,
 		lerp: CameraLerp,
 		fovYDeg: fovYDeg !== undefined ? fovYDeg : 45,
 		aspect: aspect !== undefined && aspect > 0 ? aspect : 1,

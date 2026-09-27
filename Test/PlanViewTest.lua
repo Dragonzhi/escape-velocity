@@ -6,6 +6,7 @@ local ____LevelData = require("game.LevelData") -- 12
 local getLevel = ____LevelData.getLevel -- 12
 local scaledPlanets = ____LevelData.scaledPlanets -- 12
 local ____PlanView = require("game.PlanView") -- 13
+local arrivalRingRadius = ____PlanView.arrivalRingRadius -- 13
 local computePlanMapping = ____PlanView.computePlanMapping -- 13
 local planeToScreen = ____PlanView.planeToScreen -- 13
 local planFitRadius = ____PlanView.planFitRadius -- 13
@@ -185,50 +186,83 @@ local function testFitRadius() -- 111
 	if l1 == nil then -- 137
 		check("fit-real-l1", false, "getLevel(0) 返回 undefined") -- 139
 	else -- 139
-		local real1 = planFitRadius( -- 141
-			scaledPlanets(l1), -- 141
-			l1.probeStart, -- 141
-			l1.goal.planetIndex, -- 141
-			l1.goal.tolerance -- 141
-		) -- 141
-		check( -- 142
-			"fit-real-l1", -- 142
-			real1 >= 100 and real1 < 200, -- 142
-			("L1 fit=" .. __TS__NumberToFixed(real1, 2)) .. "（应 ≥ 月球最远 95 + 容差 5）" -- 142
-		) -- 142
-	end -- 142
-	local l6 = getLevel(5) -- 144
-	if l6 == nil then -- 144
-		check("fit-real-l6", false, "getLevel(5) 返回 undefined") -- 146
-	else -- 146
-		local real6 = planFitRadius( -- 149
-			scaledPlanets(l6), -- 149
-			l6.probeStart, -- 149
-			l6.goal.planetIndex, -- 149
-			70 -- 149
-		) -- 149
-		check( -- 150
-			"fit-real-l6", -- 150
-			real6 >= 265 and real6 < 300, -- 150
-			"L6 fit=" .. __TS__NumberToFixed(real6, 2) -- 150
-		) -- 150
-	end -- 150
+		local real1 = planFitRadius( -- 143
+			scaledPlanets(l1), -- 143
+			l1.probeStart, -- 143
+			l1.goal.planetIndex, -- 143
+			l1.goal.tolerance, -- 143
+			l1.planCenter -- 143
+		) -- 143
+		check( -- 145
+			"fit-real-l1-earth-centred", -- 145
+			real1 > 0.2 and real1 < 0.26, -- 145
+			("L1 fit=" .. __TS__NumberToFixed(real1, 4)) .. "（应 ≈ 0.2056 + 0.02 = 0.2256）" -- 145
+		) -- 145
+		check( -- 148
+			"fit-real-l1-excludes-sun", -- 148
+			real1 < 1, -- 148
+			("L1 fit=" .. __TS__NumberToFixed(real1, 4)) .. "（若含太阳会是 80+）" -- 148
+		) -- 148
+	end -- 148
+	local l6 = getLevel(5) -- 150
+	if l6 == nil then -- 150
+		check("fit-real-l6", false, "getLevel(5) 返回 undefined") -- 152
+	else -- 152
+		local real6 = planFitRadius( -- 155
+			scaledPlanets(l6), -- 155
+			l6.probeStart, -- 155
+			l6.goal.planetIndex, -- 155
+			120 -- 155
+		) -- 155
+		check( -- 156
+			"fit-real-l6", -- 156
+			real6 >= 2400 and real6 < 2600, -- 156
+			("L6 fit=" .. __TS__NumberToFixed(real6, 2)) .. "（应 ≈ 海王星 2405.6 + 120）" -- 156
+		) -- 156
+	end -- 156
 end -- 111
-function ____exports.runTests() -- 154
-	testMapping() -- 155
-	testPlaneToScreen() -- 156
-	testFitRadius() -- 157
-	local lines = {} -- 159
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 160
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 161
-	local limit = #failures < 12 and #failures or 12 -- 162
-	do -- 162
-		local i = 0 -- 163
-		while i < limit do -- 163
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 164
-			i = i + 1 -- 163
-		end -- 163
+--- S5 §3.8 规则 3：2D 到达圈画的必须是**真实容差**，不是视觉半径。
+local function testArrivalRingIsRealTolerance() -- 161
+	local l1 = getLevel(0) -- 162
+	if l1 == nil then -- 162
+		check("ring-l1", false, "getLevel(0) undefined") -- 163
+		return -- 163
 	end -- 163
-	return table.concat(lines, "\n") -- 166
-end -- 154
-return ____exports -- 154
+	check( -- 164
+		"ring-l1-equals-tolerance", -- 164
+		math.abs(arrivalRingRadius(l1.goal) - l1.goal.tolerance) < 1e-12, -- 164
+		(("ring=" .. tostring(arrivalRingRadius(l1.goal))) .. " tol=") .. tostring(l1.goal.tolerance) -- 164
+	) -- 164
+	check( -- 167
+		"ring-l1-is-not-visual-radius", -- 167
+		math.abs(arrivalRingRadius(l1.goal) - l1.visuals[3].displayRadius) > 0.000001, -- 167
+		(("ring=" .. tostring(arrivalRingRadius(l1.goal))) .. " 视觉半径=") .. tostring(l1.visuals[3].displayRadius) -- 167
+	) -- 167
+	local l6 = getLevel(5) -- 170
+	if l6 ~= nil then -- 170
+		check( -- 172
+			"ring-l6-chain-max", -- 172
+			math.abs(arrivalRingRadius(l6.goal) - 120) < 1e-9, -- 172
+			("ring=" .. tostring(arrivalRingRadius(l6.goal))) .. "（链上最大容差）" -- 172
+		) -- 172
+	end -- 172
+end -- 161
+function ____exports.runTests() -- 177
+	testArrivalRingIsRealTolerance() -- 178
+	testMapping() -- 179
+	testPlaneToScreen() -- 180
+	testFitRadius() -- 181
+	local lines = {} -- 183
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 184
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 185
+	local limit = #failures < 12 and #failures or 12 -- 186
+	do -- 186
+		local i = 0 -- 187
+		while i < limit do -- 187
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 188
+			i = i + 1 -- 187
+		end -- 187
+	end -- 187
+	return table.concat(lines, "\n") -- 190
+end -- 177
+return ____exports -- 177
