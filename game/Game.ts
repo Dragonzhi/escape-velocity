@@ -36,6 +36,7 @@ import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
 	IntroDurationSec, PhysicsStep, PredictSteps, SlowMoCloseDist, SlowMoFactor, SlowMoFloorDist,
 	SlowMoRadiusFactor, TimeWarpStep,
+	FinaleCamDist, FinaleCamTiltDeg, PlaneToWorldX, PlaneToWorldZ,
 } from 'game/Config';
 
 /**
@@ -51,7 +52,7 @@ import {
  * 松手进入 Armed，屏幕上出现「发射」按钮，点它才真的打出去。
  * 它是**真正的状态**而不是一个布尔：面板/按钮的显隐必须由状态驱动（AGENTS 硬约束 5）。
  */
-export type GamePhase = 'Aiming' | 'Armed' | 'Flying' | 'Result' | 'LevelSelect';
+export type GamePhase = 'Aiming' | 'Armed' | 'Flying' | 'Result' | 'Finale' | 'LevelSelect';
 
 /** 结算三态（手册 §5.8）。 */
 export type ResultKind = 'success' | 'missed' | 'crashed';
@@ -403,7 +404,8 @@ export function coreRetry(core: GameCore): void {
  * @returns 是否真的切过去了（非 Result 态返回 false，不做任何事）。
  */
 export function coreBackToSelect(core: GameCore): boolean {
-	if (core.phase !== 'Result') return false;
+	// 终章（S3.18）也允许：它就是结算之后的最后一屏，按钮只有一颗「返回关卡选择」
+	if (core.phase !== 'Result' && core.phase !== 'Finale') return false;
 	core.phase = 'LevelSelect';
 	// 离开关卡也回 2D：下一关是从"进关/瞄准在 2D"开始的
 	core.viewMode = '2D';
@@ -416,6 +418,68 @@ export function coreBackToSelect(core: GameCore): boolean {
 	return true;
 }
 
+/**
+ * 终章「暗淡蓝点」的数据（S3.18）。
+ *
+ * 一行小字（飞行距离 / 用时）要用的两个数。距离 = 出发点 → 终点的**直线距离**
+ * （平面单位）；用时 = 这一段飞了多久（模拟秒）。都从发射那一刻就定死的轨迹上读，
+ * 不重新积分 —— 与「预测线看见的就是飞出来的」是同一条确定性链路。
+ */
+export interface FinaleInfo {
+	/** 飞行距离（平面单位，出发点 → 终点）。 */
+	distance: number;
+	/** 飞行用时（模拟秒）。 */
+	time: number;
+	/** 终点时刻的世界时刻（= core.t0 + core.flightTime；取地球位置必须用它）。 */
+	tWorld: number;
+}
+
+/**
+ * 进入终章（S3.18）。只在 **Result** 态有效。
+ *
+ * 为什么是 Result 的延续而不是另一套结算：L6 成功后玩家已经看过一次「借力成功」了，
+ * 终章是**同一局的收尾一屏**（回望地球缩成一点）。所以它保留结算数据
+ * （core.result / core.flight），只把相态往前推一格 —— 「返回关卡选择」因此可以复用
+ * coreBackToSelect（它现在也认 Finale）。
+ *
+ * @returns 是否真的切过去了（非 Result 态返回 false，什么都不做）。
+ */
+export function coreEnterFinale(core: GameCore): boolean {
+	if (core.phase !== 'Result') return false;
+	core.phase = 'Finale';
+	return true;
+}
+
+/**
+ * 终章的相机机位（纯函数，可单测）。
+ *
+ * 「相机拉到尽可能远，回望整条太阳系」：机位在**探测器逃逸方向**上、距太阳
+ * `distance` 处抬起 `tiltDeg`，注视太阳（世界原点）。于是
+ *   - 太阳缩成一个亮点（半径 28 @ 1000 ≈ 1.6°）；
+ *   - 地球按真实比例缩成一个点（半径 1.76 @ ~1000 ≈ 0.10°，直径约 5 px）——
+ *     **不放大**（用户否掉过「为画面放大行星」，docs/关卡舞台表.md 第二节第 9 条）。
+ *
+ * ⚠️ 这是唯一一处**绕开 CameraRig** 的取景：机架的距离夹在 [CameraMinDistance, CameraMaxDistance]
+ * （60–300）里，装不下「尽可能远」。绕开的代价是机架内部的平滑状态会停在 1000 上，
+ * 所以进关时（Game.startLevel）必须 `deps.rig.reset()`，否则下一关的相机会从 1000 一路 lerp 回去。
+ *
+ * @param probe 探测器**当前**位置（平面坐标）；只在逃逸方向上有意义，零向量时退回 +Y。
+ */
+export function finaleCamera(probe: P2, distance: number, tiltDeg: number): { eye: Vec3.Type; target: Vec3.Type } {
+	const dist = distance > 1 ? distance : 1;
+	// 逃逸方向（平面 → 世界：u→X、v→Z，见 Config 的映射表）
+	let ux = probe.x;
+	let uy = probe.y;
+	const len = Math.sqrt(ux * ux + uy * uy);
+	if (len < 1e-6) { ux = 0; uy = 1; } else { ux /= len; uy /= len; }
+	const tilt = (tiltDeg * Math.PI) / 180;
+	const flat = Math.cos(tilt) * dist;
+	return {
+		// 注视太阳：平面原点即世界原点（planeToWorld({0,0},0) === (0,0,0)）
+		target: Vec3(0, 0, 0),
+		eye: Vec3(ux * flat * PlaneToWorldX, Math.sin(tilt) * dist, uy * flat * PlaneToWorldZ),
+	};
+}
 /** 引擎侧依赖（由 init.ts 组装）。 */
 export interface GameDeps {
 	scene: GameScene;
@@ -437,9 +501,25 @@ export interface GameDeps {
 	onPhase: (p: GamePhase) => void;
 	/** 结算回调（驱动结果面板）。 */
 	onResult: (r: ResultKind) => void;
-}
+	/**
+	 * 这一关成功之后是否进**终章「暗淡蓝点」**（S3.18）。
+	 *
+	 * 由 init.ts 给（只有最后一关 = L6 海王星为 true）。不读 goal.kind 是不是 escape：
+	 * S3.13 起 L6 就是普通的目的地任务（逃逸归终章），所以判据只能是「这是最后一关」。
+	 *
+	 * 为什么是**可选字段**而不是必填：Test/ 下的一批探针（GameProbe / UiProbe /
+	 * LineDirProbe / LineAlignProbe）自己拼 GameDeps，加必填字段会让它们整批编译失败
+	 * （构建直接掉到 41/45）。省略 = 不进终章（旧行为：直接弹普通结算面板）。
+	 */
+	finale?: boolean;
+	/**
+	 * 终章数据回调：进终章那一刻调一次（之后画面冻结，不再变）。
+	 * 文案小字（飞行距离 / 用时）的两个数从这里来 —— 面板只负责显示，不算账。
+	 * 同样可选：探针不传就只是不打那行日志。
+	 */
+	onFinale?: (info: FinaleInfo) => void;
 
-/** 游戏句柄（全部属性式函数，见 Hud.ts 的说明）。 */
+}
 export interface Game {
 	phase: () => GamePhase;
 	result: () => ResultKind | undefined;
@@ -901,6 +981,46 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.plan.flush();
 	};
 
+	/**
+	 * 终章「暗淡蓝点」（S3.18）：一屏，不做动画分镜、不做第二段文案（砍线顺序里终章细节是第一项）。
+	 *
+	 * 画面 = 复用现有 3D 场景与星空背板，相机拉到**尽可能远**回望太阳系：
+	 *   - 太阳缩成一个亮点；
+	 *   - 地球按**真实比例**缩成一个点（半径 1.76 @ ~1000 单位，直径约 5 px）——
+	 *     **不放大**（用户当初否掉过「为画面放大行星」，docs/关卡舞台表.md 第二节第 9 条）。
+	 *
+	 * 世界时刻仍然只有一个事实来源：`tWorld = core.t0 + core.flightTime`（硬约束 7）。
+	 * ⚠️ 地球此时是 L6 planets 里的 `homeEarth()`（gm = 0 的布景天体，位置随日期变）⇒
+	 *    必须按 tWorld 取它，写死 t = 0 会让地球跳回相位 0（物理对、画面错）。
+	 */
+	const updateFinale = (): void => {
+		deps.aim.setEnabled(false);
+		if (core.flight === undefined) return;
+		const idx = coreProbeIndex(core);
+		const pos = core.flight.points[idx];
+		const tWorld = core.t0 + core.flightTime;
+
+		// 行星 / 地球 / 流动光点都按同一个 tWorld 同步（没有第二时间源）
+		deps.scene.syncBodies(tWorld);
+		deps.scene.syncProbe(pos);
+		deps.scene.faceVelocity(core.flight.velocities[idx]);
+
+		// 取景：绕开机架（它的距离夹在 60–300，装不下「尽可能远」），直接写相机
+		const frame = finaleCamera(pos, FinaleCamDist, FinaleCamTiltDeg);
+		deps.camera.lookAt(frame.eye, frame.target, Vec3(0, 1, 0));
+		deps.scene.syncBackdrop(frame.eye, frame.target);
+
+		// 尾迹 = 已经飞过的前缀（同一批采样点，只是投影换成终章机位）
+		const trail: P2[] = [];
+		for (let i = 0; i <= idx; i++) trail.push(core.flight.points[i]);
+		const rings = goalRingsAt(tWorld, idx);
+		const basis = makeBasis(frame);
+		deps.trajectory.setTrail(trail, basis);
+		deps.trajectory.setGoalRings(rings, basis);
+		deps.plan.clearPrediction();
+		deps.plan.setGoalRings(rings);
+		deps.plan.flush();
+	};
 	const updateFlying = (dt: number): boolean => {
 		deps.aim.setEnabled(false);
 		// S3.17：慢动作判定在 coreUpdate 里做（要 level：天体位置随时间动），
@@ -1007,11 +1127,25 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		} else if (core.phase === 'Flying') {
 			const entered = updateFlying(dt);
 			if (entered && core.result !== undefined) {
+				// S3.18：最后一关成功 ⇒ 进终章（不弹普通结算面板；终章要回选关只有那一颗按钮）
+				const toFinale = deps.finale === true && core.result === 'success';
+				if (toFinale) coreEnterFinale(core);
+				// onResult 先走：解锁 / 存档只有这一条路（面板显隐完全交给 onPhase，见 init.ts）
 				deps.onResult(core.result);
-				deps.onPhase('Result');
+				if (toFinale && core.flight !== undefined && deps.onFinale !== undefined) {
+					const end = core.flight.points.length - 1;
+					deps.onFinale({
+						distance: distance(core.flight.points[end], level.probeStart),
+						time: core.flightTime,
+						tWorld: core.t0 + core.flightTime,
+					});
+				}
+				deps.onPhase(toFinale ? 'Finale' : 'Result');
 			}
+		} else if (core.phase === 'Finale') {
+			updateFinale();
 		}
-		// Result：画面冻结，等待重试输入
+		// Result / Finale：画面冻结，等待输入（终章只有一颗「返回关卡选择」）
 	};
 
 	return {
@@ -1100,6 +1234,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 正好当作“重置本关”用（coreRetry 本身不改）。
 			aimed = false;
 			coreRetry(core);
+			// 机架的平滑状态也归零：终章（S3.18）的相机是**绕开机架**直接写到 1000 单位外的，
+			// 不清的话下一关的相机会从 1000 一路 lerp 回日常取景（半秒钟的“Zoom in”）。
+			deps.rig.reset();
 			introT = 0; // 从选关进来才放一遍进关镜头（重试不重放）
 			introLogged = false;
 			prepareIdle();

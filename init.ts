@@ -24,7 +24,7 @@ import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
 import { PlanView, createPlanView, defaultPlanOptions, planFitRadius } from 'game/PlanView';
-import { AimInput, AimResult, LevelSelect, ResultPanel, createAimInput, createLevelSelect, createResultPanel } from 'game/Hud';
+import { AimInput, AimResult, FinaleMainText, FinalePanel, LevelSelect, ResultPanel, createAimInput, createFinalePanel, createLevelSelect, createResultPanel, finaleSubtitle } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
 import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
 import { Opening, createOpening, loadIntroSeen, saveIntroSeen } from 'game/Opening';
@@ -122,6 +122,10 @@ if (levelTotal <= 0) {
 	let activeIndex = -1;
 	let select: LevelSelect | undefined = undefined;
 	let resultPanel: ResultPanel | undefined = undefined;
+	// 终章「暗淡蓝点」（S3.18）：全局唯一，与结算面板同一套显隐规矩（状态驱动）
+	let finalePanel: FinalePanel | undefined = undefined;
+	/** 终章要显示的两行字。主文案是常量，小字等 onFinale 把飞行距离/用时送过来。 */
+	let finaleText = { main: FinaleMainText, sub: '' };
 	// ⚠️ 面板是**全局唯一**的，但结算属于某一关：记住这个 index，
 	// 点按只作用在**它自己那一关**的运行时上。
 	// 之前用 activeRuntime()：一旦 activeIndex 与面板显示的关卡不一致（切关/自动回归序列），
@@ -260,7 +264,16 @@ if (levelTotal <= 0) {
 				// 只要状态被别的东西改了（切关、视口重建、自动回归序列），点按驱动就会留下一个"留在屏幕上
 				// 但已经没东西可改"的面板 —— 点它看起来完全没反应。状态是唯一事实来源：
 				// 一旦离开 Result 态，面板必须消失（其余阶段都不该有结算面板）。
-				if (p !== 'Result' && index === activeIndex && resultPanel !== undefined) resultPanel.hide();
+				// S3.18 终章同理：进 Finale 才显示终章面板，离开就收（重进 / 视口重建都不会留下鬼面板）。
+				if (index === activeIndex) {
+					if (p === 'Finale') {
+						if (resultPanel !== undefined) resultPanel.hide();
+						if (finalePanel !== undefined) finalePanel.show(finaleText.main, finaleText.sub);
+					} else {
+						if (p !== 'Result' && resultPanel !== undefined) resultPanel.hide();
+						if (finalePanel !== undefined) finalePanel.hide();
+					}
+				}
 			},
 			onResult: (r: ResultKind): void => {
 				// 结算在发射瞬间就已确定，这里只是“飞行播完了”的时刻
@@ -276,6 +289,15 @@ if (levelTotal <= 0) {
 				resultIndex = index; // 面板显示的是**这一关**的结算（见 resultIndex 的说明）
 				if (resultPanel !== undefined) resultPanel.show(r, levelNames[index]);
 			},
+			// S3.18：终章数据（文案小字的两个数）。只在这一刻算一次，之后画面冻结。
+			onFinale: (info): void => {
+				finaleText = { main: FinaleMainText, sub: finaleSubtitle(info.distance, info.time) };
+				print('[escape-velocity] finale: dist=' + info.distance.toFixed(0) +
+					' time=' + info.time.toFixed(1) + ' tWorld=' + info.tWorld.toFixed(0));
+			},
+			// 只有**最后一关**成功才进终章。不读 goal.kind === 'escape'：S3.13 起 L6 就是
+			// 普通的目的地任务（逃逸归终章），所以判据只能是「这是最后一关」。
+			finale: index === levelTotal - 1,
 		});
 
 		// ⚠️ 把瞄准层接到状态机上（S2.2 重写 init.ts 时漏掉这两行，真机表现为
@@ -384,6 +406,8 @@ if (levelTotal <= 0) {
 		runtime.world.visible = false;
 		runtime.aim.setEnabled(false);
 		if (resultPanel !== undefined) resultPanel.hide();
+		// 终章（S3.18）的「返回关卡选择」与结算面板那颗走同一条路 ⇒ 这里也要收
+		if (finalePanel !== undefined) finalePanel.hide();
 		// 以存档为准刷新：成功那一局已经写过盘了
 		progress = loadProgress(levelTotal);
 		if (select !== undefined) select.show(progress.unlocked);
@@ -401,6 +425,11 @@ if (levelTotal <= 0) {
 	 * TS100016（无 this 的函数不能转成带 this 的成员），手册 §5.7 第 4 条
 	 */
 	const buildPanels = (): LevelSelect => {
+		// 终章「暗淡蓝点」（S3.18）：与结算面板同一套规矩 —— 创建即隐藏 + 断触摸，
+		// 显隐由相态驱动（onPhase），不由点按驱动。
+		finalePanel = createFinalePanel(uiLayer, viewW, viewH, {
+			onBackToSelect: (): void => onBackToSelectTap(),
+		});
 		resultPanel = createResultPanel(uiLayer, viewW, viewH, {
 			onRetry: (): void => onRetryTap(),
 			onBackToSelect: (): void => onBackToSelectTap(),
@@ -447,6 +476,7 @@ if (levelTotal <= 0) {
 		}
 		if (select !== undefined) select.hide();
 		if (resultPanel !== undefined) resultPanel.hide();
+		if (finalePanel !== undefined) finalePanel.hide();
 		for (let i = 0; i < levelTotal; i++) {
 			const slot = slots[i];
 			if (slot.runtime !== undefined) {
@@ -552,6 +582,14 @@ if (levelTotal <= 0) {
 	let autoFrame = 0;
 	let autoVX = 0;
 	let autoVY = 0;
+	/**
+	 * "N@frames:vx:vy:steps"：自动发射**之前**先按 steps 次「加速 ▶」（每次 TimeWarpStep 秒）。
+	 * 为什么需要它：L4/L6 的可行解在**特定发射日期**上（L6 在 t0 = 180），而
+	 * `game.launch()` 只认 core.t0 —— 不先把世界时钟拨过去，发出去的就是第 0 天的航线。
+	 * 走的是 `Game.stepTime`（玩家按时间流按钮的同一条公开路径，含相态守卫与 span 夹紧），
+	 * 不是直接写 core.t0 ⇒ 与真机操作等价。0 / 缺省 = 不拨（旧行为不变）。
+	 */
+	let autoWarpSteps = 0;
 	// 回归序列: 发射后回选关再重进 (复用 runtime, 相机 lerp), 复现用户卡死路径
 	let autoBackAt = -1;
 	let autoReenterAt = -1;
@@ -598,12 +636,23 @@ if (levelTotal <= 0) {
 				if (c1 > 0 && c2 > c1) {
 					const frames = tonumber(rest.substring(0, c1));
 					const vx = tonumber(rest.substring(c1 + 1, c2));
-					const vy = tonumber(rest.substring(c2 + 1));
+					// 第 4 段（可选）：发射前先按几次「加速 ▶」。Lua 的 substring 没有结束下标，
+					// 所以要先手工切出 vy 那一段（可能有 ':steps' 跟在后面）。
+					const tail = rest.substring(c2 + 1);
+					const c3 = tail.indexOf(':');
+					const vyText = c3 > 0 ? tail.substring(0, c3) : tail;
+					const vy = tonumber(vyText);
+					const steps = c3 > 0 ? tonumber(tail.substring(c3 + 1)) : undefined;
 					if (frames !== undefined && vx !== undefined && vy !== undefined) {
 						autoLaunchAt = frames;
 						autoVX = vx;
 						autoVY = vy;
-						print('[escape-velocity] auto launch scheduled: frame ' + frames.toFixed(0) + ' v=(' + vx.toFixed(1) + ',' + vy.toFixed(1) + ')');
+						if (steps !== undefined && steps > 0) {
+							autoWarpSteps = Math.floor(steps);
+						}
+						print('[escape-velocity] auto launch scheduled: frame ' + frames.toFixed(0) +
+							' v=(' + vx.toFixed(1) + ',' + vy.toFixed(1) + ')' +
+							' warpSteps=' + autoWarpSteps.toFixed(0));
 					}
 				}
 				}
@@ -667,6 +716,13 @@ if (levelTotal <= 0) {
 				if (autoLaunchAt >= 0 && autoFrame >= autoLaunchAt) {
 					autoLaunchAt = -1;
 					print('[escape-velocity] auto launch');
+					// S3.18 验收用的「先拨日期再发射」：走 stepTime（与玩家按「加速 ▶」同一条路，
+					// 带相态守卫与 span 夹紧）。L6 的可行解在 t0 = 180 = 12 × TimeWarpStep。
+					if (autoWarpSteps > 0) {
+						for (let s = 0; s < autoWarpSteps; s++) runtime.game.stepTime(1, runtime.dateSpan);
+						autoWarpSteps = 0;
+						print('[escape-velocity] auto warp done (date=' + runtime.game.dateNow().toFixed(0) + ')');
+					}
 					runtime.game.launch({ x: autoVX, y: autoVY });
 					autoBackAt = autoFrame + 320;
 					autoReenterAt = autoFrame + 380;

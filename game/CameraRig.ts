@@ -97,6 +97,15 @@ export interface CameraRig {
 	wantDistance(points: P2[], probeRadius?: number, radii?: number[]): number;
 	/** 把机架参数写到真实相机。 */
 	apply(camera: Camera3D.Type, frame: RigFrame): void;
+	/**
+	 * 清掉平滑状态（下一帧直接吸附，不做插值）。
+	 *
+	 * 什么时候必须调：有人**绕开机架**直接写过相机之后。目前只有终章「暗淡蓝点」
+	 * （S3.18）这么做 —— 它要把相机拉到 1000 单位外，而机架的距离夹在 [60, 300]。
+	 * 不清的话，终章那一夜留下的 `distance = 1000` 会让下一关的相机从 1000 一路 lerp 回日常取景。
+	 * 纯状态复位，不碰相机对象，随时可重入。
+	 */
+	reset(): void;
 }
 
 /** 一帧的相机参数（纯数据，便于测试）。 */
@@ -298,6 +307,12 @@ export function createCameraRig(opts?: RigOptions): CameraRig {
 		},
 		apply: (camera: Camera3D.Type, frame: RigFrame): void => {
 			camera.lookAt(frame.eye, frame.target, Vec3(0, 1, 0));
+		},
+		reset: (): void => {
+			state.focusX = 0;
+			state.focusY = 0;
+			state.distance = options.minDistance;
+			state.initialized = false;
 		},
 	};
 }

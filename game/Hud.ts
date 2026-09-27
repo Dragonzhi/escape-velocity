@@ -996,6 +996,119 @@ export function createResultPanel(
 	};
 }
 
+// ---------------------------------------------------------------------------
+// 终章「暗淡蓝点」（S3.18，规格见 .agent/plan/PLAN.md）
+//
+// 一屏：星空 + 一行主文案 + 一行小字 + 一颗「返回关卡选择」。
+// **不做**动画分镜、**不做**第二段文案（砍线顺序里「终章细节」是第一项可砍的）。
+// 显隐由相态驱动（Game.onPhase('Finale') → show；离开 Finale → hide），
+// **不许只由点按驱动**（AGENTS 硬约束 5：状态被别的东西改掉之后，
+// 只靠点按的面板会留在屏幕上变成一个「点了没反应」的层）。
+// ---------------------------------------------------------------------------
+
+const FinaleBackdropHex = 0x05070c;
+const FinaleMainHex = 0xeaf4ff;
+const FinaleSubHex = 0x9fc4e8;
+
+/**
+ * 终章主文案（逐字；改之前先改 PLAN S3.18 与 docs/开发手册.md）。
+ */
+export const FinaleMainText = '这就是我们整颗星球的样子 —— 而你已经从那里飞到了这里。';
+
+/**
+ * 终章小字：飞行距离 / 用时（纯函数，可单测）。
+ *
+ * 距离是**平面单位**（关卡尺度，不是公里）—— 别在这里换算成天文单位，
+ * 那一换就得把整条注释重写一遍，而玩家要的只是「飞了多远、花了多久」。
+ */
+export function finaleSubtitle(distance: number, time: number): string {
+	return '飞行 ' + distance.toFixed(0) + ' 单位 · 用时 ' + time.toFixed(1) + ' 秒';
+}
+
+/** 终章面板的装配参数。 */
+export interface FinalePanelOptions {
+	onBackToSelect: () => void;
+}
+
+/** 终章面板句柄。 */
+export interface FinalePanel {
+	/** 根节点（全屏半透明底），调用方自行 addChild 到想要的层级。 */
+	root: Node.Type;
+	show: (main: string, sub: string) => void;
+	hide: () => void;
+}
+
+/**
+ * 建终章面板：半透明全屏底 + 主文案 + 小字 + 「返回关卡选择」。
+ *
+ * ⚠️ 全屏底**不设** `touch: true`（与结算面板同一条规矩）：全屏 + swallowTouches
+ * 会独占整屏点击，而它在节点树里排在瞄准层之前。终章态瞄准层本来就已
+ * `setEnabled(false)`，能点的只有那一颗按钮。
+ *
+ * 排版：文案都在**上半屏**（画面中心留给「地球只是一个点」），按钮在底部
+ * 但**不贴边**（桌面引擎窗口底部有一条调试工具条，y < 90 一带的鼠标事件会被它吃掉，
+ * 见 Hud.ts 里 viewButton 的注释）。
+ *
+ * @param viewW 视图逻辑宽（`View.size.width`）
+ * @param viewH 视图逻辑高
+ */
+export function createFinalePanel(
+	parent: Node.Type,
+	viewW: number,
+	viewH: number,
+	opts: FinalePanelOptions,
+): FinalePanel {
+	const root = createPanel(parent, viewW, viewH, FinaleBackdropHex, { alpha: 0.55 });
+
+	const fontMain = 34;
+	const fontSub = 30;
+	const btnFont = 40;
+
+	const mainLabel = createLabel(root, FinaleMainText, fontMain, FinaleMainHex);
+	if (mainLabel !== undefined) {
+		// 竖屏 601 宽：34 号字一行约 15 个汉字，27 字的主文案会折成两行 ⇒ 必须给 textWidth
+		mainLabel.textWidth = viewW * 0.88;
+		setLabelCenter(mainLabel, viewW / 2, viewH * 0.80);
+	}
+
+	const subLabel = createLabel(root, '', fontSub, FinaleSubHex);
+	if (subLabel !== undefined) setLabelCenter(subLabel, viewW / 2, viewH * 0.71);
+
+	const btnW = clampNumber(viewW * 0.62, MinButtonWidth, 560);
+	const btnH = clampNumber(viewH * 0.085, MinButtonHeight, 120);
+	const backButton = createButton(root, {
+		w: btnW,
+		h: btnH,
+		text: '返回关卡选择',
+		fontSize: btnFont,
+		bgHex: ResultButtonBgHex,
+		fgHex: ResultButtonFgHex,
+		borderHex: ResultButtonBorderHex,
+		// 一次性动作 ⇒ 按下即生效（与「重试本关 / 返回关卡选择」同一个理由，见 ButtonOptions.fireOn）
+		fireOn: 'press',
+		onTap: opts.onBackToSelect,
+	});
+	backButton.root.position = Vec2((viewW - btnW) / 2, 110);
+
+	root.visible = false;
+	// 创建即禁用：面板在第一次 show() 之前也在树里，可点的按钮会参与命中并吞掉覆盖区域的点击
+	backButton.setEnabled(false);
+
+	return {
+		root,
+		show: (main: string, sub: string): void => {
+			setLabelText(mainLabel, main);
+			setLabelText(subLabel, sub);
+			backButton.setEnabled(true);
+			root.visible = true;
+		},
+		hide: (): void => {
+			root.visible = false;
+			// 兜底：隐藏时把按钮的触摸也断掉（任何「隐藏但仍参与命中」的引擎行为都不会再吞点击）
+			backButton.setEnabled(false);
+		},
+	};
+}
 /** 关卡选择里的一项（只要显示名，进度由 unlocked 单独给）。 */
 export interface LevelSelectEntry {
 	name: string;
