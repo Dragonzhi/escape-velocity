@@ -53,17 +53,20 @@ export function planeToWorld(p: P2, y: number): Vec3.Type {
 interface ModelRadius { name: string; k: number; }
 
 const MODEL_RADIUS: ModelRadius[] = [
-	{ name: 'Planet_Earth', k: 1.0343 },
-	{ name: 'Planet_Mars', k: 1.0227 },
-	{ name: 'Planet_Venus', k: 1.0215 },
+	// S3.14 建模交付（docs/交付清单_Trae.md）：天体全部重做成**单位球**（半径 1.0、球心在原点），
+	// 所以 k = 1.000 —— 由 tools/glb-check.mjs 核对过 POSITION 的 min/max 都是 ±1.00。
+	{ name: 'Sun', k: 1.0000 },
+	{ name: 'Moon', k: 1.0000 },
+	{ name: 'Planet_Earth', k: 1.0000 },
+	{ name: 'Planet_Venus', k: 1.0000 },
+	{ name: 'Planet_Mars', k: 1.0000 },
 	{ name: 'Planet_Jupiter', k: 1.0000 },
-	{ name: 'Planet_Saturn', k: 0.9837 },
-	{ name: 'Planet_Neptune', k: 1.0170 },
-	// 天王星（2026-09-25 建模交付 Planet_Uranus.glb，24 KB / 464 面 / 环+本体两个 mesh）：
-	// k 同样取**本体**半径（本体 max 半宽 1.023；环在 x/y 平面 ±1.95，不参与），
-	// 否则环会被 displayRadius 二次放大。环面在 **xy 平面**（法线 = z，对应真实天王星 98° 轴倾），
-	// 与土星环（xz 平面）正好差 90°——相机俯视 45° 下看起来是**竖向**椭圆。
-	{ name: 'Planet_Uranus', k: 1.0230 },
+	{ name: 'Planet_Neptune', k: 1.0000 },
+	// ⚠️ 带环的两颗：k 取**本体**半径（1.000），环不参与标定 —— 土星环在 xz 平面（法线 y，±2.2）、
+	// 天王星环在 xy 平面（法线 z，±1.95，对应真实 98° 轴倾）；否则环会被 displayRadius 二次放大。
+	// 两者的环现在都是**模型自带**的（不再叠 Ring.gltf，见行星循环里的判断）。
+	{ name: 'Planet_Saturn', k: 1.0000 },
+	{ name: 'Planet_Uranus', k: 1.0000 },
 ];
 
 /** 取模型半径系数；表里没有的名字按 1.0 处理（等价于旧行为）。 */
@@ -72,6 +75,103 @@ export function modelRadius(name: string): number {
 		if (MODEL_RADIUS[i].name === name) return MODEL_RADIUS[i].k;
 	}
 	return 1.0;
+}
+
+/** 一个天体的贴图（文件名按 §3.6 全小写下划线，全部在 Assets/Image/ 下）。 */
+interface PlanetTexDef {
+	/** 模型名（不含路径与扩展名）。 */
+	name: string;
+	/** baseColor 贴图文件名。 */
+	base: string;
+	/** 自发光贴图（地球夜面灯光 / 太阳表面）。省略 = 不用自发光贴图。 */
+	emissive?: string;
+	/** 自发光乘数（0xRRGGBB）。太阳要满值，地球夜灯要很暗（贴图大部分是黑的）。 */
+	emisMul?: number;
+	/** 环条带（只对**环材质**用：alphaMode = Blend 的那个材质）。 */
+	ring?: string;
+}
+
+/**
+ * 贴图表（S3.14 建模交付）。
+ *
+ * ⚠️ 交付的 .glb **不含内嵌贴图**（tools/glb-check.mjs 核对：images = 0），贴图一律走外部文件、
+ *    由这里在运行时绑定。行星有 UV（等距圆柱：U 沿经度、接缝在 +Z 背面；V 沿纬度，北极 v=1）。
+ * ⚠️ 环的贴图要给**环材质**，而引擎拿不到 glTF 材质名（Material3D 没有 name 字段）——
+ *    所以用建模约定的 **alphaMode = Blend** 认它（实测 Saturn_Ring_Mat / Uranus_Ring_Mat 都是 BLEND，
+ *    本体材质是 OPAQUE）。环的 UV 是径向的：U = 0 内环 → U = 1 外环。
+ */
+const PLANET_TEX: PlanetTexDef[] = [
+	{ name: 'Sun', base: 'sun.jpg', emissive: 'sun.jpg', emisMul: 0xffffff },
+	{ name: 'Moon', base: 'moon.jpg' },
+	{ name: 'Planet_Earth', base: 'planet_earth.jpg', emissive: 'planet_earth_emissive.png', emisMul: 0x2a2a2a },
+	{ name: 'Planet_Venus', base: 'planet_venus.jpg' },
+	{ name: 'Planet_Mars', base: 'planet_mars.jpg' },
+	{ name: 'Planet_Jupiter', base: 'planet_jupiter.jpg' },
+	{ name: 'Planet_Saturn', base: 'planet_saturn.jpg', ring: 'planet_saturn_ring.png' },
+	{ name: 'Planet_Uranus', base: 'planet_uranus.jpg', ring: 'planet_uranus_ring.png' },
+	{ name: 'Planet_Neptune', base: 'planet_neptune.jpg' },
+];
+
+/** 0xRRGGBB → 通道（不用位运算：tstl 对算术右移会编译失败，见手册 §7.1）。 */
+function redOf(hex: number): number { return Math.floor(hex / 65536) % 256; }
+function greenOf(hex: number): number { return Math.floor(hex / 256) % 256; }
+function blueOf(hex: number): number { return Math.floor(hex) % 256; }
+
+/** 0–1 的视觉色 → 0xRRGGBB（给「没有贴图时」的回退染色用）。 */
+export function packColor(r: number, g: number, b: number): number {
+	return Math.round(r * 255) * 65536 + Math.round(g * 255) * 256 + Math.round(b * 255);
+}
+
+/** 按文件名安全取贴图（引擎遇到不存在的文件会**抛异常**，所以先 Content.exist）。 */
+function textureOf(file: string): Texture2D.Type | undefined {
+	if (file === '') return undefined;
+	const path = 'Assets/Image/' + file;
+	if (!Content.exist(path)) return undefined;
+	return Texture2D(path);
+}
+
+/**
+ * 给一颗天体模型绑贴图 / 回退染色（关卡与开场共用同一份）。
+ *
+ * @param model 已加载的模型
+ * @param modelName 模型名（不含路径与扩展名）
+ * @param tintHex 没有贴图时的回退色（0xRRGGBB；0 = 不动 baseColor）
+ * @param emissiveHex 自发光乘数（0xRRGGBB；0 = 用贴图表里的默认值）
+ */
+export function applyPlanetTexture(model: Model3D.Type, modelName: string, tintHex: number, emissiveHex: number): void {
+	let def: PlanetTexDef | undefined = undefined;
+	for (let i = 0; i < PLANET_TEX.length; i++) {
+		if (PLANET_TEX[i].name === modelName) def = PLANET_TEX[i];
+	}
+	const baseTex = textureOf(def !== undefined ? def.base : '');
+	const emiTex = textureOf(def !== undefined && def.emissive !== undefined ? def.emissive : '');
+	const ringTex = textureOf(def !== undefined && def.ring !== undefined ? def.ring : '');
+	let emiMul = emissiveHex;
+	if (emiMul === 0 && emiTex !== undefined) {
+		emiMul = def !== undefined && def.emisMul !== undefined ? def.emisMul : 0x2a2a2a;
+	}
+	// 循环到 getMaterial 返回 undefined：**不写死材质数量**（带环的行星有 2 个材质）
+	let i = 0;
+	while (i < 64) {
+		const mat = model.getMaterial(i);
+		if (mat === undefined) break;
+		const isRing = ringTex !== undefined && mat.alphaMode === MaterialAlphaMode3D.Blend;
+		if (isRing) {
+			mat.setBaseColorTexture(ringTex);
+			mat.baseColor = Color(255, 255, 255, 255);
+		} else if (baseTex !== undefined) {
+			// 贴图自带颜色 ⇒ baseColor 置白，否则会和视觉色相乘变成脏色
+			mat.setBaseColorTexture(baseTex);
+			mat.baseColor = Color(255, 255, 255, 255);
+		} else if (tintHex > 0) {
+			mat.baseColor = Color(redOf(tintHex), greenOf(tintHex), blueOf(tintHex), 255);
+		}
+		if (!isRing && emiTex !== undefined && emiMul > 0) {
+			mat.setEmissiveTexture(emiTex);
+			mat.emissive = Color3(emiMul);
+		}
+		i += 1;
+	}
 }
 
 /**
@@ -151,6 +251,12 @@ export interface SceneOptions {
 	probeBodyPath?: string;
 	/** 探测器**天线**文件（仅 8 个天线零件，转轴在文件原点）。 */
 	probeAntennaPath?: string;
+	/** 天线转轴（机体本地 y，模型单位）。省略 = 0.20（旧单体文件）。 */
+	probeAntennaPivotY?: number;
+	/** 机体外接半径（模型单位）。省略 = 旧单体文件实测值。 */
+	probeBodyRadius?: number;
+	/** 探测器细节图集（只给带 UV 的新模型）。 */
+	probeAtlasPath?: string;
 }
 
 /**
@@ -192,6 +298,21 @@ export interface ProbeOptions {
 	bodyPath?: string;
 	/** 分体：天线（**文件原点 = 转轴**）。 */
 	antennaPath?: string;
+	/**
+	 * 天线转轴在**机体本地系**里的 y（模型单位）。省略 = 0.20（旧单体文件的值）。
+	 * S3.14 的建模交付：太阳能板版 **0.6495**、RTG 版 **0.6641**（两版机身高度不同）。
+	 */
+	antennaPivotY?: number;
+	/**
+	 * 机体模型的外接半径（模型单位）。省略 = 旧单体文件的实测值（0.5 × 3.227）。
+	 * S3.14：Probe_Solar_Body **1.084**、Probe_RTG_Body **0.871**（交付文档 §A.2 实测）。
+	 */
+	bodyRadius?: number;
+	/**
+	 * 细节图集（如 'Assets/Image/probe_atlas.jpg'）：绑到机体与天线的**所有**材质当 baseColor 贴图。
+	 * 只对**有 UV** 的新模型给（旧分体文件没有 UV，绑了会取到未定义 UV ⇒ 花屏）。
+	 */
+	atlasPath?: string;
 }
 
 /** 探测器句柄。 */
@@ -218,8 +339,21 @@ export interface ProbeHandle {
  *
  * @returns 句柄；连单体文件都加载不上时返回 undefined（调用方应报错）。
  */
+/** 把细节图集绑到模型的每个材质（**不改 baseColor**：建模的材质色就是要和图集相乘的）。 */
+function applyAtlas(model: Model3D.Type, tex: Texture2D.Type): void {
+	let i = 0;
+	while (i < 64) {
+		const mat = model.getMaterial(i);
+		if (mat === undefined) break;
+		mat.setBaseColorTexture(tex);
+		i += 1;
+	}
+}
+
 export function createProbe(parent: Node3D.Type, opts: ProbeOptions): ProbeHandle | undefined {
 	const scale = opts.scale;
+	const pivotY = opts.antennaPivotY !== undefined ? opts.antennaPivotY : AntennaPivotY;
+	const bodyRadius = opts.bodyRadius !== undefined ? opts.bodyRadius : 0.5 * 3.227;
 	const bodyModel = opts.bodyPath !== undefined && Content.exist(opts.bodyPath)
 		? Model3D(opts.bodyPath)
 		: undefined;
@@ -241,21 +375,34 @@ export function createProbe(parent: Node3D.Type, opts: ProbeOptions): ProbeHandl
 		node.addChild(singleModel);
 	}
 
-	// 天线模型直接挂在探测器根下、位置在转轴处（模型本地 (0, AntennaPivotY, 0)·scale）；
+	// 天线模型直接挂在探测器根下、位置在转轴处（模型本地 (0, pivotY, 0)·scale）；
 	// 建模约定：天线文件以转轴为原点 ⇒ 旋转天线模型节点 = 绕转轴摆动。
+	// ⚠️ pivotY 是**逐版本**的（S3.14：太阳能 0.6495 / RTG 0.6641 —— 两版机身高度不同）。
 	if (bodyModel !== undefined && antennaModel !== undefined) {
 		antennaModel.scale = Vec3(scale, scale, scale);
-		antennaModel.position = Vec3(0, AntennaPivotY * scale, 0);
+		antennaModel.position = Vec3(0, pivotY * scale, 0);
 		node.addChild(antennaModel);
+	}
+
+	// 细节图集（S3.14 交付：探测器带 UV，probe_atlas.jpg 按分区排好）。只给新模型 ——
+	// 旧分体文件（Probe_Body/Probe_Antenna）没有 UV，绑了会取到未定义 UV。
+	if (opts.atlasPath !== undefined && Content.exist(opts.atlasPath)) {
+		const atlas = Texture2D(opts.atlasPath);
+		if (atlas !== undefined) {
+			if (bodyModel !== undefined) applyAtlas(bodyModel, atlas);
+			if (singleModel !== undefined) applyAtlas(singleModel, atlas);
+			if (antennaModel !== undefined) applyAtlas(antennaModel, atlas);
+		}
 	}
 
 	return {
 		node,
 		antenna: antennaModel,
-		// 口径：**实测常数** —— 拆分前单体文件 AABB 最大边 3.227（碟面直径，ModelCalibProbe 标定），
-		// 半长 × scale × 1.1。拆分后身体/天线各自的包围盒都不完整，不再逐文件量；
-		// 不取外接球：两根吊杆沿飞行轴伸出（z -1.85…1.00），屏幕上不占宽度。
-		radius: 0.5 * 3.227 * scale * 1.1,
+		// 口径：**外接半径 × scale × 1.1** —— 旧单体文件是实测的 AABB 最大边 3.227 的一半
+		// （碟面直径，ModelCalibProbe 标定），S3.14 的两版新机体由 `bodyRadius` 传进来
+		// （Solar 1.084 / RTG 0.871，交付文档实测）。不取外接球：两根吊杆沿飞行轴伸出，
+		// 屏幕上不占宽度。
+		radius: bodyRadius * scale * 1.1,
 	};
 }
 
@@ -424,7 +571,6 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		starWorld = planeToWorld({ x: b.orbitCenter.x, y: b.orbitCenter.y }, 0);
 	}
 	const hasStar = starWorld !== undefined && starGm >= SunMinGmForLight;
-	const sunTex = hasStar ? Texture2D('Assets/Image/sun_tex.png') : undefined;
 	// ⚠️ **为什么最终还是方向光**（S3.12 实测过一版点光源）：
 	// 把点光源放在太阳中心（几何上唯一正确的位置）之后，光照按距离衰减 ——
 	// 太阳半径 28、行星轨道 55~195，同一盏灯的强度没法同时照亮金星与海王星：
@@ -480,21 +626,13 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 		const scale = vis.displayRadius / k;
 		bodyModel.scale = Vec3(scale, scale, scale);
 
-		// 逐实例染色：循环到 getMaterial 返回 undefined（**不写死材质数量**）。
-		let mi = 0;
-		while (mi < 64) {
-			const mat = bodyModel.getMaterial(mi);
-			if (mat === undefined) break;
-			mat.baseColor = Color(vis.r * 255, vis.g * 255, vis.b * 255, 255);
-			const em = vis.emissive;
-			// ⚠️ Color3 吃的是 0–255 的整数（或 0xRRGGBB），不是 0–1 的浮点（Earth 那处写的是 0x0c1622）
-			if (em !== undefined) mat.emissive = Color3(Math.round(em.r * 255), Math.round(em.g * 255), Math.round(em.b * 255));
-			// ⚠️ 恒星（太阳）还要**贴一张自发光贴图**：实测 Material3D.emissive 只有在配了
-			// 自发光贴图时才看得出来（星空背板就是这么用的）。没有它就只剩一颗**灰球** ——
-			// 而太阳的表面又照不到自己（点光源/方向光的来向都在它背后或内部）。
-			if (i === starIndex && sunTex !== undefined) mat.setEmissiveTexture(sunTex);
-			mi += 1;
-		}
+		// 染色 / 绑贴图（S3.14 建模交付：行星与月球都带 UV + 外部贴图，配方在 PLANET_TEX）。
+		// ⚠️ Color3/Color 吃的是 0–255 的整数（或 0xRRGGBB），不是 0–1 的浮点。
+		// ⚠️ 太阳的自发光**只能靠贴图**：实测 Material3D.emissive 只有配了自发光贴图才看得出来
+		//    （星空背板就是这么用的），而恒星表面照不到自己（光的来向都在它内部或背后）——
+		//    所以它的照片（sun.jpg）既当 baseColor 又当 emissive（乘数满值）。
+		applyPlanetTexture(bodyModel, modelName, packColor(vis.r, vis.g, vis.b),
+			vis.emissive !== undefined ? packColor(vis.emissive.r, vis.emissive.g, vis.emissive.b) : 0);
 
 		root.addChild(bodyModel);
 
@@ -576,6 +714,9 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 		probePath: options.probePath,
 		bodyPath: options.probeBodyPath,
 		antennaPath: options.probeAntennaPath,
+		antennaPivotY: options.probeAntennaPivotY,
+		bodyRadius: options.probeBodyRadius,
+		atlasPath: options.probeAtlasPath,
 	});
 	if (probe === undefined) return undefined;
 	const probeNode = probe.node;

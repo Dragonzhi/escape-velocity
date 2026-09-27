@@ -93,6 +93,13 @@ export interface LevelDef {
 	 * 玩家拖出来的那一下是 **Δv（点火）**，落在它上面：总速度 = probeVel0 + 点火。省略 = 静止出发。
 	 */
 	probeVel0?: P2;
+	/**
+	 * 探测器版本（S3.14 建模交付的两台机体）：
+	 * 近处任务（月球 / 金星 / 木星）用**太阳能板版**，木星以外（土星 / 天王星 / 海王星）用 **RTG 核电池版**
+	 * —— 太阳能板的功率 ∝ 1/r²，木星以外没有意义（Juno 带着太阳能板去过木星，Voyager 用的是 RTG）。
+	 * 省略 = 太阳能板版。
+	 */
+	probeVariant?: 'solar' | 'rtg';
 	planets: Body[];
 	visuals: PlanetVisualDef[];
 	goal: GoalSpec;
@@ -381,9 +388,9 @@ function homeEarth(): Body {
 function earthVisual(): PlanetVisualDef {
 	return { r: 0.42, g: 0.62, b: 0.85, displayRadius: R_EARTH, ring: false, model: 'Planet_Earth' };
 }
-/** 月球（L1）：灰。⚠️ 还没有 Moon.glb —— 回退到代码生成的 Sphere.gltf（在 Trae 的交付清单里）。 */
+/** 月球（L1）：S3.14 交付了 Moon.glb（5040 面 + moon.jpg 环形山贴图）。 */
 function moonVisual(): PlanetVisualDef {
-	return { r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false };
+	return { r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false, model: 'Moon' };
 }
 /** 金星：暖黄的硫酸云。 */
 function venusVisual(): PlanetVisualDef {
@@ -435,6 +442,7 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 1,
 		title: '月球',
+		probeVariant: 'solar',
 		// 六站里唯一的一次「近景」：地月系。月球**真的在绕地球走**，所以不能对着它现在的位置打。
 		brief: '月球任务 · 地球轨道：月球正在绕地球走 —— 别对着它现在的位置点火。这一次点火决定后面的一切。',
 		// 探测器已经在绕地球飞（用户：「飞行器也是一开始在运动的，围绕地球」）。
@@ -463,6 +471,7 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 2,
 		title: '金星',
+		probeVariant: 'solar',
 		brief: '金星任务 · 地球轨道：太阳会一路把你拽快 —— 向内飞，别飞过头。金星在 55 单位的内圈上等着。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
@@ -483,6 +492,7 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 3,
 		title: '木星',
+		probeVariant: 'solar',
 		brief: '木星任务 · 地球轨道：第一次真正的行星际飞行。出发得够快，木星才会在你到达时出现在航线上。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
@@ -503,6 +513,7 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 4,
 		title: '土星',
+		probeVariant: 'rtg',
 		brief: '土星任务 · 地球轨道：先掠过木星，让它替你掰一下方向 —— 土星还在更外面。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
@@ -528,6 +539,7 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 5,
 		title: '天王星',
+		probeVariant: 'rtg',
 		brief: '天王星任务 · 地球轨道：木星、土星，两次借力，越飞越远。一次点火要串起三个节点。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
@@ -555,6 +567,7 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 6,
 		title: '海王星',
+		probeVariant: 'rtg',
 		brief: '海王星任务 · 地球轨道：四颗巨行星连成一条线的那个日期。一次点火串到底，飞向 195 单位外的海王星。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [

@@ -177,16 +177,16 @@ if (levelTotal <= 0) {
 		Director.entry.addChild(world);
 		world.visible = false;
 
+		const rtg = def.probeVariant === 'rtg';
 		const scene = buildScene({
 			root: world,
 			bodies,
 			visuals: def.visuals,
 			probeStart: level.probeStart,
-			// S3.1：探测器换 Probe_Voyager_v1.glb。⚠️ 该资产在接线当天被**重新导出过**
-			// （13.8 KB / 164 面 → 43.6 KB / 21 mesh / 600 面，见手册 §5.9 的提示），
-			// 下面按**当前**文件：包围盒 x±1.6137、y±1.4050、z[-1.8460, 1.0000]，最长边 3.227
-			// ⇒ scale 1.2 时世界最长边 3.87（旧四面体 Probe.gltf 只有 2.4）。
-			probeScale: 1.2,
+			// S3.14 建模交付：探测器分成**两版**（太阳能板 / RTG 核电池），见 LevelDef.probeVariant。
+			// 每版都是「机体 + 天线」两个文件（引擎拿不到 glTF 子节点 ⇒ 不拆文件就没法转天线）。
+			// scale 2.2：新机体的最长轴是 Z ±0.87（旧单体是 3.227）⇒ 屏幕上的尺寸和以前相当。
+			probeScale: 2.2,
 			spherePath: 'Assets/Model/Sphere.gltf',
 			ringPath: 'Assets/Model/Ring.gltf',
 			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
@@ -194,9 +194,14 @@ if (levelTotal <= 0) {
 			// （homeEarth()：沿地球轨道运行、gm = 0、半径 = R_EARTH）⇒ 这里不再传 home。
 			// Scene 的 home/homeRadius 因此暂时闲置："大天线回头指向地球"要改成指向那颗布景地球，
 			// 等 3D 镜头那一轮再接（见 .agent/plan/PROGRESS.md）。
-			// [二分测试 C：临时禁用分体]
-			probeBodyPath: 'Assets/Model/Probe_Body.glb',
-			probeAntennaPath: 'Assets/Model/Probe_Antenna.glb',
+			// 探测器版本：近处任务（月球 / 金星 / 木星）→ 太阳能板版；木星以外 → RTG 版。
+			// 交付文档 §A.3 的两组常数（天线转轴 / 机体外接半径）逐版本不同，别写死。
+			probeBodyPath: rtg ? 'Assets/Model/Probe_RTG_Body.glb' : 'Assets/Model/Probe_Solar_Body.glb',
+			probeAntennaPath: rtg ? 'Assets/Model/Probe_RTG_Antenna.glb' : 'Assets/Model/Probe_Solar_Antenna.glb',
+			probeAntennaPivotY: rtg ? 0.6641 : 0.6495,
+			probeBodyRadius: rtg ? 0.871 : 1.084,
+			// 两版共用同一张细节图集（UV 已按分区排好，材质色与它相乘）
+			probeAtlasPath: 'Assets/Image/probe_atlas.jpg',
 		});
 		if (scene === undefined) {
 			print('[escape-velocity] FATAL: scene build failed for L' + (index + 1).toFixed(0));

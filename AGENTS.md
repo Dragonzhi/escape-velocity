@@ -68,6 +68,9 @@ node tools/level-phases.mjs 4 --t0 180              # 解"第 180 秒才对齐"�
 node tools/level-window.mjs 4 --shifts -200,-100,0,100,200   # 平移候选 + 每档成功数 + 硬门判定
 node tools/level-window.mjs 4 --tol 20,30 --span 400          # 试算容差/跨度
 
+# ⑦ glTF/GLB 交付自检（S3.14 起）：单位球 / UV / 内嵌贴图 / 面数 / 环材质，读二进制不用起引擎
+node tools/glb-check.mjs --all
+
 # ⑤ 合成鼠标"玩一关"（按住/连按/相态守卫/按钮命中这类**时序**行为，逐关截图证明不了）
 pwsh tools/level-play.ps1 -Level 4 -HoldWarpMs 2500
 # 自动进 Armed（enter-request 的 N@arm:<frames>）→ 连点「发射」→ 同时抓"发射前/后"两帧做 A/B
@@ -128,7 +131,11 @@ Trajectory 11 / CameraRig 16 / Progress 36 / Opening 33）→ `.agent/test-resul
    **发射瞬间由发射日期交棒而来**（`coreHandoffDate`：发射 `clock→t0`、重试 `t0→clock`、进关都归零）。
    踩过的现象：L4/L6"调好时间一按发射，行星跳回原位"（`core.t0` 永远是 0，只有 `clock` 在变）。
    交棒必须保证 **`t0 + clock` 守恒**（画面不跳），单测 `handoff-*` 守着。
-11. **预测线只在"玩家瞄过"之后才存在**（`aimed` 标志）：进关**一条线都不画**，
+11. **贴图走外部文件、由代码绑定**（S3.14）：交付的 .glb **不含内嵌贴图**（`images = 0`），行星贴图用
+    `game/Scene.ts` 的 `PLANET_TEX` + `applyPlanetTexture()` 绑（**有贴图时 baseColor 必须置白**，否则与视觉色相乘变脏）；
+    环的贴图靠 `alphaMode === Blend` 认材质（引擎拿不到 glTF 材质名）；细节图集**只能给有 UV 的新模型**
+    （旧 `Probe_Body/Probe_Antenna` 没有 UV）。
+12. **预测线只在"玩家瞄过"之后才存在**（`aimed` 标志）：进关**一条线都不画**，
    松手进 `Armed` 后**保持**玩家那条线（别拿待机轨道去覆盖它）；重算的缓存键必须含
    **日期 + 探测器此刻位置**（行星随日期动、L1 的探测器自己在动）。
 

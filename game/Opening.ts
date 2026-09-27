@@ -23,7 +23,7 @@
  */
 import { Camera3D, Color, Color3, Content, DirectionalLight3D, Label, Material3D, Model3D, Node, Node3D, Path, PointLight3D, Size, Vec2, Vec3 } from 'Dora';
 import { P2 } from 'game/Gravity';
-import { ProbeHandle, createProbe, createStarBackdrop, modelRadius, planeToWorld, pointAntenna, probeYawForVelocity } from 'game/Scene';
+import { ProbeHandle, applyPlanetTexture, createProbe, createStarBackdrop, modelRadius, planeToWorld, pointAntenna, probeYawForVelocity } from 'game/Scene';
 import { colorFromHex, createLabel, setLabelCenter } from 'game/Ui';
 
 const DegToRad = Math.PI / 180;
@@ -66,7 +66,8 @@ const AzDriftDegPerFrame = 0.035;
 const SunRadius = 4.8;
 
 /** 探测器在开场里的缩放与轨道（比关卡内小一号：全景尺度下才协调）。 */
-export const ProbeScale = 0.55;
+// S3.14：新机体最长轴 0.87（旧单体 3.227）⇒ 0.55 → 1.15 才是屏幕上同样的尺寸。
+export const ProbeScale = 1.15;
 export const ProbeOrbitRadius = 4.6;
 export const ProbeOrbitStartDeg = 40;
 /** 探测器绕地球的公转角速度（度/帧）——540 帧转约 297°，看得见「在轨」。 */
@@ -122,7 +123,7 @@ export const Stations: OpeningStation[] = [
 	// 原先 205°（金星在该方向的延长线上）会让它在特写里只有 9.7 单位远、占掉半个屏幕（实测截图）。
 	{ model: 'Planet_Venus', radius: 1.60, orbit: 11.5, angleDeg: 300, colorHex: 0xf0dcae, emissiveHex: 0 },
 	// 地球：特写里是主角，自发光比关卡里那版略亮（正交光方向固定，夜面太黑会看不出是地球）
-	{ model: 'Planet_Earth', radius: 2.20, orbit: 17.0, angleDeg: 262, colorHex: 0x5b9be0, emissiveHex: 0x16283c },
+	{ model: 'Planet_Earth', radius: 2.20, orbit: 17.0, angleDeg: 262, colorHex: 0x5b9be0, emissiveHex: 0 },
 	{ model: 'Planet_Mars', radius: 1.50, orbit: 22.5, angleDeg: 318, colorHex: 0xd07f4a, emissiveHex: 0 },
 	{ model: 'Planet_Jupiter', radius: 4.60, orbit: 30.0, angleDeg: 12, colorHex: 0xe0c092, emissiveHex: 0 },
 	// 土星环是模型自带的（外径 ≈ 本体 2.24 倍）⇒ 本体 3.2 时环外径 7.2，
@@ -291,17 +292,6 @@ function clampNumber(value: number, lo: number, hi: number): number {
 	return value;
 }
 
-/** 模型整体染色（循环到 getMaterial 返回 undefined —— 材质数量不写死的同一套规矩）。 */
-function tint(model: Model3D.Type, colorHex: number, emissiveHex: number): void {
-	let i = 0;
-	while (i < 64) {
-		const mat = model.getMaterial(i);
-		if (mat === undefined) break;
-		mat.baseColor = colorFromHex(colorHex, 1);
-		if (emissiveHex > 0) mat.emissive = Color3(emissiveHex);
-		i += 1;
-	}
-}
 
 /** 淡入淡出窗口：返回某一帧的不透明度（0–1）。 */
 function fadeWindow(f: number, inStart: number, inEnd: number, outStart: number, outEnd: number): number {
@@ -369,7 +359,9 @@ export function createOpening(options: OpeningOptions): Opening {
 	const sun = Model3D('Assets/Model/Sun.glb');
 	if (sun !== undefined) {
 		sun.scale = Vec3(SunRadius, SunRadius, SunRadius);
-		tint(sun, 0xffe19a, 0x8a6a20);
+		// S3.14：太阳走 sun.jpg（既当 baseColor 又当 emissive，乘数满值）——
+		// 以前这里是一块纯色，现在有表面细节与边缘变暗。
+		applyPlanetTexture(sun, 'Sun', 0, 0);
 		root.addChild(sun);
 	}
 
@@ -391,7 +383,9 @@ export function createOpening(options: OpeningOptions): Opening {
 			}
 			const scale = st.radius / modelRadius(st.model);
 			model.scale = Vec3(scale, scale, scale);
-			tint(model, st.colorHex, st.emissiveHex);
+			// S3.14：有交付贴图的行星走贴图（S3.14 交付了全部行星的 UV + 贴图），
+			// 没有贴图的（水星那个回退球）继续走 colorHex。
+			applyPlanetTexture(model, st.model, st.colorHex, st.emissiveHex);
 			model.position = planeToWorld(p, 0);
 			root.addChild(model);
 		});
@@ -415,10 +409,14 @@ export function createOpening(options: OpeningOptions): Opening {
 	let probe: ProbeHandle | undefined = undefined;
 	buildQueue.push((): void => {
 		probe = createProbe(root, {
+			// 开场固定用**太阳能板版** —— 它就停在地球旁边，与 L1–L3 同一台（木星以外才换 RTG）。
 			scale: ProbeScale,
 			probePath: options.probePath,
-			bodyPath: options.probeBodyPath,
-			antennaPath: options.probeAntennaPath,
+			bodyPath: 'Assets/Model/Probe_Solar_Body.glb',
+			antennaPath: 'Assets/Model/Probe_Solar_Antenna.glb',
+			antennaPivotY: 0.6495,
+			bodyRadius: 1.084,
+			atlasPath: 'Assets/Image/probe_atlas.jpg',
 		});
 	});
 
