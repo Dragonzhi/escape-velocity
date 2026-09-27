@@ -52,6 +52,44 @@ function orbitingBody(): Body {
 }
 
 /** 1) 确定性：同一输入两次推演必须逐点完全相同。 */
+/** 11) 卫星：绕**会动的宿主**公转（S3.13 新增 Body.host）。
+ *
+ * 为什么需要它：orbitCenter 是常量，而月球绕的地球**自己也在绕日** ⇒ 圆心必须能随宿主走。
+ * 验两件事：① 卫星到宿主的距离恒等于 orbitRadius（不管宿主跑了多久）；
+ * ② 宿主静止时（orbitRadius = 0）退化成旧行为 —— 圆心就是 orbitCenter。
+ */
+function testHostedOrbit(): void {
+	const earth: Body = {
+		gm: 2600, radius: 1.76, orbitCenter: { x: 0, y: 0 }, orbitRadius: 80,
+		orbitPeriod: 715, phase0: Math.PI / 2, orbitDirection: 1,
+	};
+	const moon: Body = {
+		gm: 0, radius: 1.0, orbitCenter: { x: 0, y: 0 }, orbitRadius: 14,
+		orbitPeriod: 276, phase0: 0, orbitDirection: 1, host: earth,
+	};
+	const ts = [0, 37.5, 180, 600, 1234];
+	for (let i = 0; i < ts.length; i++) {
+		const t = ts[i];
+		const e = bodyPositionAt(earth, t);
+		const m = bodyPositionAt(moon, t);
+		const dx = m.x - e.x;
+		const dy = m.y - e.y;
+		const d = Math.sqrt(dx * dx + dy * dy);
+		check('hosted-orbit-distance', Math.abs(d - 14) < 1e-9, `t=${t} 卫星到宿主距离 = ${d.toFixed(6)}（应恒为 14）`);
+	}
+	const stillHost: Body = {
+		gm: 2600, radius: 1.76, orbitCenter: { x: 0, y: 70 }, orbitRadius: 0,
+		orbitPeriod: 0, phase0: 0, orbitDirection: 1,
+	};
+	const stillMoon: Body = {
+		gm: 0, radius: 1.0, orbitCenter: { x: 0, y: 0 }, orbitRadius: 30,
+		orbitPeriod: 0, phase0: 0, orbitDirection: 1, host: stillHost,
+	};
+	const p = bodyPositionAt(stillMoon, 999);
+	check('hosted-orbit-static-host', Math.abs(p.x - 30) < 1e-12 && Math.abs(p.y - 70) < 1e-12,
+		`静止宿主退化为 orbitCenter：(${p.x.toFixed(3)}, ${p.y.toFixed(3)}) 应为 (30, 70)`);
+}
+
 function testDeterminism(): void {
 	const bodies = [orbitingBody(), staticBody()];
 	const init: ProbeState = { pos: { x: -20, y: 3 }, vel: { x: 5, y: 1.5 } };
@@ -256,6 +294,7 @@ function testBrake(): void {
 
 /** 入口：运行全部测试并返回报告。首行为 passed / failed。 */
 export function runTests(): string {
+	testHostedOrbit();
 	testDeterminism();
 	testStraightLine();
 	testCircularOrbit();

@@ -316,6 +316,24 @@ function orbiter(gm: number, radius: number, orbitRadius: number, phaseDeg: numb
 	};
 }
 
+/**
+ * 绕**会动的行星**公转的卫星（S3.13，L1 的月球）：
+ * 直接把宿主天体对象传进来，位置就随宿主一起走（见 Gravity.Body.host）。
+ * `periodSec` 显式给：月球绕地球的周期不该用"绕日开普勒"算，而要与**全局时间压缩**一致
+ * （本作 K = 1.0 = 真实周期 ÷ 42.7）。
+ */
+function satellite(gm: number, radius: number, host: Body, orbitRadius: number, phaseDeg: number, periodSec: number): Body {
+	return {
+		gm, radius,
+		orbitCenter: { x: 0, y: 0 },
+		orbitRadius,
+		orbitPeriod: periodSec,
+		phase0: deg(phaseDeg),
+		orbitDirection: 1,
+		host,
+	};
+}
+
 const LEVELS: LevelDef[] = [
 	{
 		id: 1,
@@ -577,6 +595,8 @@ function applyScalesLocal(bodies: Body[], gravityScale: number, orbitScale: numb
 			orbitPeriod: b.orbitPeriod === 0 || orbitScale <= 0 ? b.orbitPeriod : b.orbitPeriod / orbitScale,
 			phase0: b.phase0,
 			orbitDirection: b.orbitDirection,
+			// ⚠️ 宿主也要一起缩放（否则卫星绕着一颗"没被缩放"的行星转 —— 位置会错开）
+			host: b.host !== undefined ? applyScalesLocal([b.host], gravityScale, orbitScale)[0] : undefined,
 		});
 	}
 	return out;

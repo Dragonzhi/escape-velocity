@@ -7,21 +7,22 @@ local distance = ____Gravity.distance -- 28
 local ____Config = require("game.Config") -- 29
 local GravityScale = ____Config.GravityScale -- 29
 local OrbitSpeedScale = ____Config.OrbitSpeedScale -- 29
-function applyScalesLocal(bodies, gravityScale, orbitScale) -- 569
-	local out = {} -- 570
-	for ____, b in ipairs(bodies) do -- 571
-		out[#out + 1] = { -- 572
-			gm = b.gm * gravityScale, -- 573
-			radius = b.radius, -- 574
-			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 575
-			orbitRadius = b.orbitRadius, -- 576
-			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 577
-			phase0 = b.phase0, -- 578
-			orbitDirection = b.orbitDirection -- 579
-		} -- 579
-	end -- 579
-	return out -- 582
-end -- 582
+function applyScalesLocal(bodies, gravityScale, orbitScale) -- 587
+	local out = {} -- 588
+	for ____, b in ipairs(bodies) do -- 589
+		out[#out + 1] = { -- 590
+			gm = b.gm * gravityScale, -- 591
+			radius = b.radius, -- 592
+			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 593
+			orbitRadius = b.orbitRadius, -- 594
+			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 595
+			phase0 = b.phase0, -- 596
+			orbitDirection = b.orbitDirection, -- 597
+			host = b.host ~= nil and applyScalesLocal({b.host}, gravityScale, orbitScale)[1] or nil -- 599
+		} -- 599
+	end -- 599
+	return out -- 602
+end -- 602
 --- 太阳的引力强度（`v_circ(80) = sqrt(SunGm/80) ≈ 30`，逃逸速度 42.4）。
 ____exports.SunGm = 72000 -- 125
 --- 太阳的半径（撞毁半径 = 显示半径，尺寸公平性硬约束）。
@@ -221,269 +222,285 @@ local function orbiter(gm, radius, orbitRadius, phaseDeg) -- 308
 		orbitDirection = 1 -- 315
 	} -- 315
 end -- 308
-local LEVELS = { -- 319
-	{ -- 320
-		id = 1, -- 321
-		title = "出发", -- 322
-		brief = "航行日志 · 第 1 天：地球轨道。探测器在你手里 —— 月球正在绕地球走，别对着它现在的位置打。这一次点火决定后面的一切。", -- 328
-		probeStart = {x = 0, y = 46}, -- 329
-		probeVel0 = {x = 10.41, y = 0}, -- 337
-		homeAnchor = false, -- 338
-		planets = { -- 339
-			{ -- 342
-				gm = 2600, -- 342
-				radius = R_EARTH_BIG, -- 342
-				orbitCenter = {x = 0, y = 70}, -- 342
-				orbitRadius = 0, -- 342
-				orbitPeriod = 0, -- 342
-				phase0 = 0, -- 342
-				orbitDirection = 1 -- 342
-			}, -- 342
-			{ -- 345
-				gm = 0, -- 345
-				radius = R_MOON_BIG, -- 345
-				orbitCenter = {x = 0, y = 70}, -- 345
-				orbitRadius = 100, -- 345
-				orbitPeriod = ____exports.keplerPeriod(100), -- 345
-				phase0 = deg(-90), -- 345
-				orbitDirection = 1 -- 345
-			} -- 345
-		}, -- 345
-		visuals = {{ -- 347
-			r = 0.42, -- 348
-			g = 0.62, -- 348
-			b = 0.85, -- 348
-			displayRadius = R_EARTH_BIG, -- 348
-			ring = false, -- 348
-			model = "Planet_Earth" -- 348
-		}, { -- 348
-			r = 0.56, -- 349
-			g = 0.56, -- 349
-			b = 0.6, -- 349
-			displayRadius = R_MOON_BIG, -- 349
-			ring = false -- 349
-		}}, -- 349
-		goal = {kind = "planet", planetIndex = 1, tolerance = 30}, -- 354
-		dvBudget = 45, -- 355
-		escapeRadius = 700, -- 356
-		maxSteps = 1200, -- 357
-		homeRadius = 1.75 -- 358
-	}, -- 358
-	{ -- 360
-		id = 2, -- 361
-		title = "修正", -- 362
-		brief = "航行日志 · 第 12 天：太阳开始拽你了。别直着飞 —— 向内会加速，航线也会被掰弯。目标是掠过金星。", -- 363
-		probeStart = {x = 0, y = ORBIT.earth}, -- 364
-		planets = { -- 365
-			sun(), -- 366
-			orbiter(2600, R_VENUS, ORBIT.venus, 180) -- 368
-		}, -- 368
-		visuals = { -- 370
-			sunVisual(), -- 371
-			{ -- 372
-				r = 0.9, -- 372
-				g = 0.78, -- 372
-				b = 0.55, -- 372
-				displayRadius = R_VENUS, -- 372
-				ring = false, -- 372
-				model = "Planet_Venus" -- 372
-			} -- 372
-		}, -- 372
-		goal = {kind = "planet", planetIndex = 1, tolerance = R_VENUS + FLYBY_PAD}, -- 374
-		dvBudget = 45, -- 375
-		escapeRadius = 700, -- 376
-		maxSteps = 1500, -- 377
-		homeRadius = 1.6 -- 378
-	}, -- 378
-	{ -- 380
-		id = 3, -- 381
-		title = "弹弓", -- 382
-		brief = "航行日志 · 第 2 年：木星在外圈。想省力就从它背后绕过去 —— 它的引力会把你甩向土星。", -- 383
-		probeStart = {x = 0, y = ORBIT.earth}, -- 384
-		planets = { -- 385
-			sun(), -- 386
-			orbiter(4000, R_JUPITER, ORBIT.jupiter, 89.4), -- 393
-			orbiter(12000, R_SATURN, ORBIT.saturn, 89) -- 395
-		}, -- 395
-		visuals = { -- 397
-			sunVisual(), -- 398
-			{ -- 399
-				r = 0.85, -- 399
-				g = 0.72, -- 399
-				b = 0.5, -- 399
-				displayRadius = R_JUPITER, -- 399
-				ring = false, -- 399
-				model = "Planet_Jupiter" -- 399
-			}, -- 399
-			{ -- 400
-				r = 0.75, -- 400
-				g = 0.7, -- 400
-				b = 0.6, -- 400
-				displayRadius = R_SATURN, -- 400
-				ring = true, -- 400
-				model = "Planet_Saturn" -- 400
-			} -- 400
-		}, -- 400
-		goal = {kind = "planet", planetIndex = 1, tolerance = R_JUPITER + 22, chain = {{planetIndex = 1, tolerance = R_JUPITER + 22, label = "木星"}, {planetIndex = 2, tolerance = R_SATURN + 45, label = "土星"}}}, -- 403
-		dvBudget = 55, -- 412
-		escapeRadius = 700, -- 413
-		maxSteps = 2400, -- 414
-		homeRadius = 1.45 -- 415
-	}, -- 415
-	{ -- 417
-		id = 4, -- 418
-		title = "窗口", -- 419
-		brief = "航行日志 · 第 3 年：木星一直在绕太阳走。挑一个它正好在你航线上的日期起飞 —— 拖动时间轴，看它挪位置。", -- 420
-		probeStart = {x = 0, y = ORBIT.earth}, -- 421
-		planets = { -- 422
-			sun(), -- 423
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3), -- 431
-			orbiter(12000, R_SATURN, ORBIT.saturn, 48.2) -- 432
-		}, -- 432
-		visuals = { -- 434
-			sunVisual(), -- 435
-			{ -- 436
-				r = 0.85, -- 436
-				g = 0.72, -- 436
-				b = 0.5, -- 436
-				displayRadius = R_JUPITER, -- 436
-				ring = false, -- 436
-				model = "Planet_Jupiter" -- 436
-			}, -- 436
-			{ -- 437
-				r = 0.75, -- 437
-				g = 0.7, -- 437
-				b = 0.6, -- 437
-				displayRadius = R_SATURN, -- 437
-				ring = true, -- 437
-				model = "Planet_Saturn" -- 437
-			} -- 437
-		}, -- 437
-		goal = {kind = "planet", planetIndex = 1, tolerance = R_JUPITER + FLYBY_PAD, chain = {{planetIndex = 1, tolerance = R_JUPITER + 22, label = "木星"}, {planetIndex = 2, tolerance = R_SATURN + 30, label = "土星", capture = true}}}, -- 440
-		dvBudget = 50, -- 447
-		escapeRadius = 700, -- 448
-		maxSteps = 1800, -- 449
-		homeRadius = 1.35, -- 450
-		timeWindow = {span = 300} -- 454
-	}, -- 454
-	{ -- 456
-		id = 5, -- 457
-		title = "大巡游", -- 458
-		brief = "航行日志 · 第 5 年：一次点火，四颗巨行星。木星改向、土星续航、天王星微调 —— 最后到海王星。", -- 459
-		probeStart = {x = 0, y = ORBIT.earth}, -- 460
-		planets = { -- 461
-			sun(), -- 462
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 89.5), -- 467
-			orbiter(2000, R_SATURN, ORBIT.saturn, 89.5), -- 468
-			orbiter(1200, R_URANUS, ORBIT.uranus, 89.5), -- 469
-			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 89.5) -- 470
-		}, -- 470
-		visuals = { -- 472
-			sunVisual(), -- 473
-			{ -- 474
-				r = 0.85, -- 474
-				g = 0.72, -- 474
-				b = 0.5, -- 474
-				displayRadius = R_JUPITER, -- 474
-				ring = false, -- 474
-				model = "Planet_Jupiter" -- 474
-			}, -- 474
-			{ -- 475
-				r = 0.75, -- 475
-				g = 0.7, -- 475
-				b = 0.6, -- 475
-				displayRadius = R_SATURN, -- 475
-				ring = true, -- 475
-				model = "Planet_Saturn" -- 475
-			}, -- 475
-			{ -- 476
-				r = 0.62, -- 476
-				g = 0.82, -- 476
-				b = 0.86, -- 476
-				displayRadius = R_URANUS, -- 476
-				ring = false, -- 476
-				model = "Planet_Uranus" -- 476
-			}, -- 476
-			{ -- 477
-				r = 0.34, -- 477
-				g = 0.5, -- 477
-				b = 0.86, -- 477
-				displayRadius = R_NEPTUNE, -- 477
-				ring = false, -- 477
-				model = "Planet_Neptune" -- 477
-			} -- 477
-		}, -- 477
-		goal = {kind = "planet", planetIndex = 1, tolerance = R_JUPITER + FLYBY_PAD, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 50, label = "土星"}, {planetIndex = 3, tolerance = 60, label = "天王星"}, {planetIndex = 4, tolerance = 70, label = "海王星"}}}, -- 480
-		dvBudget = 55, -- 495
-		escapeRadius = 700, -- 496
-		maxSteps = 2400, -- 497
-		homeRadius = 1.25 -- 498
-	}, -- 498
-	{ -- 500
-		id = 6, -- 501
-		title = "单程", -- 502
-		brief = "航行日志 · 第 12 年：没有回程了。四颗巨行星还会连成一条线 —— 等到那一天（拖动时间轴），沿着这条线依次穿过去，再越过 260 单位，就是星际空间。", -- 503
-		probeStart = {x = 0, y = ORBIT.earth}, -- 504
-		planets = { -- 505
-			sun(), -- 506
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3), -- 512
-			orbiter(2000, R_SATURN, ORBIT.saturn, 48.2), -- 513
-			orbiter(1200, R_URANUS, ORBIT.uranus, 58.9), -- 514
-			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 65.7) -- 515
-		}, -- 515
-		visuals = { -- 517
-			sunVisual(), -- 518
-			{ -- 519
-				r = 0.85, -- 519
-				g = 0.72, -- 519
-				b = 0.5, -- 519
-				displayRadius = R_JUPITER, -- 519
-				ring = false, -- 519
-				model = "Planet_Jupiter" -- 519
-			}, -- 519
-			{ -- 520
-				r = 0.75, -- 520
-				g = 0.7, -- 520
-				b = 0.6, -- 520
-				displayRadius = R_SATURN, -- 520
-				ring = true, -- 520
-				model = "Planet_Saturn" -- 520
-			}, -- 520
-			{ -- 521
-				r = 0.62, -- 521
-				g = 0.82, -- 521
-				b = 0.86, -- 521
-				displayRadius = R_URANUS, -- 521
-				ring = false, -- 521
-				model = "Planet_Uranus" -- 521
-			}, -- 521
-			{ -- 522
-				r = 0.34, -- 522
-				g = 0.5, -- 522
-				b = 0.86, -- 522
-				displayRadius = R_NEPTUNE, -- 522
-				ring = false, -- 522
-				model = "Planet_Neptune" -- 522
-			} -- 522
-		}, -- 522
-		goal = {kind = "escape", planetIndex = -1, tolerance = 0, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 50, label = "土星"}, {planetIndex = 3, tolerance = 60, label = "天王星"}, {planetIndex = 4, tolerance = 70, label = "海王星"}}}, -- 530
-		dvBudget = 50, -- 542
-		escapeRadius = 260, -- 543
-		maxSteps = 2400, -- 544
-		homeRadius = 1, -- 545
-		timeWindow = {span = 300} -- 549
-	} -- 549
-} -- 549
+--- 绕**会动的行星**公转的卫星（S3.13，L1 的月球）：
+-- 直接把宿主天体对象传进来，位置就随宿主一起走（见 Gravity.Body.host）。
+-- `periodSec` 显式给：月球绕地球的周期不该用"绕日开普勒"算，而要与**全局时间压缩**一致
+-- （本作 K = 1.0 = 真实周期 ÷ 42.7）。
+local function satellite(gm, radius, host, orbitRadius, phaseDeg, periodSec) -- 325
+	return { -- 326
+		gm = gm, -- 327
+		radius = radius, -- 327
+		orbitCenter = {x = 0, y = 0}, -- 328
+		orbitRadius = orbitRadius, -- 329
+		orbitPeriod = periodSec, -- 330
+		phase0 = deg(phaseDeg), -- 331
+		orbitDirection = 1, -- 332
+		host = host -- 333
+	} -- 333
+end -- 325
+local LEVELS = { -- 337
+	{ -- 338
+		id = 1, -- 339
+		title = "出发", -- 340
+		brief = "航行日志 · 第 1 天：地球轨道。探测器在你手里 —— 月球正在绕地球走，别对着它现在的位置打。这一次点火决定后面的一切。", -- 346
+		probeStart = {x = 0, y = 46}, -- 347
+		probeVel0 = {x = 10.41, y = 0}, -- 355
+		homeAnchor = false, -- 356
+		planets = { -- 357
+			{ -- 360
+				gm = 2600, -- 360
+				radius = R_EARTH_BIG, -- 360
+				orbitCenter = {x = 0, y = 70}, -- 360
+				orbitRadius = 0, -- 360
+				orbitPeriod = 0, -- 360
+				phase0 = 0, -- 360
+				orbitDirection = 1 -- 360
+			}, -- 360
+			{ -- 363
+				gm = 0, -- 363
+				radius = R_MOON_BIG, -- 363
+				orbitCenter = {x = 0, y = 70}, -- 363
+				orbitRadius = 100, -- 363
+				orbitPeriod = ____exports.keplerPeriod(100), -- 363
+				phase0 = deg(-90), -- 363
+				orbitDirection = 1 -- 363
+			} -- 363
+		}, -- 363
+		visuals = {{ -- 365
+			r = 0.42, -- 366
+			g = 0.62, -- 366
+			b = 0.85, -- 366
+			displayRadius = R_EARTH_BIG, -- 366
+			ring = false, -- 366
+			model = "Planet_Earth" -- 366
+		}, { -- 366
+			r = 0.56, -- 367
+			g = 0.56, -- 367
+			b = 0.6, -- 367
+			displayRadius = R_MOON_BIG, -- 367
+			ring = false -- 367
+		}}, -- 367
+		goal = {kind = "planet", planetIndex = 1, tolerance = 30}, -- 372
+		dvBudget = 45, -- 373
+		escapeRadius = 700, -- 374
+		maxSteps = 1200, -- 375
+		homeRadius = 1.75 -- 376
+	}, -- 376
+	{ -- 378
+		id = 2, -- 379
+		title = "修正", -- 380
+		brief = "航行日志 · 第 12 天：太阳开始拽你了。别直着飞 —— 向内会加速，航线也会被掰弯。目标是掠过金星。", -- 381
+		probeStart = {x = 0, y = ORBIT.earth}, -- 382
+		planets = { -- 383
+			sun(), -- 384
+			orbiter(2600, R_VENUS, ORBIT.venus, 180) -- 386
+		}, -- 386
+		visuals = { -- 388
+			sunVisual(), -- 389
+			{ -- 390
+				r = 0.9, -- 390
+				g = 0.78, -- 390
+				b = 0.55, -- 390
+				displayRadius = R_VENUS, -- 390
+				ring = false, -- 390
+				model = "Planet_Venus" -- 390
+			} -- 390
+		}, -- 390
+		goal = {kind = "planet", planetIndex = 1, tolerance = R_VENUS + FLYBY_PAD}, -- 392
+		dvBudget = 45, -- 393
+		escapeRadius = 700, -- 394
+		maxSteps = 1500, -- 395
+		homeRadius = 1.6 -- 396
+	}, -- 396
+	{ -- 398
+		id = 3, -- 399
+		title = "弹弓", -- 400
+		brief = "航行日志 · 第 2 年：木星在外圈。想省力就从它背后绕过去 —— 它的引力会把你甩向土星。", -- 401
+		probeStart = {x = 0, y = ORBIT.earth}, -- 402
+		planets = { -- 403
+			sun(), -- 404
+			orbiter(4000, R_JUPITER, ORBIT.jupiter, 89.4), -- 411
+			orbiter(12000, R_SATURN, ORBIT.saturn, 89) -- 413
+		}, -- 413
+		visuals = { -- 415
+			sunVisual(), -- 416
+			{ -- 417
+				r = 0.85, -- 417
+				g = 0.72, -- 417
+				b = 0.5, -- 417
+				displayRadius = R_JUPITER, -- 417
+				ring = false, -- 417
+				model = "Planet_Jupiter" -- 417
+			}, -- 417
+			{ -- 418
+				r = 0.75, -- 418
+				g = 0.7, -- 418
+				b = 0.6, -- 418
+				displayRadius = R_SATURN, -- 418
+				ring = true, -- 418
+				model = "Planet_Saturn" -- 418
+			} -- 418
+		}, -- 418
+		goal = {kind = "planet", planetIndex = 1, tolerance = R_JUPITER + 22, chain = {{planetIndex = 1, tolerance = R_JUPITER + 22, label = "木星"}, {planetIndex = 2, tolerance = R_SATURN + 45, label = "土星"}}}, -- 421
+		dvBudget = 55, -- 430
+		escapeRadius = 700, -- 431
+		maxSteps = 2400, -- 432
+		homeRadius = 1.45 -- 433
+	}, -- 433
+	{ -- 435
+		id = 4, -- 436
+		title = "窗口", -- 437
+		brief = "航行日志 · 第 3 年：木星一直在绕太阳走。挑一个它正好在你航线上的日期起飞 —— 拖动时间轴，看它挪位置。", -- 438
+		probeStart = {x = 0, y = ORBIT.earth}, -- 439
+		planets = { -- 440
+			sun(), -- 441
+			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3), -- 449
+			orbiter(12000, R_SATURN, ORBIT.saturn, 48.2) -- 450
+		}, -- 450
+		visuals = { -- 452
+			sunVisual(), -- 453
+			{ -- 454
+				r = 0.85, -- 454
+				g = 0.72, -- 454
+				b = 0.5, -- 454
+				displayRadius = R_JUPITER, -- 454
+				ring = false, -- 454
+				model = "Planet_Jupiter" -- 454
+			}, -- 454
+			{ -- 455
+				r = 0.75, -- 455
+				g = 0.7, -- 455
+				b = 0.6, -- 455
+				displayRadius = R_SATURN, -- 455
+				ring = true, -- 455
+				model = "Planet_Saturn" -- 455
+			} -- 455
+		}, -- 455
+		goal = {kind = "planet", planetIndex = 1, tolerance = R_JUPITER + FLYBY_PAD, chain = {{planetIndex = 1, tolerance = R_JUPITER + 22, label = "木星"}, {planetIndex = 2, tolerance = R_SATURN + 30, label = "土星", capture = true}}}, -- 458
+		dvBudget = 50, -- 465
+		escapeRadius = 700, -- 466
+		maxSteps = 1800, -- 467
+		homeRadius = 1.35, -- 468
+		timeWindow = {span = 300} -- 472
+	}, -- 472
+	{ -- 474
+		id = 5, -- 475
+		title = "大巡游", -- 476
+		brief = "航行日志 · 第 5 年：一次点火，四颗巨行星。木星改向、土星续航、天王星微调 —— 最后到海王星。", -- 477
+		probeStart = {x = 0, y = ORBIT.earth}, -- 478
+		planets = { -- 479
+			sun(), -- 480
+			orbiter(2500, R_JUPITER, ORBIT.jupiter, 89.5), -- 485
+			orbiter(2000, R_SATURN, ORBIT.saturn, 89.5), -- 486
+			orbiter(1200, R_URANUS, ORBIT.uranus, 89.5), -- 487
+			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 89.5) -- 488
+		}, -- 488
+		visuals = { -- 490
+			sunVisual(), -- 491
+			{ -- 492
+				r = 0.85, -- 492
+				g = 0.72, -- 492
+				b = 0.5, -- 492
+				displayRadius = R_JUPITER, -- 492
+				ring = false, -- 492
+				model = "Planet_Jupiter" -- 492
+			}, -- 492
+			{ -- 493
+				r = 0.75, -- 493
+				g = 0.7, -- 493
+				b = 0.6, -- 493
+				displayRadius = R_SATURN, -- 493
+				ring = true, -- 493
+				model = "Planet_Saturn" -- 493
+			}, -- 493
+			{ -- 494
+				r = 0.62, -- 494
+				g = 0.82, -- 494
+				b = 0.86, -- 494
+				displayRadius = R_URANUS, -- 494
+				ring = false, -- 494
+				model = "Planet_Uranus" -- 494
+			}, -- 494
+			{ -- 495
+				r = 0.34, -- 495
+				g = 0.5, -- 495
+				b = 0.86, -- 495
+				displayRadius = R_NEPTUNE, -- 495
+				ring = false, -- 495
+				model = "Planet_Neptune" -- 495
+			} -- 495
+		}, -- 495
+		goal = {kind = "planet", planetIndex = 1, tolerance = R_JUPITER + FLYBY_PAD, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 50, label = "土星"}, {planetIndex = 3, tolerance = 60, label = "天王星"}, {planetIndex = 4, tolerance = 70, label = "海王星"}}}, -- 498
+		dvBudget = 55, -- 513
+		escapeRadius = 700, -- 514
+		maxSteps = 2400, -- 515
+		homeRadius = 1.25 -- 516
+	}, -- 516
+	{ -- 518
+		id = 6, -- 519
+		title = "单程", -- 520
+		brief = "航行日志 · 第 12 年：没有回程了。四颗巨行星还会连成一条线 —— 等到那一天（拖动时间轴），沿着这条线依次穿过去，再越过 260 单位，就是星际空间。", -- 521
+		probeStart = {x = 0, y = ORBIT.earth}, -- 522
+		planets = { -- 523
+			sun(), -- 524
+			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3), -- 530
+			orbiter(2000, R_SATURN, ORBIT.saturn, 48.2), -- 531
+			orbiter(1200, R_URANUS, ORBIT.uranus, 58.9), -- 532
+			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 65.7) -- 533
+		}, -- 533
+		visuals = { -- 535
+			sunVisual(), -- 536
+			{ -- 537
+				r = 0.85, -- 537
+				g = 0.72, -- 537
+				b = 0.5, -- 537
+				displayRadius = R_JUPITER, -- 537
+				ring = false, -- 537
+				model = "Planet_Jupiter" -- 537
+			}, -- 537
+			{ -- 538
+				r = 0.75, -- 538
+				g = 0.7, -- 538
+				b = 0.6, -- 538
+				displayRadius = R_SATURN, -- 538
+				ring = true, -- 538
+				model = "Planet_Saturn" -- 538
+			}, -- 538
+			{ -- 539
+				r = 0.62, -- 539
+				g = 0.82, -- 539
+				b = 0.86, -- 539
+				displayRadius = R_URANUS, -- 539
+				ring = false, -- 539
+				model = "Planet_Uranus" -- 539
+			}, -- 539
+			{ -- 540
+				r = 0.34, -- 540
+				g = 0.5, -- 540
+				b = 0.86, -- 540
+				displayRadius = R_NEPTUNE, -- 540
+				ring = false, -- 540
+				model = "Planet_Neptune" -- 540
+			} -- 540
+		}, -- 540
+		goal = {kind = "escape", planetIndex = -1, tolerance = 0, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 50, label = "土星"}, {planetIndex = 3, tolerance = 60, label = "天王星"}, {planetIndex = 4, tolerance = 70, label = "海王星"}}}, -- 548
+		dvBudget = 50, -- 560
+		escapeRadius = 260, -- 561
+		maxSteps = 2400, -- 562
+		homeRadius = 1, -- 563
+		timeWindow = {span = 300} -- 567
+	} -- 567
+} -- 567
 --- 关卡总数。
-function ____exports.levelCount() -- 554
-	return #LEVELS -- 555
-end -- 554
+function ____exports.levelCount() -- 572
+	return #LEVELS -- 573
+end -- 572
 --- 取第 index 关（0 起）。越界返回 undefined。
-function ____exports.getLevel(index) -- 559
-	return LEVELS[index + 1] -- 560
-end -- 559
+function ____exports.getLevel(index) -- 577
+	return LEVELS[index + 1] -- 578
+end -- 577
 --- 应用全局倍率，返回可直接喂给 createGame 的行星数组。不修改关卡原始数据。
-function ____exports.scaledPlanets(level) -- 564
-	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 565
-end -- 564
-return ____exports -- 564
+function ____exports.scaledPlanets(level) -- 582
+	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 583
+end -- 582
+return ____exports -- 582

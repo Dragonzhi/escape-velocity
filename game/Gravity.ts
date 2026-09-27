@@ -47,6 +47,18 @@ export interface Body {
 	phase0: number;
 	/** 公转方向：+1 逆时针（数学正向），-1 顺时针。 */
 	orbitDirection: 1 | -1;
+	/**
+	 * **宿主的轨道**（卫星用，S3.13）：当这颗天体绕的是另一颗**自己也在动**的天体时
+	 * （月球绕地球），`orbitCenter` 这个常量就不够用了 —— 把宿主的整套轨道参数在这里
+	 * 再描述一遍，位置就能**解析求出**。
+	 *
+	 * 为什么不给 `bodyPositionAt` 加参数：它被物理、预测线、到达环、取景到处调用，
+	 * 加参数等于全仓库改签名。嵌套一份宿主既不动签名，也保持了"纯数据"。
+	 *
+	 * ⚠️ 这份参数必须与宿主天体自己**逐字段一致**；`applyScales` 会一起缩放它。
+	 * 关卡数据里用 `satellite(...)` 构造（直接把宿主对象传进去），单测守着。
+	 */
+	host?: Body;
 }
 
 /** 探测器状态。 */
@@ -149,13 +161,15 @@ export function distance(a: P2, b: P2): number {
  * `t` 的单位是秒，`t = 0` 即 `phase0` 描述的姿态。
  */
 export function bodyPositionAt(b: Body, t: number): P2 {
+	// 圆心：有宿主就解析宿主此刻的位置（月球绕地球，而地球自己在绕日）
+	const c = b.host !== undefined ? bodyPositionAt(b.host, t) : b.orbitCenter;
 	let angle = b.phase0;
 	if (b.orbitPeriod !== 0) {
 		angle += b.orbitDirection * (2 * Math.PI) * (t / b.orbitPeriod);
 	}
 	return {
-		x: b.orbitCenter.x + b.orbitRadius * Math.cos(angle),
-		y: b.orbitCenter.y + b.orbitRadius * Math.sin(angle),
+		x: c.x + b.orbitRadius * Math.cos(angle),
+		y: c.y + b.orbitRadius * Math.sin(angle),
 	};
 }
 
