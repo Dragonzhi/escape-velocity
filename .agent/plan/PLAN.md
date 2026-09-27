@@ -731,3 +731,15 @@ R1/R2/R3/R4 已关闭（见手册 §11）；当前唯一已知验收风险是 **
       引擎内 `Test/UnitRunner` 8/8（LevelDataTest 73 条，含 `lvN-reachable`/`lvN-window-matters`/`lvN-window-open`）
 - [ ] S3.13.7 引擎内**画面**验收：新相位下的行星位置、金星向内坠落、地球布景的大小与位置
 - [ ] S3.13.8 探测器两版（太阳能板 / RTG，`probeVariant`）—— 等 Trae 的模型
+
+#### S6 · 载具模式与不可撤销单次减速机动（ADR D8，方案 A）
+
+> 依据 [`docs/单程_玩法扩展附录_飞掠与轨道器.md`](../../docs/单程_玩法扩展附录_飞掠与轨道器.md) 第十九与二十节。
+> 废弃旧 S3.9.2 中点自动反推，升级为“飞行中由玩家亲手扣动扳机（BRAKE）”的动态分支体系。
+
+- [ ] S6.1 **纯函数物理与窗口判定**：`game/Gravity.ts` 增补单点逆向冲量积分；`game/LevelData.ts` 新增 `computeBrakingWindow(points, bodies, targetIndex, dvBrake)` 纯函数，判定相对动能与近拱点安全裕度，产出入轨窗口索引区间；单测覆盖 Crash / Escape / Capture 三态。
+- [ ] S6.2 **预测线与 2D 规划高亮**：`game/Trajectory.ts` 与 `game/PlanView.ts` 支持双段着色 —— 基础飞掠虚线 + 琥珀金脉冲高亮制动窗口（Braking Window）。
+- [ ] S6.3 **HUD 按钮与状态机**：`game/Hud.ts` 新增常驻 `[ BRAKE ]` 动作按钮（`fireOn: 'press'`）；巡航待命 → 入窗激活高亮 → 按下瞬间爆闪并永久置灰（`EXHAUSTED`）→ 错过窗口变暗失效。
+- [ ] S6.4 **运行时动态分支重算**：`game/Game.ts` 废除旧 `core.brakeMode` 与发射时预置反推；在 `Flying` 态响应 `coreTriggerBrake`，以当前步 $(P_k, V_k)$ 瞬时重算剩余航段并无缝热替换 `core.flight` 与判定结果；深度联动 S3.17 慢动作透镜（入窗平滑减速至 0.25x 留出 1.5~2.5s 反应时间）。
+- [ ] S6.5 **影视化结果演出**：捕获成功后不立即弹框，保持物理公转 1~2 圈，相机切入伴飞特写长镜头，浮现「环绕轨道捕获成功」后淡入结算；碰撞坠毁与飞离逃逸给出对应视听反馈。
+

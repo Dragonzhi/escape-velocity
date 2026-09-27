@@ -163,3 +163,42 @@ Trajectory 11 / CameraRig 16 / Progress 36 / Opening 33 / PlanView 16 / OrbitFlo
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
 - ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 41 个文件，
   以工具输出的合计为准，别照抄旧数字）；单测基线见上一节（会随新模块增长，以引擎跑出来的合计为准）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
+
+â ï¸ **会话 50â51（S5 物理归正 + L1 呈现层）的坑，全部实测踩过**：
+
+13. **引擎的 `App.elapsedTime` 是坏的**：实测 12 帧里 `deltaTime` 正常、
+    `elapsedTime` 冻结在 0.0001 不动。任何"自建时钟"的需求都要自己累加 `App.deltaTime`
+    （见 `game/Ui.ts` 的 `uiClock`）—— 否则 `0.5 秒防抖`
+    会让**每个按钮一局只能按一次**（`now - lastTapAt` 恒为 0）。
+14. **「同一颗天体」不能比对象身份**：`LevelData.scaledPlanets` 会为每个天体**各自拷贝一份宿主链**
+    （`applyScalesLocal` 递归复制 `host`）⇒ `bodies[j].host === b` **恒为 false**，
+    宿主链"看起来断了"。判据一律用**结构等价**（同 gm + 同 radius + 同 orbitRadius）。
+    同一个坑在 `Game.anchorBodyIndex`（锚点被挑回太阳、3D 里看不到地球）与
+    `PlanView.planFitRadius`（地心取景失效）各踩一次。
+15. **`escapeRadius` 量的是到原点（太阳）的距离**，不是"离本地天体多远"。
+    L1 的探测器出发就在 (0, 80.1)，写 3 会让它**第一帧就判「已逃逸」**（Node 侧 2880 条弧线全灭）。
+16. **`updateAiming` 里有两个独立时钟**：`clock`（日期/行星）与 `orbitClock`（待机动画）。
+    任何"冻结瞄准期时间"的改动必须**同时**处理这两个，否则探测器会在瞄准的几十帧里自己飞走
+    （实测发射点是自己轨道上 0.64 秒后的位置，而 `probeStart` 是 (0, 80.10)）。
+17. **探测器模型 scale 同时驱动两件事**：`Scene.createProbe` 的
+    `radius = bodyRadius × scale × 1.1` 是**相机取景用的半径**。scale 写死会让 L1 的取景半径
+    达到 2.62 世界单位（比月球轨道还大 12 倍）⇒ 屏幕被探测器占满。
+    已改为 `Tuning.LEVEL_RUNTIME.probeVisualRadius` 按关卡给。
+18. **`tools/*.mjs` 只能编纯模块**（Config / Gravity / Scale / Tuning / LevelData）。
+    Game / Scene / Hud / PlanView / init 都 `import ... from 'Dora'`，仓库 tsc 没有 dora-types 的 paths
+    映射 ⇒ 编不过。要在 Node 侧验物理，就只 import 那几个纯模块，`resolveResult` 这类在 Game.ts 里的
+    逻辑自己复刻。
+19. **引擎会留僵尸进程**：`tools/engine-run.ps1` 检测到 API 就复用（日志显示 "engine up (waited 0s)"），
+    而上次被中途打断的实例还卡在扫掠里 ⇒ `/run` 超时、随后端口关闭。
+    **每次跑单测前先 `Stop-Process -Name Dora -Force`**，失败就重试 2–3 次
+    （启动偶发失败，特征：日志里连一行都没有）。
+20. **`Test/LevelDataTest` 的扫掠只跑 L1**（`REACH_GATE_LEVELS = 1`）：外圈关一次扫掠是
+    8000 步 × 576 样本，实测把引擎搞崩（Lua 侧 OOM）。时间轴判据也临时非硬门
+    （`WINDOW_GATE = false`），两处都在代码里写了原因与恢复办法。
+21. **tstl 不支持的内建**（编译期不报错、运行时报错）：`Math.hypot`、`Math.imul`、`toExponential`。
+    科学计数法自己写（见 `Test/ScaleTest.ts` 的 `sci()`）。
+22. **真实 AU 尺度下的两个反直觉后果**：
+    - 地球的希尔球只有 0.80 单位（1 AU 处）⇒ L2–L6 不能放「布景地球」：日期轴跨度至少要覆盖会合周期
+      （金星 26.8s），而地球周期 16.76s ⇒ 窗口里它必然扫过整圈，与固定出发点重合，探测器会生成在地球内部。
+    - L1 的绕地周期 0.427 秒、月球 1.259 秒 ⇒ 瞄准期必须冻结时钟（`aimClockRate = 0`），
+      否则目标是每秒 2.3 圈的陀螺，玩家没有读数可依据。
