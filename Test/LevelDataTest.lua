@@ -1,6 +1,7 @@
 -- [ts]: LevelDataTest.ts
 local ____lualib = require("lualib_bundle") -- 1
 local __TS__NumberToFixed = ____lualib.__TS__NumberToFixed -- 1
+local __TS__ArrayIndexOf = ____lualib.__TS__ArrayIndexOf -- 1
 local ____exports = {} -- 1
 local ____Gravity = require("game.Gravity") -- 9
 local bodyPositionAt = ____Gravity.bodyPositionAt -- 9
@@ -11,6 +12,7 @@ local SunGm = ____Scale.SunGm -- 10
 local ____LevelData = require("game.LevelData") -- 11
 local bodyVelocityAt = ____LevelData.bodyVelocityAt -- 11
 local captureThreshold = ____LevelData.captureThreshold -- 11
+local evaluateRockets = ____LevelData.evaluateRockets -- 11
 local findGoalIndex = ____LevelData.findGoalIndex -- 11
 local getLevel = ____LevelData.getLevel -- 11
 local levelCount = ____LevelData.levelCount -- 11
@@ -565,23 +567,133 @@ local function testTimeWindow(stats) -- 386
 		((("六关都必须有时间轴：withWindow=" .. tostring(withWindow)) .. "/") .. tostring(n)) .. "（L1 例外：它没有日期轴，见 LevelDef 里 L1 的说明）" -- 410
 	) -- 410
 end -- 386
-function ____exports.runTests() -- 413
-	testValidity() -- 414
-	testFindGoalIndex() -- 415
-	local stats = testReachability() -- 416
-	testTimeWindow(stats) -- 417
-	testCapture() -- 418
-	local lines = {} -- 420
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 421
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 422
-	local limit = #failures < 12 and #failures or 12 -- 423
-	do -- 423
-		local i = 0 -- 424
-		while i < limit do -- 424
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 425
-			i = i + 1 -- 424
-		end -- 424
-	end -- 424
-	return table.concat(lines, "\n") -- 427
-end -- 413
-return ____exports -- 413
+--- 6) 任务元数据完整性（S7）。
+local function testMissionMeta() -- 414
+	local n = levelCount() -- 415
+	do -- 415
+		local i = 0 -- 416
+		while i < n do -- 416
+			do -- 416
+				local lv = getLevel(i) -- 417
+				if lv == nil then -- 417
+					goto __continue69 -- 418
+				end -- 418
+				local m = lv.mission -- 419
+				check( -- 420
+					("lv" .. tostring(lv.id)) .. "-mission-meta-present", -- 420
+					m ~= nil, -- 420
+					"缺少 mission 元数据" -- 420
+				) -- 420
+				if m == nil then -- 420
+					goto __continue69 -- 421
+				end -- 421
+				check( -- 423
+					("lv" .. tostring(lv.id)) .. "-mission-id", -- 423
+					m.id == "L" .. tostring(lv.id), -- 423
+					"id=" .. m.id -- 423
+				) -- 423
+				check( -- 424
+					("lv" .. tostring(lv.id)) .. "-mission-codename", -- 424
+					#m.codeName > 0, -- 424
+					"codeName 为空" -- 424
+				) -- 424
+				check( -- 425
+					("lv" .. tostring(lv.id)) .. "-mission-challenges-count", -- 425
+					#m.challenges == 3, -- 425
+					"challenges.length=" .. tostring(#m.challenges) -- 425
+				) -- 425
+				check( -- 426
+					("lv" .. tostring(lv.id)) .. "-c1-type-success", -- 426
+					m.challenges[1].type == "success", -- 426
+					"c1 type=" .. m.challenges[1].type -- 426
+				) -- 426
+				check( -- 427
+					("lv" .. tostring(lv.id)) .. "-c2-type-fuel", -- 427
+					m.challenges[2].type == "fuel", -- 427
+					"c2 type=" .. m.challenges[2].type -- 427
+				) -- 427
+				check( -- 428
+					("lv" .. tostring(lv.id)) .. "-c3-type-valid", -- 428
+					__TS__ArrayIndexOf({"distance", "speed", "eccentricity"}, m.challenges[3].type) >= 0, -- 428
+					"c3 type=" .. m.challenges[3].type -- 428
+				) -- 428
+			end -- 428
+			::__continue69:: -- 428
+			i = i + 1 -- 416
+		end -- 416
+	end -- 416
+end -- 414
+--- 7) 火箭星级评价逻辑（S7 纯函数判定）。
+local function testEvaluateRockets() -- 433
+	local l1 = getLevel(0) -- 434
+	if l1 ~= nil then -- 434
+		check( -- 436
+			"rockets-fail-0", -- 436
+			evaluateRockets(l1, "crash", 0.1) == 0, -- 436
+			"失败应为 0 枚火箭" -- 436
+		) -- 436
+		check( -- 437
+			"rockets-escaped-0", -- 437
+			evaluateRockets(l1, "escaped", 0.1) == 0, -- 437
+			"逃逸应为 0 枚火箭" -- 437
+		) -- 437
+		check( -- 438
+			"rockets-success-overburn-1", -- 438
+			evaluateRockets(l1, "success", l1.dvBudget * 0.95) == 1, -- 438
+			"燃油超标应为 1 枚火箭" -- 438
+		) -- 438
+		check( -- 439
+			"rockets-fuel-ok-2", -- 439
+			evaluateRockets(l1, "success", l1.dvBudget * 0.5) == 2, -- 439
+			"达成省油应为 2 枚火箭" -- 439
+		) -- 439
+		check( -- 440
+			"rockets-peri-ok-3", -- 440
+			evaluateRockets(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.01}) == 3, -- 440
+			"达成近掠应为 3 枚火箭" -- 440
+		) -- 440
+		check( -- 441
+			"rockets-peri-fail-2", -- 441
+			evaluateRockets(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.05}) == 2, -- 441
+			"未达成近掠应为 2 枚火箭" -- 441
+		) -- 441
+	end -- 441
+	local l4 = getLevel(3) -- 444
+	if l4 ~= nil then -- 444
+		check( -- 446
+			"rockets-l4-eccentricity-3", -- 446
+			evaluateRockets(l4, "success", l4.dvBudget * 0.6, {eccentricity = 0.25}) == 3, -- 446
+			"低偏心率入轨应为 3 枚火箭" -- 446
+		) -- 446
+	end -- 446
+	local l3 = getLevel(2) -- 449
+	if l3 ~= nil then -- 449
+		check( -- 451
+			"rockets-l3-speed-3", -- 451
+			evaluateRockets(l3, "success", l3.dvBudget * 0.7, {maxSpeed = 45}) == 3, -- 451
+			"高速狂飙应为 3 枚火箭" -- 451
+		) -- 451
+	end -- 451
+end -- 433
+function ____exports.runTests() -- 455
+	testValidity() -- 456
+	testFindGoalIndex() -- 457
+	local stats = testReachability() -- 458
+	testTimeWindow(stats) -- 459
+	testCapture() -- 460
+	testMissionMeta() -- 461
+	testEvaluateRockets() -- 462
+	local lines = {} -- 464
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 465
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 466
+	local limit = #failures < 12 and #failures or 12 -- 467
+	do -- 467
+		local i = 0 -- 468
+		while i < limit do -- 468
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 469
+			i = i + 1 -- 468
+		end -- 468
+	end -- 468
+	return table.concat(lines, "\n") -- 471
+end -- 455
+return ____exports -- 455

@@ -13,7 +13,7 @@
 import { Content } from 'Dora';
 import { GameLevel, coreBackToSelect, coreLaunch, coreUpdate, createCore } from 'game/Game';
 import { getLevel, scaledPlanets } from 'game/LevelData';
-import { advanceUnlocked, clampUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
+import { advanceUnlocked, clampUnlocked, getMissionRockets, getTotalRockets, loadProgress, progressFilePath, recordMissionResult, saveProgress } from 'game/Progress';
 
 interface Failure {
 	name: string;
@@ -143,11 +143,42 @@ function testBackToSelect(): void {
 		`重复返回应被拒绝且相态不变，实际 phase=${core.phase}`);
 }
 
+/** 5) testRockets：多火箭记录、不降级、统计与兼容性 */
+function testRockets(): void {
+	const p0 = { unlocked: 0 };
+	check('rocket-empty-l0', getMissionRockets(p0, 0) === 0, '未解锁关卡应为 0 颗火箭');
+	const p1 = recordMissionResult(p0, 0, 2, 6);
+	check('rocket-record-l0', getMissionRockets(p1, 0) === 2, '达成 2 枚火箭应返回 2');
+	check('rocket-advance-unlocked', p1.unlocked === 1, '达成火箭应同时推进解锁');
+	const p2 = recordMissionResult(p1, 0, 1, 6);
+	check('rocket-no-downgrade', getMissionRockets(p2, 0) === 2, '低分不应覆盖高分');
+	const p3 = recordMissionResult(p2, 1, 3, 6);
+	check('rocket-record-l1', getMissionRockets(p3, 1) === 3, 'L2 达成 3 枚火箭应返回 3');
+	check('rocket-total', getTotalRockets(p3, 6) === 5, '总火箭数应为 2+3=5');
+
+	// 兼容性：旧存档 unlocked=2，没写 rockets 字段时，前两关应默认至少 1 枚火箭
+	const pLegacy = { unlocked: 2 };
+	check('rocket-legacy-l0', getMissionRockets(pLegacy, 0) === 1, '旧存档第 1 关应兜底 1');
+	check('rocket-legacy-l1', getMissionRockets(pLegacy, 1) === 1, '旧存档第 2 关应兜底 1');
+	check('rocket-legacy-l2', getMissionRockets(pLegacy, 2) === 0, '旧存档未通关的关卡应为 0');
+
+	// 存档往返测试
+	const levelCountForSave = 6;
+	const before = loadProgress(levelCountForSave);
+	saveProgress(p3);
+	const reloaded = loadProgress(levelCountForSave);
+	check('rocket-save-roundtrip-l0', getMissionRockets(reloaded, 0) === 2, '写盘读回 L1 应为 2');
+	check('rocket-save-roundtrip-l1', getMissionRockets(reloaded, 1) === 3, '写盘读回 L2 应为 3');
+	check('rocket-save-roundtrip-unlocked', reloaded.unlocked === 2, '写盘读回 unlocked 应为 2');
+	saveProgress(before);
+}
+
 export function runTests(): string {
 	testClamp();
 	testAdvance();
 	testPersistence();
 	testBackToSelect();
+	testRockets();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

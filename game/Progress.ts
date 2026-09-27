@@ -1,26 +1,21 @@
 /**
- * 解锁进度（S2.3，决策 D5：解锁制，只记已解锁关卡）。
+ * 进度与评价系统（S2.3 建立，S7 升级：任务三枚火箭 🚀🚀🚀 评价与非线性存档，决策 D5）。
  *
- * 语义（手册 §4.3 / §5.8）：
- * - `unlocked` 是**已解锁的最高关卡索引（0 基）**，不是“已解锁数量”。
- *   `unlocked = 0` 表示只开第一关；`unlocked = 5` 表示六关全开。
- * - 只有 `success` 才解锁 `levelIndex + 1`；`missed` / `crashed` 不动进度。
- * - 重复通关旧关卡**不回退**进度（见 `advanceUnlocked` 的说明）。
+ * 语义（手册 §4.3.1 与设计案 §3.2/§4.3）：
+ * - `unlocked`：已解锁最高关卡索引（兼容旧版线性流程）；
+ * - `rockets`：各关卡历史获得的最高火箭数（0 ~ 3 枚），键为 "L1" ~ "L6"；
+ * - 关卡去线性化后，全部关卡对玩家开放，进度主要用于记录与展示已获得的 🚀 勋章；
+ * - 存档：`<writablePath>/escape-velocity.progress`，首行保留 `unlocked=N` 兼容旧版，后续行记录 `L1=3`、`L2=2` 等。
  *
- * 存档：`<writablePath>/escape-velocity.progress`，内容只有一行 `unlocked=N`。
- * ⚠️ 任务简报里写的是 `App.writablePath`，但 v1.9.3 的 Dora.d.ts 里 **`App`
- * 没有这个名字**，可写目录挂在 `Content.writablePath`（已核对 d.ts，全库仅此一处）。
- * 按“以引擎声明为准”的规矩改用 `Content.writablePath`。
- *
- * 纯函数（`clampUnlocked` / `advanceUnlocked`）不碰引擎对象，可被单测直接调用；
- * 读写函数对任何异常输入**都不抛错**（存档坏了只是回到 0，不该让游戏起不来）。
+ * 纯函数不碰引擎对象，可被单测直接调用；读写函数对任何异常输入均不抛错。
  */
 import { Content, Path } from 'Dora';
 import { ResultKind } from 'game/Game';
 
-/** 进度。`unlocked` = 已解锁的最高关卡索引（0 基）。 */
+/** 进度。`unlocked` 为最高关卡，`rockets` 为各关卡火箭数。 */
 export interface Progress {
 	unlocked: number;
+	rockets?: Record<string, number>;
 }
 
 /** 存档文件名（相对 `Content.writablePath`）。 */
@@ -36,14 +31,10 @@ export function progressFilePath(): string {
 
 /**
  * 把任意数字夹到 `[0, levelCount - 1]`，非法输入归 0。
- *
- * “非法”定义（写死在这里，避免各处自行判断）：NaN、±Infinity、
- * 关卡数 <= 0、负数。非整数向下取整（存档只会有整数，读盘时不该因为
- * 出现 `2.0` 这类浮点写法就整份作废）。
  */
 export function clampUnlocked(value: number, levelCount: number): number {
 	if (levelCount <= 0) return 0;
-	if (value !== value) return 0; // NaN：Lua 里 NaN ~= NaN 同样成立
+	if (value !== value) return 0;
 	if (value === Infinity || value === -Infinity) return 0;
 	if (value < 0) return 0;
 	const max = levelCount - 1;
@@ -53,14 +44,6 @@ export function clampUnlocked(value: number, levelCount: number): number {
 
 /**
  * 结算后推进解锁进度（纯函数）。
- *
- * - 只有 `success` 才解锁 `levelIndex + 1`；
- * - `missed` / `crashed` 原样返回（再夹紧）；
- * - **不回退**：重玩已解锁的旧关并成功时，取 `max(已解锁, levelIndex + 1)`。
- *   任务简报只要求“success 解锁 levelIndex+1”，但纯字面实现会让
- *   `advanceUnlocked(3, 'success', 0, 6)` 从 3 掉回 1 —— 玩家重玩第一关
- *   反而锁掉后面几关。解锁制（D5）只有“解锁”没有“上锁”，所以取较大值；
- *   在正常推进（levelIndex >= unlocked）时与字面语义完全一致。
  */
 export function advanceUnlocked(
 	unlocked: number,
@@ -74,32 +57,72 @@ export function advanceUnlocked(
 	return clampUnlocked(keep, levelCount);
 }
 
-/**
- * 从 `unlocked=N` 这一行里取数字。
- *
- * 不用正则：只认“纯十进制数字”，其余（缺行、空值、`abc`、`2.0`、多行垃圾）
- * 一律返回 NaN —— 由 `clampUnlocked` 统一转成 0。
- */
-function parseUnlockedValue(text: string): number {
-	const lines = text.split('\n');
-	for (const rawLine of lines) {
-		const line = rawLine.trim();
-		if (!line.startsWith(ProgressKey)) continue;
-		const value = line.substring(ProgressKey.length).trim();
-		if (value.length === 0) continue;
-		let digits = true;
-		for (let i = 0; i < value.length; i++) {
-			const c = value.charCodeAt(i);
-			if (c < 48 || c > 57) digits = false;
-		}
-		if (!digits) continue;
-		return Number.parseInt(value, 10);
+/** 获取关卡的火箭数（0 ~ 3），自动处理兼容性。 */
+export function getMissionRockets(p: Progress, levelIndex: number): number {
+	const key = 'L' + (levelIndex + 1).toFixed(0);
+	if (p.rockets !== undefined && typeof p.rockets[key] === 'number') {
+		const r = Math.floor(p.rockets[key]);
+		if (r >= 0 && r <= 3) return r;
+		if (r > 3) return 3;
+		return 0;
 	}
-	return NaN;
+	// 兼容旧存档：若旧存档已解锁到本关之后，默认至少达成 1 枚火箭
+	if (levelIndex < p.unlocked) return 1;
+	return 0;
+}
+
+/** 记录关卡评价，更新火箭数并推进解锁（不回退）。 */
+export function recordMissionResult(
+	p: Progress,
+	levelIndex: number,
+	rocketCount: number,
+	levelCount: number,
+): Progress {
+	const clampedRockets = Math.max(0, Math.min(3, Math.floor(rocketCount)));
+	const key = 'L' + (levelIndex + 1).toFixed(0);
+	const oldRockets = getMissionRockets(p, levelIndex);
+	const bestRockets = Math.max(oldRockets, clampedRockets);
+
+	const nextUnlocked = clampedRockets > 0
+		? advanceUnlocked(p.unlocked, 'success', levelIndex, levelCount)
+		: clampUnlocked(p.unlocked, levelCount);
+
+	const nextMap: Record<string, number> = {};
+	if (p.rockets !== undefined) {
+		for (const k in p.rockets) {
+			nextMap[k] = p.rockets[k];
+		}
+	}
+	nextMap[key] = bestRockets;
+
+	return {
+		unlocked: nextUnlocked,
+		rockets: nextMap,
+	};
+}
+
+/** 统计全太阳系获得的火箭总数。 */
+export function getTotalRockets(p: Progress, levelCount: number): number {
+	let total = 0;
+	for (let i = 0; i < levelCount; i++) {
+		total += getMissionRockets(p, i);
+	}
+	return total;
+}
+
+/** 解析纯十进制数字。 */
+function parseDigits(value: string): number {
+	const v = value.trim();
+	if (v.length === 0) return NaN;
+	for (let i = 0; i < v.length; i++) {
+		const c = v.charCodeAt(i);
+		if (c < 48 || c > 57) return NaN;
+	}
+	return Number.parseInt(v, 10);
 }
 
 /**
- * 读进度。文件不存在 / 内容损坏 / 数字非法 → `{ unlocked: 0 }`，**不抛错**。
+ * 读进度。文件不存在 / 内容损坏 / 数字非法 → `{ unlocked: 0, rockets: {} }`，不抛错。
  */
 export function loadProgress(levelCount: number): Progress {
 	const file = progressFilePath();
@@ -107,20 +130,49 @@ export function loadProgress(levelCount: number): Progress {
 	try {
 		if (Content.exist(file)) text = Content.load(file);
 	} catch (e) {
-		// 读盘失败（权限、编码、半截文件）等同于“没有存档”
-		return { unlocked: 0 };
+		return { unlocked: 0, rockets: {} };
 	}
-	return { unlocked: clampUnlocked(parseUnlockedValue(text), levelCount) };
+
+	let unlocked = 0;
+	const rockets: Record<string, number> = {};
+
+	const lines = text.split('\n');
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (line.startsWith(ProgressKey)) {
+			const val = parseDigits(line.substring(ProgressKey.length));
+			if (!isNaN(val)) unlocked = clampUnlocked(val, levelCount);
+		} else if (line.startsWith('L') && line.indexOf('=') > 0) {
+			const parts = line.split('=');
+			if (parts.length === 2) {
+				const key = parts[0].trim();
+				const val = parseDigits(parts[1]);
+				if (!isNaN(val)) {
+					rockets[key] = Math.max(0, Math.min(3, val));
+				}
+			}
+		}
+	}
+
+	return { unlocked, rockets };
 }
 
 /**
- * 写进度。覆盖写，内容严格是 `unlocked=N` 一行。
- *
- * 用 `toFixed(0)` 而不是 `String()`：Lua 5.3+ 的 `tostring(2.0)` 会输出
- * `"2.0"`，而存档解析只认纯数字，写出去会变成“读回来是 0”。
+ * 写进度。首行严格为 `unlocked=N`，后续各行记录 `L1=X`...
  */
 export function saveProgress(p: Progress): void {
 	let value = Math.floor(p.unlocked);
 	if (value !== value || value === Infinity || value === -Infinity) value = 0;
-	Content.save(progressFilePath(), ProgressKey + value.toFixed(0));
+
+	const lines: string[] = [ProgressKey + value.toFixed(0)];
+	if (p.rockets !== undefined) {
+		for (const k in p.rockets) {
+			const r = p.rockets[k];
+			if (typeof r === 'number' && r > 0) {
+				lines.push(k + '=' + Math.floor(r).toFixed(0));
+			}
+		}
+	}
+	Content.save(progressFilePath(), lines.join('\n'));
 }
+

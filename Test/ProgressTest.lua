@@ -15,8 +15,11 @@ local scaledPlanets = ____LevelData.scaledPlanets -- 15
 local ____Progress = require("game.Progress") -- 16
 local advanceUnlocked = ____Progress.advanceUnlocked -- 16
 local clampUnlocked = ____Progress.clampUnlocked -- 16
+local getMissionRockets = ____Progress.getMissionRockets -- 16
+local getTotalRockets = ____Progress.getTotalRockets -- 16
 local loadProgress = ____Progress.loadProgress -- 16
 local progressFilePath = ____Progress.progressFilePath -- 16
+local recordMissionResult = ____Progress.recordMissionResult -- 16
 local saveProgress = ____Progress.saveProgress -- 16
 local failures = {} -- 23
 local checks = 0 -- 24
@@ -241,22 +244,88 @@ local function testBackToSelect() -- 110
 		"重复返回应被拒绝且相态不变，实际 phase=" .. core.phase -- 143
 	) -- 143
 end -- 110
-function ____exports.runTests() -- 146
-	testClamp() -- 147
-	testAdvance() -- 148
-	testPersistence() -- 149
-	testBackToSelect() -- 150
-	local lines = {} -- 152
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 153
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 154
-	local limit = #failures < 12 and #failures or 12 -- 155
-	do -- 155
-		local i = 0 -- 156
-		while i < limit do -- 156
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 157
-			i = i + 1 -- 156
-		end -- 156
-	end -- 156
-	return table.concat(lines, "\n") -- 159
-end -- 146
-return ____exports -- 146
+--- 5) testRockets：多火箭记录、不降级、统计与兼容性
+local function testRockets() -- 147
+	local p0 = {unlocked = 0} -- 148
+	check( -- 149
+		"rocket-empty-l0", -- 149
+		getMissionRockets(p0, 0) == 0, -- 149
+		"未解锁关卡应为 0 颗火箭" -- 149
+	) -- 149
+	local p1 = recordMissionResult(p0, 0, 2, 6) -- 150
+	check( -- 151
+		"rocket-record-l0", -- 151
+		getMissionRockets(p1, 0) == 2, -- 151
+		"达成 2 枚火箭应返回 2" -- 151
+	) -- 151
+	check("rocket-advance-unlocked", p1.unlocked == 1, "达成火箭应同时推进解锁") -- 152
+	local p2 = recordMissionResult(p1, 0, 1, 6) -- 153
+	check( -- 154
+		"rocket-no-downgrade", -- 154
+		getMissionRockets(p2, 0) == 2, -- 154
+		"低分不应覆盖高分" -- 154
+	) -- 154
+	local p3 = recordMissionResult(p2, 1, 3, 6) -- 155
+	check( -- 156
+		"rocket-record-l1", -- 156
+		getMissionRockets(p3, 1) == 3, -- 156
+		"L2 达成 3 枚火箭应返回 3" -- 156
+	) -- 156
+	check( -- 157
+		"rocket-total", -- 157
+		getTotalRockets(p3, 6) == 5, -- 157
+		"总火箭数应为 2+3=5" -- 157
+	) -- 157
+	local pLegacy = {unlocked = 2} -- 160
+	check( -- 161
+		"rocket-legacy-l0", -- 161
+		getMissionRockets(pLegacy, 0) == 1, -- 161
+		"旧存档第 1 关应兜底 1" -- 161
+	) -- 161
+	check( -- 162
+		"rocket-legacy-l1", -- 162
+		getMissionRockets(pLegacy, 1) == 1, -- 162
+		"旧存档第 2 关应兜底 1" -- 162
+	) -- 162
+	check( -- 163
+		"rocket-legacy-l2", -- 163
+		getMissionRockets(pLegacy, 2) == 0, -- 163
+		"旧存档未通关的关卡应为 0" -- 163
+	) -- 163
+	local levelCountForSave = 6 -- 166
+	local before = loadProgress(levelCountForSave) -- 167
+	saveProgress(p3) -- 168
+	local reloaded = loadProgress(levelCountForSave) -- 169
+	check( -- 170
+		"rocket-save-roundtrip-l0", -- 170
+		getMissionRockets(reloaded, 0) == 2, -- 170
+		"写盘读回 L1 应为 2" -- 170
+	) -- 170
+	check( -- 171
+		"rocket-save-roundtrip-l1", -- 171
+		getMissionRockets(reloaded, 1) == 3, -- 171
+		"写盘读回 L2 应为 3" -- 171
+	) -- 171
+	check("rocket-save-roundtrip-unlocked", reloaded.unlocked == 2, "写盘读回 unlocked 应为 2") -- 172
+	saveProgress(before) -- 173
+end -- 147
+function ____exports.runTests() -- 176
+	testClamp() -- 177
+	testAdvance() -- 178
+	testPersistence() -- 179
+	testBackToSelect() -- 180
+	testRockets() -- 181
+	local lines = {} -- 183
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 184
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 185
+	local limit = #failures < 12 and #failures or 12 -- 186
+	do -- 186
+		local i = 0 -- 187
+		while i < limit do -- 187
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 188
+			i = i + 1 -- 187
+		end -- 187
+	end -- 187
+	return table.concat(lines, "\n") -- 190
+end -- 176
+return ____exports -- 176

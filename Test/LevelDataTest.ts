@@ -8,7 +8,7 @@
  */
 import { Body, P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { SunGm } from 'game/Scale';
-import { GoalSpec, bodyVelocityAt, captureThreshold, findGoalIndex, getLevel, goalWaypoints, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
+import { GoalSpec, bodyVelocityAt, captureThreshold, evaluateRockets, findGoalIndex, getLevel, goalWaypoints, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
 import { AimMaxSpeed, AimMinSpeed, BrakeShare, PhysicsStep } from 'game/Config';
 import { levelRuntime } from 'game/Tuning';
 import { resolveResult } from 'game/Game';
@@ -410,12 +410,56 @@ function testTimeWindow(stats: SweepStat[]): void {
 		'六关都必须有时间轴：withWindow=' + withWindow + '/' + n + '（L1 例外：它没有日期轴，见 LevelDef 里 L1 的说明）');
 }
 
+/** 6) 任务元数据完整性（S7）。 */
+function testMissionMeta(): void {
+	const n = levelCount();
+	for (let i = 0; i < n; i++) {
+		const lv = getLevel(i);
+		if (lv === undefined) continue;
+		const m = lv.mission;
+		check(`lv${lv.id}-mission-meta-present`, m !== undefined, '缺少 mission 元数据');
+		if (m === undefined) continue;
+
+		check(`lv${lv.id}-mission-id`, m.id === `L${lv.id}`, `id=${m.id}`);
+		check(`lv${lv.id}-mission-codename`, m.codeName.length > 0, 'codeName 为空');
+		check(`lv${lv.id}-mission-challenges-count`, m.challenges.length === 3, `challenges.length=${m.challenges.length}`);
+		check(`lv${lv.id}-c1-type-success`, m.challenges[0].type === 'success', `c1 type=${m.challenges[0].type}`);
+		check(`lv${lv.id}-c2-type-fuel`, m.challenges[1].type === 'fuel', `c2 type=${m.challenges[1].type}`);
+		check(`lv${lv.id}-c3-type-valid`, ['distance', 'speed', 'eccentricity'].indexOf(m.challenges[2].type) >= 0, `c3 type=${m.challenges[2].type}`);
+	}
+}
+
+/** 7) 火箭星级评价逻辑（S7 纯函数判定）。 */
+function testEvaluateRockets(): void {
+	const l1 = getLevel(0);
+	if (l1 !== undefined) {
+		check('rockets-fail-0', evaluateRockets(l1, 'crash', 0.1) === 0, '失败应为 0 枚火箭');
+		check('rockets-escaped-0', evaluateRockets(l1, 'escaped', 0.1) === 0, '逃逸应为 0 枚火箭');
+		check('rockets-success-overburn-1', evaluateRockets(l1, 'success', l1.dvBudget * 0.95) === 1, '燃油超标应为 1 枚火箭');
+		check('rockets-fuel-ok-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5) === 2, '达成省油应为 2 枚火箭');
+		check('rockets-peri-ok-3', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.01 }) === 3, '达成近掠应为 3 枚火箭');
+		check('rockets-peri-fail-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.05 }) === 2, '未达成近掠应为 2 枚火箭');
+	}
+
+	const l4 = getLevel(3);
+	if (l4 !== undefined) {
+		check('rockets-l4-eccentricity-3', evaluateRockets(l4, 'success', l4.dvBudget * 0.6, { eccentricity: 0.25 }) === 3, '低偏心率入轨应为 3 枚火箭');
+	}
+
+	const l3 = getLevel(2);
+	if (l3 !== undefined) {
+		check('rockets-l3-speed-3', evaluateRockets(l3, 'success', l3.dvBudget * 0.7, { maxSpeed: 45 }) === 3, '高速狂飙应为 3 枚火箭');
+	}
+}
+
 export function runTests(): string {
 	testValidity();
 	testFindGoalIndex();
 	const stats = testReachability();
 	testTimeWindow(stats);
 	testCapture();
+	testMissionMeta();
+	testEvaluateRockets();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

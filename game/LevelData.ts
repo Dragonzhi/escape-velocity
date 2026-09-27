@@ -109,6 +109,32 @@ export interface GoalSpec {
 	chain?: WaypointSpec[];
 }
 
+/** 单个火箭挑战定义（S7）。 */
+export interface RocketChallengeDef {
+	/** 挑战目标描述 */
+	desc: string;
+	/** 判定类型：'success' | 'fuel' | 'distance' | 'speed' | 'eccentricity' */
+	type: 'success' | 'fuel' | 'distance' | 'speed' | 'eccentricity';
+	/** 判定阈值 */
+	threshold?: number;
+}
+
+/** 任务元数据（S7：真实深空探测任务）。 */
+export interface MissionMeta {
+	/** 任务代号：'L1' ~ 'L6' */
+	id: string;
+	/** 英文代号：'Moon', 'Mariner10', 'Parker', 'Galileo', 'NewHorizons', 'Voyager2' */
+	codeName: string;
+	/** 历史原型：'阿波罗 / 嫦娥探月', etc. */
+	historicalRef: string;
+	/** 中文副标题：'启蒙', '潜行', '烈日', '泊入', '狂飙', '奇迹' */
+	subtitle: string;
+	/** 载具类型：'flyby' | 'orbiter' */
+	vehicle: 'flyby' | 'orbiter';
+	/** 三枚火箭挑战列表 [第1枚, 第2枚, 第3枚] */
+	challenges: [RocketChallengeDef, RocketChallengeDef, RocketChallengeDef];
+}
+
 /** 一关的完整定义。 */
 export interface LevelDef {
 	id: number;
@@ -154,6 +180,55 @@ export interface LevelDef {
 	 * 「2D 视角负责让玩家知道东西在哪里」，看不见就等于没有。
 	 */
 	planCenter?: number;
+	/** 任务专属元数据（S7）。 */
+	mission?: MissionMeta;
+}
+
+/**
+ * 评价一局飞行的火箭星级（0 ~ 3 枚火箭，纯函数）。
+ */
+export function evaluateRockets(
+	level: LevelDef,
+	result: string,
+	burnDv: number,
+	extra?: {
+		closestDist?: number;
+		maxSpeed?: number;
+		eccentricity?: number;
+	},
+): number {
+	if (result !== 'success') return 0;
+	let count = 1;
+	const challenges = level.mission !== undefined ? level.mission.challenges : undefined;
+	if (challenges === undefined) return count;
+
+	// 第 2 枚火箭：燃料控制
+	const c2 = challenges[1];
+	if (c2.type === 'fuel' && c2.threshold !== undefined) {
+		if (burnDv <= level.dvBudget * c2.threshold) count += 1;
+	} else if (burnDv <= level.dvBudget * 0.8) {
+		count += 1;
+	}
+
+	// 第 3 枚火箭：专属挑战
+	const c3 = challenges[2];
+	if (c3.type === 'distance' && c3.threshold !== undefined) {
+		if (extra !== undefined && extra.closestDist !== undefined && extra.closestDist <= c3.threshold) {
+			count += 1;
+		}
+	} else if (c3.type === 'speed' && c3.threshold !== undefined) {
+		if (extra !== undefined && extra.maxSpeed !== undefined && extra.maxSpeed >= c3.threshold) {
+			count += 1;
+		}
+	} else if (c3.type === 'eccentricity' && c3.threshold !== undefined) {
+		if (extra !== undefined && extra.eccentricity !== undefined && extra.eccentricity <= c3.threshold) {
+			count += 1;
+		}
+	} else if (count === 2 && burnDv <= level.dvBudget * 0.5) {
+		count += 1;
+	}
+
+	return Math.min(3, Math.max(0, count));
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +515,18 @@ function level1(): LevelDef {
 		// 留一倍余量即可 —— 再长只是让"没打中"的等待变久。
 		maxSteps: 2400,
 		planCenter: 1, // 以地球为中心（见 LevelDef.planCenter 的说明）
+		mission: {
+			id: 'L1',
+			codeName: 'Moon',
+			historicalRef: '阿波罗 / 嫦娥探月',
+			subtitle: '启蒙',
+			vehicle: 'flyby',
+			challenges: [
+				{ desc: '成功抵达月球轨道或飞掠月球', type: 'success' },
+				{ desc: '发射点火消耗 Δv ≤ 0.28（节省 > 20%）', type: 'fuel', threshold: 0.8 },
+				{ desc: '近月点距离 r_peri ≤ 0.015', type: 'distance', threshold: 0.015 },
+			],
+		},
 		// ⚠️ L1 **没有时间轴**：日期一变地球就转走，而 probeStart 是个固定点 ⇒
 		//    探测器会离开地球。月球自己的相位就是这一关的"时机"。
 	};
@@ -471,6 +558,18 @@ function level2(): LevelDef {
 		escapeRadius: 3600,
 		maxSteps: 4000,
 		timeWindow: { span: 27 }, // ≥ 金星会合周期 26.8 秒
+		mission: {
+			id: 'L2',
+			codeName: 'Mariner10',
+			historicalRef: '水手10号 (Mariner 10)',
+			subtitle: '潜行',
+			vehicle: 'flyby',
+			challenges: [
+				{ desc: '借力金星并成功抵达金星轨道', type: 'success' },
+				{ desc: '初始点火消耗 Δv ≤ 75% 预算', type: 'fuel', threshold: 0.75 },
+				{ desc: '近星距离 ≤ 2.0 单位', type: 'distance', threshold: 2.0 },
+			],
+		},
 	};
 }
 
@@ -492,6 +591,18 @@ function level3(): LevelDef {
 		escapeRadius: 3600,
 		maxSteps: 20000,
 		timeWindow: { span: 19 }, // ≥ 木星会合周期 18.3 秒
+		mission: {
+			id: 'L3',
+			codeName: 'Parker',
+			historicalRef: '帕克太阳探测器 (Parker Solar Probe)',
+			subtitle: '烈日',
+			vehicle: 'flyby',
+			challenges: [
+				{ desc: '成功抵达木星引力范围', type: 'success' },
+				{ desc: '初始点火消耗 Δv ≤ 80% 预算', type: 'fuel', threshold: 0.8 },
+				{ desc: '航行最高速度 vmax ≥ 40', type: 'speed', threshold: 40.0 },
+			],
+		},
 	};
 }
 
@@ -524,6 +635,18 @@ function level4(): LevelDef {
 		escapeRadius: 3600,
 		maxSteps: 30000,
 		timeWindow: { span: 18 },
+		mission: {
+			id: 'L4',
+			codeName: 'Galileo',
+			historicalRef: '伽利略号 (Galileo)',
+			subtitle: '泊入',
+			vehicle: 'orbiter',
+			challenges: [
+				{ desc: '连续飞掠木星并抵达土星', type: 'success' },
+				{ desc: '地面发射点火 Δv ≤ 70% 预算', type: 'fuel', threshold: 0.7 },
+				{ desc: '闭合轨道偏心率 e ≤ 0.35', type: 'eccentricity', threshold: 0.35 },
+			],
+		},
 	};
 }
 
@@ -559,6 +682,18 @@ function level5(): LevelDef {
 		escapeRadius: 3600,
 		maxSteps: 40000,
 		timeWindow: { span: 17.5 },
+		mission: {
+			id: 'L5',
+			codeName: 'NewHorizons',
+			historicalRef: '新视野号 (New Horizons)',
+			subtitle: '狂飙',
+			vehicle: 'flyby',
+			challenges: [
+				{ desc: '借力木星与土星抵达天王星', type: 'success' },
+				{ desc: '地面发射初速消耗 Δv ≤ 75% 预算', type: 'fuel', threshold: 0.75 },
+				{ desc: '航行最高速度 vmax ≥ 45', type: 'speed', threshold: 45.0 },
+			],
+		},
 	};
 }
 
@@ -597,6 +732,18 @@ function level6(): LevelDef {
 		escapeRadius: 3600,
 		maxSteps: 70000,
 		timeWindow: { span: 17.5 },
+		mission: {
+			id: 'L6',
+			codeName: 'Voyager2',
+			historicalRef: '旅行者2号 (Voyager 2)',
+			subtitle: '奇迹',
+			vehicle: 'flyby',
+			challenges: [
+				{ desc: '四星连珠大巡游抵达海王星', type: 'success' },
+				{ desc: '初始发射点火 Δv ≤ 80% 预算', type: 'fuel', threshold: 0.8 },
+				{ desc: '航行最高速度 vmax ≥ 50', type: 'speed', threshold: 50.0 },
+			],
+		},
 	};
 }
 
