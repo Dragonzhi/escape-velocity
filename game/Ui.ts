@@ -19,7 +19,30 @@
  * 字体：`Label()` 可能返回 undefined（字体缺失）。所有创建函数都把 undefined
  * 原样交给调用方，由调用方决定是“跳过这一行字”还是报错（手册 §7.1）。
  */
-import { App, Color, DrawNode, Label, Node, Size, Vec2 } from 'Dora';
+import { Color, DrawNode, Label, Node, Size, Vec2 } from 'Dora';
+
+/**
+ * UI 自己的时钟（秒）—— **不要改用 `App.elapsedTime`**。
+ *
+ * ⚠️ 实测（2026-09-27，探针在引擎里连打 12 帧）：`App.deltaTime` 正常（0.016667/帧），
+ *    但 `App.elapsedTime` **一直冻结在 0.0001 附近不动**。于是下面 0.5 秒防抖里的
+ *    `now - lastTapAt` 恒为 0 ⇒ **每个按钮一辈子只能按动一次**（第二次起被当成「同一次点击的重复投递」吞掉）。
+ *    用户报的「2D/3D 按钮只能单向切一次」「刹车/发射按第二次没反应」全是这一个根因。
+ *
+ * 修法：时钟自己累加，由主循环（`init.ts` 的 `threadLoop`）每帧喂 `App.deltaTime`。
+ * 这样防抖语义不变（挡掉同一瞬间鼠标+触摸的双投递），但不依赖引擎那个坏掉的读数。
+ */
+let uiClock = 0;
+
+/** 推进 UI 时钟；主循环每帧调一次（在对话框、选关、关卡、结算里都要走）。 */
+export function advanceUiClock(dt: number): void {
+	uiClock += dt;
+}
+
+/** 当前 UI 时钟读数（秒，进程内单调递增）。 */
+export function uiClockNow(): number {
+	return uiClock;
+}
 
 /** 项目统一字体（与现有 UI 一致）。 */
 export const FontName = 'sarasa-mono-sc-regular';
@@ -259,7 +282,7 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 	//    0.5 秒防抖：双投递是同一瞬间，而人不可能 0.5 秒内在同一按钮上点两次。
 	//    （fireOn='press' 时同样吃这条防抖：重复投递由幂等守卫 + 这里一起挡掉。）
 	const fireTap = (): void => {
-		const now = App.elapsedTime;
+		const now = uiClockNow();
 		if (lastTapAt >= 0 && now - lastTapAt < 0.5) return;
 		lastTapAt = now;
 		opts.onTap();

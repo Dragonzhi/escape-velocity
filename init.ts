@@ -27,6 +27,8 @@ import { PlanView, createPlanView, defaultPlanOptions, planFitRadius } from 'gam
 import { AimInput, AimResult, FinaleMainText, FinalePanel, LevelSelect, ResultPanel, createAimInput, createFinalePanel, createLevelSelect, createResultPanel, finaleSubtitle } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
 import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
+// 只为主循环推进 UI 时钟：按钮防抖不能依赖引擎那个冻结的 App.elapsedTime（见 game/Ui.ts）
+import { advanceUiClock } from 'game/Ui';
 import { Opening, createOpening, loadIntroSeen, saveIntroSeen } from 'game/Opening';
 
 /** 一关的运行时（惰性创建，切关只切 visible）。 */
@@ -674,6 +676,10 @@ if (levelTotal <= 0) {
 	// ---- 单一主循环（手册 §4.3）：只驱动当前激活的关（+ 开场）----
 	// ⚠️ threadLoop 回调没有参数，帧间隔用 App.deltaTime
 	threadLoop(() => {
+		// ⚠️ 第一件事：推进 UI 时钟。`Ui.createButton` 的 0.5 秒防抖靠它 ——
+		//    引擎的 `App.elapsedTime` 是坏的（冻结不涨），用它会让每个按钮只按得动一次
+		//    （2026-09-27 用户报「2D/3D 只能单向切一次」的根因）。必须在所有 UI 之前。
+		advanceUiClock(App.deltaTime);
 		// 开场先推进（它在场时没有激活的关；播完转 idle，继续当选关界面的背景）
 		if (opening !== undefined && opening.running()) {
 			// @hold:N —— 冻结在第 N 帧不动（抓分镜截图用）；轻触跳过时 onFinish 会解冻
