@@ -87,7 +87,6 @@ pwsh tools/level-play.ps1 -Level 4 -AutoArmFrame 120 -HoldWarpMs 2500 -Taps 1 -S
 单测基线：`SUMMARY passed=10 failed=0 total=10`（**322 条断言**：Gravity 37 / Game 58 / LevelData 73 / Hud 17 /
 Trajectory 11 / CameraRig 16 / Progress 36 / Opening 33 / PlanView 16 / OrbitFlow 25）→ `.agent/test-results/unit-summary.txt`。
 ⚠️ 这个数会随新模块增长（S3.15/S3.16 各加了一个测试模块）—— **以引擎跑出来的合计为准，别照抄这里**。
-Trajectory 11 / CameraRig 16 / Progress 36 / Opening 33）→ `.agent/test-results/unit-summary.txt`。
 引擎 API（8866）需要引擎设置里「访问验证 / Auth Required」为关闭；`/ts/build` 还要求 Web IDE 浏览器已连接
 （TS 编译实际发生在浏览器里 —— 本地构建用 `tools/dora-build/` 即可，不要依赖它）。
 截图是未压缩 TGA，转 PNG：`python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"`。
