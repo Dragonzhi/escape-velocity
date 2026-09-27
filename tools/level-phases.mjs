@@ -92,7 +92,12 @@ const wps = LD.goalWaypoints(lv.goal);
 if (wps.length === 0) { console.log("这一关没有航点（纯逃逸关），不需要相位"); process.exit(0); }
 const rings = wps.map((w, i) => {
 	const b = bodies[w.planetIndex];
-	if (b.orbitRadius <= 0) { console.log("航点 " + (w.label || i) + " 不是绕日行星，相位求解器不适用"); process.exit(0); }
+	// ⚠️ 判据必须同时看 orbitCenter：L1 的月球绕的是**地球**（orbitRadius 100 但圆心不是原点），
+	// 只判 orbitRadius > 0 会把它当成"绕日行星"去解相位 —— 算出来的东西毫无意义。
+	if (b.orbitRadius <= 0 || b.orbitCenter.x !== 0 || b.orbitCenter.y !== 0) {
+		console.log("航点 " + (w.label || i) + " 不是**绕原点的**行星（它绕的是别的天体），相位求解器不适用");
+		process.exit(0);
+	}
 	return {
 		wp: w, body: b, or: b.orbitRadius,
 		tol: tolArg !== null ? Number(String(tolArg).split(",")[i]) : w.tolerance,

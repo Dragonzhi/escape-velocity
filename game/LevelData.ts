@@ -155,6 +155,10 @@ function deg(d: number): number {
 
 // 半径表（真实比^0.4 × 1.35 × 1.3，见文件头）
 const R_MOON = 1.0;
+// L1 是**近景**（地月系）：这两个值只用于第一关，比例仍是地球/月球 = 1.76，
+// 但绝对尺寸放大到肉眼可读 —— 本尺度的轨道有 100+ 单位，1.76 的地球只有几个像素。
+const R_EARTH_BIG = 6.0;
+const R_MOON_BIG = 3.4;
 const R_VENUS = 1.72;
 const R_EARTH = 1.76;
 const R_JUPITER = 4.63;
@@ -316,8 +320,13 @@ const LEVELS: LevelDef[] = [
 	{
 		id: 1,
 		title: '出发',
-		brief: '航行日志 · 第 1 天：离开地球。这一段路很干净，没有大天体捣乱 —— 先把拖拽瞄准练熟。月球在正前方。',
-		probeStart: { x: 0, y: 40 },
+		// S3.12 用户："每一关其实都应该要符合逻辑的让星球动起来，包括第一关，我现在都不知道第一关是什么。"
+		// ⇒ L1 的定位写清楚：**地月转移**（一次点火、把探测器送上月球），月球**真的在绕地球走**。
+		// 这一关是本作里唯一的"近景"：地月的半径按同一套比例放大到肉眼可读（地球 6.0 / 月球 3.4，
+		// 比值 1.76 与其它关一致），否则在本尺度下地球只有 1.76 而轨道有 100+ 单位，
+		// 第一眼就是"一片星空里两个小点"（截图实测）。
+		brief: '航行日志 · 第 1 天：地球轨道。探测器在你手里 —— 月球正在绕地球走，别对着它现在的位置打。这一次点火决定后面的一切。',
+		probeStart: { x: 0, y: 46 },
 		// S3.9.3：出发时探测器**已经在绕地球飞**（用户："飞行器也是一开始在运动的，围绕地球"）。
 		// 地球在这一关是**真天体**（有引力）：圆轨道速度 = sqrt(gm / 距离) = sqrt(2600 / 30) ≈ **9.31**，
 		// 方向 +x（切向）⇒ 预测线一上来就是一条弧线，玩家拖出来的那一下是"点火"。
@@ -325,18 +334,19 @@ const LEVELS: LevelDef[] = [
 		//    后来 gm 降到 2600 而速度没跟着改 ⇒ v/v_circ = 1.29，轨迹变成一条**大椭圆**
 		//    （远地点 147 = 地球半径的 84 倍），于是进关后探测器一路飞远、相机被迫拉到很大，
 		//    第一关的第一眼变成"一片星空里一个小点"（截图实测）。改成 9.31 之后是正圆，贴着地球转。
-		probeVel0: { x: 9.31, y: 0 },
+		probeVel0: { x: 10.41, y: 0 },
 		homeAnchor: false, // 地球已经在 planets[0]，别再叠一个纯视觉锚点
 		planets: [
-			// 地球（真天体）：探测器在它上方 30 单位处绕行。
-			// gm 2600（不是 4320）：教学关不希望地球太"黏" —— 逃离速度 sqrt(2·2600/30) ≈ 13，一次像样的点火就能走。
-			{ gm: 2600, radius: R_EARTH, orbitCenter: { x: 0, y: 70 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
-			// 月球：无引力的纯靶子（Sphere 单位球染灰代用）。
-			{ gm: 0, radius: R_MOON, orbitCenter: { x: 0, y: -70 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
+			// 地球（真天体）：探测器在它上方 24 单位处绕行（半径 6.0 ⇒ 离地 18，肉眼看得见"贴着地球"）。
+			// gm 2600：逃离速度 sqrt(2·2600/24) ≈ 14.7 ⇒ 一次像样的点火就能走（预算 45）。
+			{ gm: 2600, radius: R_EARTH_BIG, orbitCenter: { x: 0, y: 70 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
+			// 月球：**绕地球公转**（orbitCenter = 地球），周期取该半径的开普勒周期 1000 秒。
+			// 飞行 4 秒里它走 1.4°、瞄准 40 秒里走 14° —— 看得见在动，但远小于容差（30 单位 ≈ 22°）⇒ 不会变难。
+			{ gm: 0, radius: R_MOON_BIG, orbitCenter: { x: 0, y: 70 }, orbitRadius: 100, orbitPeriod: keplerPeriod(100), phase0: deg(-90), orbitDirection: 1 },
 		],
 		visuals: [
-			{ r: 0.42, g: 0.62, b: 0.85, displayRadius: R_EARTH, ring: false, model: 'Planet_Earth' },
-			{ r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false },
+			{ r: 0.42, g: 0.62, b: 0.85, displayRadius: R_EARTH_BIG, ring: false, model: 'Planet_Earth' },
+			{ r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON_BIG, ring: false },
 		],
 		// 教学关要宽容：环放宽到 30（月球半径只有 1.0 —— 等于是"飞到月球附近就算"）。
 		// 手写注释一度写着 18 而代码是 24（对不上），这里以代码为准并同步：24 → 30 使
