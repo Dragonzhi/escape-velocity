@@ -41,6 +41,14 @@
    横屏截图实测残留一段游离旧线）。
 9. **Windows PowerShell 脚本带 here-string 的必须 CRLF**（here-string 在纯 LF 下解析失败，`tools/input-inject/set-window.ps1` 踩过）。
    只用普通字符串的脚本（`tools/engine-run.ps1`、`tools/level-shots.ps1`）纯 LF 也能跑。
+10. **读工具会静默截断长文件 —— 永远不要「读全文再整体改写」**（2026-09-27 踩过，一次写坏三个文档）：
+    `read` 只返回前 N 行（实测 1689 行的 PROGRESS.md 只回 444 行、1267 行的开发手册只回 ~509 行），
+    返回结果里**没有「你被截断了」的信号**（只有 `totalLines` 是真相）。把 `lines.map(l => l.text).join()`
+    当全文再 `write` 回去 = 把文件腰斩；更坏的是**它看起来像成功**（写操作报 OK）。
+    ✅ 纪律：① 整文件改写前先断言 `lines.length === totalLines`；② 优先用**锚点式 `edit`**（只改要改的那几行，
+    其余字节原样不动）；③ 恢复手段是 `git checkout -- <file>`，然后改用 `edit` 重做。
+11. **在交给运行时的程序里写中文，字符串一律用「」当引号**：直接写直双引号会把程序语句截断
+    （实测报 `Expected ',', got '...'`，连踩三次）。英文引号只在确实要英文时用。
 
 ## 验证纪律（写了代码 ≠ 通过）
 
