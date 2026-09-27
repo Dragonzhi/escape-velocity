@@ -27,12 +27,12 @@
 
 | 文档 | 内容 |
 |---|---|
-| [`单程-项目愿景.md`](./单程-项目愿景.md) | 产品愿景：题材、核心体验、关卡曲线、风险 |
-| [`docs/开发手册.md`](./docs/开发手册.md) | **唯一事实来源**：决策记录、架构、物理与相机方案、编码规范、构建与 Web 导出、验收标准 |
-| [`docs/关卡舞台表.md`](./docs/关卡舞台表.md) | **关卡设计定稿**：六站清单、十条决定、作废清单、排期（取代旧的「每关加一个新决策」阶梯） |
-| [`docs/交付清单_Trae.md`](./docs/交付清单_Trae.md) · [`模型交接_Trae.md`](./docs/模型交接_Trae.md) | 建模交付的清单与规格（Blender 侧），含贴图/环/两版探测器 |
+| [`docs/单程_游戏设计案.md`](./docs/单程_游戏设计案.md) | **唯一设计事实来源**：愿景、双载具模式（飞掠/轨道器）、制动窗口、六关舞台表与终章 |
+| [`docs/开发手册.md`](./docs/开发手册.md) | **唯一工程事实来源**：决策记录（ADR）、系统架构、物理与相机方案、编码与构建规范 |
+| [`docs/提交物清单.md`](./docs/提交物清单.md) | 比赛交付物检查清单（包体、图标、封面、演示视频） |
 | [`docs/DSH-vs-Dora内置Agent-能力对照.md`](./docs/DSH-vs-Dora内置Agent-能力对照.md) | 开发环境说明：引擎 API / 鉴权 / 构建链路事实，与外部 Agent 的能力对照 |
-| [`.agent/plan/PLAN.md`](./.agent/plan/PLAN.md) | 实施计划（分步、依赖、验收判据） |
+| [`docs/archive/`](./docs/archive/) | 历史文档归档：早期愿景初稿、历史关卡草案、Trae 建模交接记录等 |
+| [`.agent/plan/PLAN.md`](./.agent/plan/PLAN.md) | 实施计划（分步、依赖、当前 S5/S6 里程碑） |
 | [`.agent/plan/PROGRESS.md`](./.agent/plan/PROGRESS.md) | 实施进度与证据 |
 | [`AGENTS.md`](./AGENTS.md) | **仓库级 Agent 守则**：硬约束（构建、触摸、坐标）与验证纪律 |
 | [`tools/dora-build/README.md`](./tools/dora-build/README.md) | 本地 TS→Lua 构建工具（安装、用法、版本钉死、一致性门禁） |

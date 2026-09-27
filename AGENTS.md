@@ -9,7 +9,7 @@
 |---|---|
 | 技术与决策（冲突时以它为准） | `docs/开发手册.md` |
 | 计划 / 进度与证据 | `.agent/plan/PLAN.md`、`.agent/plan/PROGRESS.md` |
-| 玩法与关卡设计稿（讨论稿 + Agent 批注：已实现/待做/成本） | `docs/单程_最终玩法与关卡优化方案.md` |
+| 玩法与关卡设计案（单一设计事实来源：愿景/双模式/舞台表） | `docs/单程_游戏设计案.md` |
 | 长期记忆与已知坑 | `.agent/main/{MEMORY,PROJECT_MEMORY,SESSION_SUMMARY}.md` |
 | 引擎 API / 鉴权 / 构建链路事实 | `docs/DSH-vs-Dora内置Agent-能力对照.md` |
 | 本地构建工具说明 | `tools/dora-build/README.md` |
