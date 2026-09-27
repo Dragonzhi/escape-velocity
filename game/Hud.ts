@@ -37,6 +37,8 @@ import {
 	TimeWarpRate, TimeWarpStep, WarpHoldDelaySec,
 } from 'game/Config';
 import { ResultKind } from 'game/Game';
+// 只作类型用（TSTL 会省掉这条 require）：视图模式的唯一事实来源在 GameCore 里
+import { PlanViewMode } from 'game/PlanView';
 import { MinButtonHeight, MinButtonWidth, UiButton, createButton, createLabel, createPanel, setLabelCenter, setLabelColor, setLabelText } from 'game/Ui';
 
 /** 投影偏移空间中的屏幕点。 */
@@ -224,6 +226,21 @@ export interface AimInput {
 	/** 由主循环同步 Armed 状态：按钮显隐 + 触摸开关都跟着它走。 */
 	setArmed: (armed: boolean) => void;
 	/**
+	 * 「2D/3D」切换按钮被按下（S3.15）。按钮**只表达意图** ——
+	 * 真正翻转 `GameCore.viewMode` 的是 Game（状态驱动，见手册 §4.3）。
+	 */
+	onViewToggle: (callback: () => void) => void;
+	/** 由主循环同步当前视图：按钮文字跟着状态走（不自己翻转局部变量）。 */
+	setViewMode: (mode: PlanViewMode) => void;
+	/**
+	 * 整屏瞄准（S3.15）：2D 规划视图里**整屏拖动都算瞄准**。
+	 *
+	 * 为什么："探测器附近才算瞄准、别处拖动 = 自由观察"那条分区规则是为 3D 服务的；
+	 * 2D 模式下 3D 世界整个收起来了，自由观察没有意义，留着分区只会让大半屏变成死区
+	 * （玩家在图上按一下、拖半天，什么也没发生）。
+	 */
+	setFullScreenAim: (on: boolean) => void;
+	/**
 	 * 时间流按钮（S3.9.4）：回调收到 -1（回退）/ 0（松手）/ +1（加速）。
 	 * 只有带 `timeWindow` 的关卡才启用；别的关卡整块隐藏**且断触摸**。
 	 */
@@ -288,6 +305,8 @@ export function createAimInput(
 
 	let enabled = false;
 	let dragging = false;
+	/** 整屏瞄准（2D 模式）；由 Game 按视图状态同步。 */
+	let fullScreenAim = false;
 	let aim: AimResult = { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
 
 	// 探测器屏幕偏移：由调用方在拖动前/每帧设定。
@@ -328,7 +347,7 @@ export function createAimInput(
 		const at = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
 		const dx = at.x - probeOffset.x;
 		const dy = at.y - probeOffset.y;
-		if (Math.sqrt(dx * dx + dy * dy) <= aimRadius) {
+		if (fullScreenAim || Math.sqrt(dx * dx + dy * dy) <= aimRadius) {
 			mode = 'aim';
 			dragging = true;
 			pressOffset = at;
@@ -541,6 +560,34 @@ export function createAimInput(
 	launchButton.root.visible = false;
 	launchButton.setEnabled(false); // 隐藏 + 断触摸（硬约束 4）
 
+	// ---- 「2D / 3D」手动切换（S3.15）----
+	// 位置：右下角、**发射按钮正下方**（发射按钮占 y 96..208，这里占 20..84，中间留 12 px）。
+	// 为什么选这里：设计稿第 4 条要"右下角保留手动切换按钮"，而右下角只有这块空着
+	// （顶部是刹车、右上角是时间流、左上角是 Δv 读数）。本轮**用文字标签**，图标化是后面的独立项。
+	// ⚠️ 按钮只把意图送出去（onViewToggle）；翻转状态的是 Game 里的 `coreToggleView` ——
+	//    局部变量翻转会让"按钮显示的"与"画出来的"分家（AGENTS 硬约束 5）。
+	const ViewButtonW = 116;
+	const ViewButtonH = 64;
+	let viewHandler: (() => void) | undefined = undefined;
+	const viewButton = createButton(root, {
+		w: ViewButtonW,
+		h: ViewButtonH,
+		text: '2D',
+		fontSize: 30,
+		bgHex: ResultButtonAltBgHex,
+		fgHex: ResultButtonFgHex,
+		borderHex: ResultButtonBorderHex,
+		// 一次性动作 ⇒ 按下即生效：与「发射」同一个理由（引擎会丢事件、也没有"触摸取消"回调）
+		fireOn: 'press',
+		onTap: (): void => {
+			print('[escape-velocity] view toggle fire (press)');
+			if (viewHandler !== undefined) viewHandler();
+		},
+	});
+	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 20);
+	/** 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。 */
+	let lastViewText = '2D';
+
 	const brakeRightX = viewW - BrakeButtonW - 20;
 	makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
 	makeBrakeButton('刹车', true, brakeRightX);
@@ -581,6 +628,17 @@ export function createAimInput(
 		setArmed: (armed: boolean): void => {
 			launchButton.root.visible = armed;
 			launchButton.setEnabled(armed);
+		},
+		onViewToggle: (callback: () => void): void => {
+			viewHandler = callback;
+		},
+		setViewMode: (mode: PlanViewMode): void => {
+			if (mode === lastViewText) return;
+			lastViewText = mode;
+			viewButton.setText(mode);
+		},
+		setFullScreenAim: (on: boolean): void => {
+			fullScreenAim = on;
 		},
 		onWarp: (callback: (dir: number) => void): void => {
 			warpHandler = callback;

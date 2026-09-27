@@ -8,7 +8,8 @@ import { Body, P2 } from 'game/Gravity';
 import { FlightPlayback, PhysicsStep } from 'game/Config';
 import { GoalSpec } from 'game/LevelData';
 import {
-	GameLevel, coreArm, coreCancelArm, coreHandoffDate, coreLaunch, coreProbeIndex, coreRetry, coreTimeWarpAllowed, coreUpdate,
+	GameLevel, coreArm, coreBackToSelect, coreCancelArm, coreHandoffDate, coreLaunch, coreProbeIndex, coreRetry,
+	coreTimeWarpAllowed, coreToggleView, coreUpdate,
 	createCore, resolveResult,
 } from 'game/Game';
 
@@ -309,6 +310,58 @@ function testArmed(): void {
 	check('retry-clears-armed', core3.phase === 'Aiming', `phase=${core3.phase}`);
 }
 
+/**
+ * 12) 视图模式（S3.15）：2D 规划 ⇄ 3D 观赏。
+ *
+ * 设计稿第 4 条的自动切换**必须是相态流转的副产品**，不是 UI 的补丁：
+ *   Aiming/Armed → 2D；coreLaunch → 3D；Result 留 3D；coreRetry → 2D；coreBackToSelect → 2D。
+ * 手动切换（右下角按钮）走 `coreToggleView`，状态仍然只有一个（`GameCore.viewMode`）。
+ *
+ * 引擎侧端到端证据（截图 + 日志行）见 PROGRESS 会话 47。
+ */
+function testViewMode(): void {
+	const level = testLevel();
+	const core = createCore();
+	check('view-aiming-2d', core.viewMode === '2D', `进关应为 2D：viewMode=${core.viewMode}`);
+
+	coreArm(core);
+	check('view-armed-2d', core.viewMode === '2D', `Armed（还没发射）应留 2D：viewMode=${core.viewMode}`);
+
+	// 手动切换：状态翻转 + 返回值就是新状态（按钮文字读它）
+	const flipped = coreToggleView(core);
+	check('view-toggle-to-3d', flipped === '3D' && core.viewMode === '3D', `flip=${flipped} viewMode=${core.viewMode}`);
+	check('view-toggle-back', coreToggleView(core) === '2D' && core.viewMode === '2D', `viewMode=${core.viewMode}`);
+
+	// 按下发射 ⇒ 无论玩家之前手动切到哪，都进 3D
+	coreToggleView(core); // 又切回 3D
+	coreLaunch(core, { x: 6, y: -12 }, level);
+	check('view-launch-3d', core.viewMode === '3D' && core.phase === 'Flying', `viewMode=${core.viewMode} phase=${core.phase}`);
+
+	// 飞行与结算都留在 3D
+	let guard = 0;
+	while (core.phase !== 'Result' && guard < 100000) {
+		coreUpdate(core, 1 / 60);
+		guard += 1;
+	}
+	check('view-result-3d', core.viewMode === '3D' && core.phase === 'Result', `viewMode=${core.viewMode} phase=${core.phase}`);
+
+	// 重试 ⇒ 回 2D（重新规划）
+	coreRetry(core);
+	check('view-retry-2d', core.viewMode === '2D' && core.phase === 'Aiming', `viewMode=${core.viewMode} phase=${core.phase}`);
+
+	// 返回关卡选择 ⇒ 也回 2D（下一关是从 2D 开始的）
+	// ⚠️ coreBackToSelect **只在 Result 态有效**（"飞行途中不许撤退"）：先推进到结算再退，
+	// 否则它返回 false、视图也不会变 —— 第一版就漏了这一步，断言把测试自己的 bug 报成了实现 bug
+	const core2 = createCore();
+	coreLaunch(core2, { x: 0, y: -20 }, level);
+	let guard2 = 0;
+	while (core2.phase !== 'Result' && guard2 < 100000) {
+		coreUpdate(core2, 1 / 60);
+		guard2 += 1;
+	}
+	check('view-back-to-select-2d', coreBackToSelect(core2) === true && core2.viewMode === '2D', `viewMode=${core2.viewMode} phase=${core2.phase}`);
+}
+
 export function runTests(): string {
 	testResolveResult();
 	testTimeWarpGuard();
@@ -320,6 +373,7 @@ export function runTests(): string {
 	testIndexClamp();
 	testDeterministicCycle();
 	testGoalTruncation();
+	testViewMode();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

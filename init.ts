@@ -19,10 +19,11 @@
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
 import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
-import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
+import { getLevel, goalWaypoints, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
+import { PlanView, createPlanView, defaultPlanOptions, planFitRadius } from 'game/PlanView';
 import { AimInput, AimResult, LevelSelect, ResultPanel, createAimInput, createLevelSelect, createResultPanel } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
 import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
@@ -40,6 +41,8 @@ interface LevelRuntime {
 	aim: AimInput;
 	/** 本关的轨迹视图（预测线/尾迹的 DrawNode 挂在关卡 2D 层上）。 */
 	trajectory: TrajectoryView;
+	/** 本关的 2D 规划视图（S3.15）：轨道圈 / 图钉 / 到达圈 / 预测线也在同一个 2D 层上。 */
+	plan: PlanView;
 	/** 这一关有没有"时间流"（= 关卡数据里有 timeWindow）。 */
 	levelHasTimeWindow: boolean;
 	/** 时间流量程（秒）；没有时间轴时为 0。 */
@@ -213,6 +216,15 @@ if (levelTotal <= 0) {
 		// （竖屏 aspect 0.56 ⇒ 横向可用空间只有纵向一半，这两个值直接决定相机拉多远）
 		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio));
 		const trajectory = createTrajectoryView(levelLayers[index], trajectoryOptions());
+		// 2D 规划视图（S3.15）：与 trajectory 同一个 2D 层。视野 = 「最外圈轨道 + 目标容差」，
+		// 于是整条最外圈与它那个到达圈都装得下（设计稿第 6 条"够不够得着"要能一眼看出来）。
+		const plan = createPlanView(levelLayers[index], viewW, viewH, defaultPlanOptions());
+		let planTolerance = def.goal.tolerance;
+		const planChain = goalWaypoints(def.goal);
+		for (let w = 0; w < planChain.length; w++) {
+			if (planChain[w].tolerance > planTolerance) planTolerance = planChain[w].tolerance;
+		}
+		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance));
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
 		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget);
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
@@ -230,6 +242,13 @@ if (levelTotal <= 0) {
 			camera,
 			rig,
 			trajectory,
+			plan,
+			// 2D 图钉的颜色取自关卡自己的视觉描述：同一颗行星在两个视图里同色
+			visuals: def.visuals,
+			// 2D 模式要把 3D 世界整个收掉（两套画面不能叠在一起）
+			setWorldVisible: (on: boolean): void => {
+				world.visible = on;
+			},
 			aim,
 			viewW,
 			viewH,
@@ -284,6 +303,11 @@ if (levelTotal <= 0) {
 		aim.onZoom((deltaDist: number): void => {
 			game.observeZoom(deltaDist);
 		});
+		// 「2D / 3D」手动切换（S3.15）：按钮只表达意图，翻转与节点切换都在 Game 里（状态驱动）
+		aim.onViewToggle((): void => {
+			game.toggleViewMode();
+			print('[escape-velocity] view toggle -> ' + game.viewMode() + ' (L' + (index + 1).toFixed(0) + ')');
+		});
 		// 刹车模式（S3.9.2）：按钮只表达意图，状态在 GameCore 里；顺手打一行日志便于回归验证。
 		aim.onBrake((on: boolean): void => {
 			game.setBrakeMode(on);
@@ -299,6 +323,7 @@ if (levelTotal <= 0) {
 			game,
 			aim,
 			trajectory,
+			plan,
 			levelHasTimeWindow: def.timeWindow !== undefined,
 			dateSpan,
 		};
@@ -426,6 +451,10 @@ if (levelTotal <= 0) {
 				slot.runtime.trajectory.clearTrail();
 				// S3.7：到达环也挂在关卡 2D 层上 —— 不 clearing 会留下旧视口算出的椭圆
 				slot.runtime.trajectory.clearGoalRings();
+				// S3.15：2D 规划层同样是**挂在关卡 2D 层上的 DrawNode**（不随 runtime 消失）
+				// ⇒ 旧视口算出的轨道圈/图钉/预测线必须一起清掉，否则新视口下会残留一层鬼影
+				slot.runtime.plan.setVisible(false);
+				slot.runtime.plan.clear();
 			}
 			slot.built = false;
 			slot.runtime = undefined;
@@ -614,6 +643,8 @@ if (levelTotal <= 0) {
 			runtime.aim.update(App.deltaTime);
 			// Armed 是状态，按钮显隐跟着状态走（AGENTS 硬约束 5）
 			runtime.aim.setArmed(runtime.game.armed());
+			// 视图也是状态：右下角那颗按钮的文字跟着 core.viewMode 走（别自己翻转局部变量）
+			runtime.aim.setViewMode(runtime.game.viewMode());
 			// 开发钩子的自动发射（见上方 enter-request 说明）
 			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0 || autoArmAt >= 0) {
 				autoFrame += 1;

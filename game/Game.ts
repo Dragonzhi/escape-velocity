@@ -30,7 +30,8 @@ import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
-import { GoalSpec, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { GoalSpec, PlanetVisualDef, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
 	IntroDurationSec, PhysicsStep, PredictSteps, TimeWarpStep,
@@ -115,6 +116,15 @@ export interface GameCore {
 	goalIndex: number;
 	/** 结算三态（发射瞬间即确定；Result 态对外可见）。 */
 	result: ResultKind | undefined;
+	/**
+	 * 当前视图（S3.15）：`'2D'` = 规划（线稿示意图）/ `'3D'` = 观赏。
+	 *
+	 * **它是状态机的一部分，不是按钮的局部变量**（AGENTS 硬约束 5：显隐必须由状态驱动）：
+	 * 发射瞬间由 `coreLaunch` 切 3D、`coreRetry` 切回 2D —— 于是"按下发射自动切 3D、
+	 * 重试回 2D"是相态流转的副产品，而右下角那颗按钮只是 `coreToggleView` 的另一条入口。
+	 * 手动切过之后，下一次相态流转会把视图拉回该相态该有的样子（发射一定进 3D）。
+	 */
+	viewMode: PlanViewMode;
 }
 
 export function createCore(): GameCore {
@@ -128,7 +138,22 @@ export function createCore(): GameCore {
 		flightTime: 0,
 		goalIndex: -1,
 		result: undefined,
+		// 进关先给 2D：设计稿第 4 条"进关/瞄准在 2D"（发射那一刻才切 3D）
+		viewMode: '2D',
 	};
+}
+
+/**
+ * 手动切换 2D/3D（右下角那颗按钮的唯一入口，S3.15）。
+ *
+ * ⚠️ 按钮**不许自己翻转一个局部变量** —— 视图的唯一事实来源是 `GameCore.viewMode`，
+ * 否则"按钮显示的"与"画出来的"迟早会分家（会话 38 那次"点了重试没反应"就是同一类根因）。
+ *
+ * @returns 切换后的新视图（调用方据此同步按钮文字）。
+ */
+export function coreToggleView(core: GameCore): PlanViewMode {
+	core.viewMode = core.viewMode === '2D' ? '3D' : '2D';
+	return core.viewMode;
 }
 
 /**
@@ -184,6 +209,8 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
 	core.flightTime = 0;
 	core.phase = 'Flying';
+	// 设计稿第 4 条：**按下发射自动切 3D** —— 它是相态流转的一部分，不是 UI 的补丁
+	core.viewMode = '3D';
 }
 
 /**
@@ -271,6 +298,8 @@ export function coreUpdate(core: GameCore, dt: number): boolean {
 /** 重试本关：回到 Aiming，清空飞行与结算。 */
 export function coreRetry(core: GameCore): void {
 	core.phase = 'Aiming';
+	// 重试 = 重新规划：回 2D（设计稿第 4 条）
+	core.viewMode = '2D';
 	core.flight = undefined;
 	core.flightTime = 0;
 	core.goalIndex = -1;
@@ -292,6 +321,8 @@ export function coreRetry(core: GameCore): void {
 export function coreBackToSelect(core: GameCore): boolean {
 	if (core.phase !== 'Result') return false;
 	core.phase = 'LevelSelect';
+	// 离开关卡也回 2D：下一关是从"进关/瞄准在 2D"开始的
+	core.viewMode = '2D';
 	core.flight = undefined;
 	core.flightTime = 0;
 	core.goalIndex = -1;
@@ -305,6 +336,12 @@ export interface GameDeps {
 	camera: Camera3D.Type;
 	rig: CameraRig;
 	trajectory: TrajectoryView;
+	/** 2D 规划视图（S3.15）：轨道圈 / 图钉 / 到达圈 / 预测线。 */
+	plan: PlanView;
+	/** 每关的视觉描述（2D 图钉的颜色取自它：同一颗行星在两个视图里同色）。 */
+	visuals: PlanetVisualDef[];
+	/** 3D 世界根节点的显隐（2D 模式要把它整个收掉，否则两套画面会叠在一起）。 */
+	setWorldVisible: (on: boolean) => void;
 	aim: AimInput;
 	viewW: number;
 	viewH: number;
@@ -332,6 +369,10 @@ export interface Game {
 	launchArmed: () => void;
 	/** 当前是否 Armed（HUD 按钮显隐同步用）。 */
 	armed: () => boolean;
+	/** 当前视图（HUD 的 2D/3D 按钮文字同步用；状态是唯一事实来源）。 */
+	viewMode: () => PlanViewMode;
+	/** 手动切换 2D/3D（右下角那颗按钮）。 */
+	toggleViewMode: () => void;
 	/** 观察拖动（像素增量）→ 绕目标转。 */
 	observeDrag: (dx: number, dy: number) => void;
 	/** 捏合缩放（deltaDist；>0 放大/拉远，见 applyObserve）。 */
@@ -371,6 +412,33 @@ export interface Game {
 export function createGame(level: GameLevel, deps: GameDeps): Game {
 	const core = createCore();
 
+	/** 已经应用到节点上的视图（"" = 还没应用过）。每帧 applyView 都拿它对账。 */
+	let appliedMode: PlanViewMode | '' = '';
+	/**
+	 * **视图切换的唯一落点**（S3.15）。
+	 *
+	 * 设计稿第 4 条："进关/瞄准在 2D → 按下发射自动切 3D → 飞行与结算留 3D → 重试回 2D"，
+	 * 右下角再给一颗手动按钮兜底。这里读的是 `core.viewMode`（状态），**不读按钮**：
+	 * 于是自动切换与手动切换走的是同一条路，也不会有"按钮显示的与画出来的分家"。
+	 *
+	 * - 2D：收起 3D 世界 + 收起 3D 轨迹层（`trajectory.root`，它就是投影出来的预测线/尾迹/到达环），
+	 *   打开 2D 规划层，并让瞄准层**整屏**都能瞄（2D 里没有"自由观察"可做，"探测器附近"那条分区
+	 *   规则会把大半屏变成死区）；
+	 * - 3D：反过来。两边的 DrawNode 都挂在关卡 2D 层上，**隐藏时必须清空**（硬约束 8）。
+	 *
+	 * 每帧调用一次是**幂等**的：`mode === appliedMode` 直接早退（不动节点、不刷日志）。
+	 */
+	const applyView = (): void => {
+		const mode = core.viewMode;
+		if (mode === appliedMode) return;
+		appliedMode = mode;
+		const is2D = mode === '2D';
+		deps.plan.setVisible(is2D);
+		deps.trajectory.root.visible = !is2D;
+		deps.setWorldVisible(!is2D);
+		deps.aim.setFullScreenAim(is2D);
+		print('[escape-velocity] view -> ' + mode + ' (phase=' + core.phase + ')');
+	};
 
 	const makeBasis = (frame: { eye: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } }): CameraBasis => {
 		return prepareCamera(
@@ -600,6 +668,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.scene.syncBodies(tNow);
 		deps.scene.syncProbe(probePos);
 		if (idlePath !== undefined && idx > 0) deps.scene.faceVelocity(sub(probePos, idlePath.points[idx - 1]));
+		// 2D 规划视图：轨道圈与图钉按**同一个 tWorld**（硬约束 7：待机会绕地球走，日期也会动）
+		deps.plan.syncBodies(level.bodies, deps.visuals, tNow);
+		deps.plan.syncProbe(probePos, probeVel);
 
 		// 取景（S3.12）：探测器 + 锚点天体（太阳/地球）+ 下一站 —— 远处的行星允许出画
 		const fr = framingPoints(probePos, tNow);
@@ -681,9 +752,16 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
 
-		// 探测器屏幕位置（拖动方向的基准）
-		const pp = projectPrepared(planeToWorld(probePos, 0), basis);
-		if (pp !== undefined) deps.aim.setProbeOffset({ x: pp.x, y: pp.y });
+		// 探测器屏幕位置（拖动方向的基准）：**必须与玩家看到的那个视图一致** ——
+		// 2D 里探测器的位置来自 2D 映射（plan.probeScreen 就是图上那个像素），
+		// 拿 3D 投影去判"按下点离探测器近不近"会让瞄准区跑到屏幕另一边。
+		if (core.viewMode === '2D') {
+			const sp = deps.plan.probeScreen();
+			deps.aim.setProbeOffset({ x: sp.x - deps.viewW / 2, y: sp.y - deps.viewH / 2 });
+		} else {
+			const pp = projectPrepared(planeToWorld(probePos, 0), basis);
+			if (pp !== undefined) deps.aim.setProbeOffset({ x: pp.x, y: pp.y });
+		}
 
 		// ⚠️ 预测线必须**每帧**重画，不能只在拖动时重画：
 		// 重试后相机会用 lerp 从飞行终点视图滑回瞄准视图（约 20-30 帧），
@@ -696,6 +774,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 从前这里画的是"什么都不做会飞到哪"（待机轨道），既不是玩家的意图，
 			// 又会在玩家松手后把他的线**覆盖**掉。
 			deps.trajectory.clearPrediction();
+			deps.plan.clearPrediction();
 			predKey = '';
 		} else {
 			// ⚠️ 缓存键必须带上**日期**与**探测器此刻的位置**：行星位置随日期变、L1 的探测器自己在动，
@@ -715,9 +794,16 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				).points;
 			}
 			deps.trajectory.setPrediction(predPoints, basis);
+			// 2D 用的是**同一批采样点**（硬约束 5）：只换投影，不重跑 simulate
+			deps.plan.setPrediction(predPoints);
 		}
-		deps.trajectory.setGoalRings(goalRingsAt(tNow), basis);
+		const rings = goalRingsAt(tNow);
+		deps.trajectory.setGoalRings(rings, basis);
 		deps.trajectory.clearTrail();
+		// 2D 的到达圈与 3D 共用同一批 GoalRing —— "下一站在哪"只有一个事实来源
+		deps.plan.setGoalRings(rings);
+		deps.plan.clearTrail();
+		deps.plan.flush();
 	};
 
 	const updateFlying = (dt: number): boolean => {
@@ -747,8 +833,17 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 尾迹 = 已飞过的前缀
 		const trail: P2[] = [];
 		for (let i = 0; i <= idx; i++) trail.push(core.flight.points[i]);
+		const rings = goalRingsAt(tWorld, idx);
 		deps.trajectory.setTrail(trail, basis);
-		deps.trajectory.setGoalRings(goalRingsAt(tWorld, idx), basis);
+		deps.trajectory.setGoalRings(rings, basis);
+
+		// 2D（玩家手动切过去时看得见自己飞过哪）：同一批采样点、同一个 tWorld
+		deps.plan.syncBodies(level.bodies, deps.visuals, tWorld);
+		deps.plan.syncProbe(pos, core.flight.velocities[idx]);
+		deps.plan.setTrail(trail);
+		deps.plan.clearPrediction();
+		deps.plan.setGoalRings(rings);
+		deps.plan.flush();
 
 		return entered;
 	};
@@ -772,6 +867,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	};
 
 	const update = (dt: number): void => {
+		// 视图也必须**状态驱动**（AGENTS 硬约束 5）：每帧按 core.viewMode 对一次节点，
+		// 别只靠"点按钮时切一下" —— 切关/重建/自动回归序列会留下一个对不上的视图。
+		applyView();
 		if (core.phase === 'Aiming' || core.phase === 'Armed') {
 			updateAiming(dt);
 		} else if (core.phase === 'Flying') {
@@ -794,6 +892,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		aimReady: (): void => {
 			if (!coreArm(core)) return;
+			applyView(); // Armed 仍是"瞄准期" ⇒ 留在 2D（除非玩家自己切过）
 			deps.onPhase('Armed');
 		},
 		launchArmed: (): void => {
@@ -802,9 +901,17 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			handoffDate(true); // ⚠️ 必须在 coreLaunch 之前：飞行/结算只认 core.t0
 			coreLaunch(core, core.aim.velocity, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
+			deps.plan.clearPrediction();
+			applyView(); // 按下发射 ⇒ 切 3D（日志行 view -> 3D 就是这条路径的证据）
 			deps.onPhase('Flying');
 		},
 		armed: (): boolean => core.phase === 'Armed',
+		viewMode: (): PlanViewMode => core.viewMode,
+		toggleViewMode: (): void => {
+			// 按钮只表达意图：翻转发生在 core 里（viewMode 是唯一事实来源）
+			coreToggleView(core);
+			applyView();
+		},
 		observeDrag: (dx: number, dy: number): void => {
 			introT = IntroDurationSec; // 一动手就跳过进关镜头（操作权优先）
 			print('[escape-velocity] observe drag dx=' + dx.toFixed(0) + ' dy=' + dy.toFixed(0) + ' yaw=' + obsYawDeg.toFixed(0));
@@ -824,6 +931,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）
 			coreLaunch(core, v, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
+			deps.plan.clearPrediction();
+			applyView(); // 开发钩子/回归脚本的发射与按钮走同一条相态流转（同样自动切 3D）
 			deps.onPhase('Flying');
 		},
 		retry: (): void => {
@@ -834,6 +943,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
 			deps.trajectory.clearGoalRings();
+			deps.plan.clearTrail();
+			deps.plan.clearPrediction();
+			deps.plan.clearGoalRings();
+			applyView(); // 重试 = 重新规划 ⇒ 回 2D
 			deps.onPhase('Aiming');
 		},
 		backToSelect: (): boolean => {
@@ -843,6 +956,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
 			deps.trajectory.clearGoalRings();
+			deps.plan.clearTrail();
+			deps.plan.clearPrediction();
+			deps.plan.clearGoalRings();
+			applyView();
 			deps.onPhase('LevelSelect');
 			return true;
 		},
@@ -857,6 +974,13 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
 			deps.trajectory.clearGoalRings();
+			deps.plan.clearTrail();
+			deps.plan.clearPrediction();
+			deps.plan.clearGoalRings();
+			// 强制重放一次视图：进关前 showOnlyLevel 刚把 3D 世界设成 visible=true，
+			// 而 appliedMode 可能还是"2D"⇒不强制的话这一关会漏出 3D 世界（硬约束 5 的同一个坑）
+			appliedMode = '';
+			applyView();
 			deps.onPhase('Aiming');
 		},
 		stepTime: (dir: number, span: number): void => {

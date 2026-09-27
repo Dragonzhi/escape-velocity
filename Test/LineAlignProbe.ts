@@ -17,6 +17,7 @@ import { getLevel, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
+import { createPlanView, defaultPlanOptions } from 'game/PlanView';
 import { createAimInput } from 'game/Hud';
 import { GameLevel, GamePhase, createGame } from 'game/Game';
 import { captureReport } from 'Test/Vision';
@@ -68,16 +69,21 @@ if (levelDef === undefined) {
 		Director.pushCamera(camera);
 		const rig = createCameraRig(defaultRigOptions());
 		const trajectory = createTrajectoryView(Director.ui, trajectoryOptions());
+		// S3.15：本探针量的是 3D 预测线的位置，所以建完 Game 就切回 3D
+		const plan = createPlanView(Director.ui, View.size.width, View.size.height, defaultPlanOptions());
 		const aim = createAimInput(Director.ui, View.size.width, View.size.height);
 
 		let lastPhase: GamePhase = 'Aiming';
 		const game = createGame(level, {
-			scene, camera, rig, trajectory, aim,
+			scene, camera, rig, trajectory, plan,
+			visuals: [], setWorldVisible: (): void => {},
+			aim,
 			viewW: View.size.width, viewH: View.size.height,
 			fovYDeg: View.fieldOfView, aspect: View.aspectRatio,
 			onPhase: (p) => { lastPhase = p; },
 			onResult: () => {},
 		});
+		game.toggleViewMode(); // 回 3D（本探针量 3D 预测线）
 		aim.onDrag((a) => game.onAimDrag(a));
 
 		let frame = 0;

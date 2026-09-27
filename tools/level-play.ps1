@@ -176,7 +176,9 @@ foreach ($l in $all) {
   $tm = [regex]::Match($l, '^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})')
   if (-not $tm.Success) { continue }
   if ([datetime]::ParseExact($tm.Groups[1].Value, 'yyyy-MM-dd HH:mm:ss', $null) -lt $runStart) { continue }
-  if ($l -match 'stepTime|time warp|phase ->|result =|auto launch|auto arm|launch button|enter L|date handoff|warp ') { Write-Output $l.Trim() }
+  # S3.15：'view ->'（自动/手动切 2D-3D）与 'view toggle'（按钮事件到了没）也必须打出来 ——
+  # 否则"按下发射有没有切到 3D"这条证据在脚本输出里根本看不见（过滤正则只是显示筛选，判据没动）
+  if ($l -match 'stepTime|time warp|phase ->|result =|auto launch|auto arm|launch button|enter L|date handoff|warp |view ->|view toggle') { Write-Output $l.Trim() }
 }
 
 Get-Process Dora -ErrorAction SilentlyContinue | Stop-Process -Force

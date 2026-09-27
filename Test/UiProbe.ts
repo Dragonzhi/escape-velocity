@@ -22,6 +22,7 @@ import { getLevel, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
+import { createPlanView, defaultPlanOptions } from 'game/PlanView';
 import { captureReport } from 'Test/Vision';
 
 const root = Content.searchPaths[0];
@@ -110,6 +111,8 @@ if (levelDef === undefined) {
 		Director.pushCamera(camera);
 		const rig = createCameraRig(defaultRigOptions());
 		const trajectory = createTrajectoryView(levelLayer, trajectoryOptions());
+		// S3.15：本探针量的是 3D 轨迹/面板，所以建完 Game 立刻切回 3D
+		const plan = createPlanView(levelLayer, viewW, viewH, defaultPlanOptions());
 		const aim = createAimInput(levelLayer, viewW, viewH);
 
 		const game = createGame(level, {
@@ -117,6 +120,9 @@ if (levelDef === undefined) {
 			camera,
 			rig,
 			trajectory,
+			plan,
+			visuals: [],
+			setWorldVisible: (): void => {},
 			aim,
 			viewW,
 			viewH,
@@ -125,6 +131,7 @@ if (levelDef === undefined) {
 			onPhase: (): void => {},
 			onResult: (): void => {},
 		});
+		game.toggleViewMode(); // 回 3D
 		aim.onDrag((a) => game.onAimDrag(a));
 
 		/**
@@ -183,12 +190,16 @@ if (levelDef === undefined) {
 			const camera2 = Camera3D();
 			const rig2 = createCameraRig(defaultRigOptions());
 			const trajectory2 = createTrajectoryView(layer2, trajectoryOptions());
+			const plan2 = createPlanView(layer2, viewW, viewH, defaultPlanOptions());
 			const aim2 = createAimInput(layer2, viewW, viewH);
 			const game2 = createGame(level2, {
 				scene: scene2,
 				camera: camera2,
 				rig: rig2,
 				trajectory: trajectory2,
+				plan: plan2,
+				visuals: [],
+				setWorldVisible: (): void => {},
 				aim: aim2,
 				viewW,
 				viewH,

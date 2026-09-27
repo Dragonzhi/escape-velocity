@@ -15,6 +15,7 @@ import { applyScales } from 'game/Gravity';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
+import { createPlanView, defaultPlanOptions } from 'game/PlanView';
 import { createAimInput } from 'game/Hud';
 import { GameLevel, GamePhase, createGame } from 'game/Game';
 import { captureReport } from 'Test/Vision';
@@ -65,6 +66,8 @@ if (scene === undefined) {
 	Director.pushCamera(camera);
 	const rig = createCameraRig(defaultRigOptions());
 	const trajectory = createTrajectoryView(Director.ui, trajectoryOptions());
+	// S3.15：GameDeps 多了 2D 规划视图（本探针测的是 3D 那套，所以建好之后立刻切回 3D）
+	const plan = createPlanView(Director.ui, View.size.width, View.size.height, defaultPlanOptions());
 	const aim = createAimInput(Director.ui, View.size.width, View.size.height);
 
 	const phaseHistory: string[] = [];
@@ -76,6 +79,9 @@ if (scene === undefined) {
 		camera,
 		rig,
 		trajectory,
+		plan,
+		visuals: [],
+		setWorldVisible: (): void => {},
 		aim,
 		viewW: View.size.width,
 		viewH: View.size.height,

@@ -19,152 +19,166 @@ local defaultRigOptions = ____CameraRig.defaultRigOptions -- 18
 local ____Trajectory = require("game.Trajectory") -- 19
 local createTrajectoryView = ____Trajectory.createTrajectoryView -- 19
 local trajectoryOptions = ____Trajectory.defaultOptions -- 19
-local ____Hud = require("game.Hud") -- 20
-local createAimInput = ____Hud.createAimInput -- 20
-local ____Game = require("game.Game") -- 21
-local createGame = ____Game.createGame -- 21
-local ____Vision = require("Test.Vision") -- 22
-local captureReport = ____Vision.captureReport -- 22
-local root = Content.searchPaths[1] -- 24
-local outDir = Path(root, ".agent", "test-results") -- 25
-if not Content:exist(outDir) then -- 25
-	Content:mkdir(outDir) -- 26
-end -- 26
-local marker = Path(outDir, "s21-line-align.txt") -- 27
-local lines = {} -- 29
-local function flush(final) -- 30
-	Content:save( -- 31
-		marker, -- 31
-		table.concat(lines, "\n") .. (final and "\nphase=done" or "") -- 31
-	) -- 31
-end -- 30
-lines[#lines + 1] = "phase=started" -- 33
-flush(false) -- 34
-local levelDef = getLevel(0) -- 36
-if levelDef == nil then -- 36
-	lines[#lines + 1] = "RESULT=FAIL reason=no-level" -- 38
-	flush(true) -- 39
-else -- 39
-	local bodies = scaledPlanets(levelDef) -- 41
-	local level = { -- 42
-		bodies = bodies, -- 43
-		probeStart = levelDef.probeStart, -- 44
-		goal = levelDef.goal, -- 45
-		escapeRadius = levelDef.escapeRadius, -- 46
-		maxSteps = levelDef.maxSteps -- 47
-	} -- 47
-	local view = Director.entry -- 50
-	view:setEnvironmentIntensity(0.35, 0.35, 1) -- 51
-	local scene = buildScene({ -- 52
-		root = view, -- 53
-		bodies = bodies, -- 54
-		visuals = levelDef.visuals, -- 55
-		probeStart = level.probeStart, -- 56
-		probeScale = 1.6, -- 57
-		spherePath = "Assets/Model/Sphere.gltf", -- 58
-		ringPath = "Assets/Model/Ring.gltf", -- 59
-		probePath = "Assets/Model/Probe.gltf" -- 60
-	}) -- 60
-	if scene == nil then -- 60
-		lines[#lines + 1] = "RESULT=FAIL reason=scene" -- 64
-		flush(true) -- 65
-	else -- 65
-		local camera = Camera3D() -- 67
-		Director:pushCamera(camera) -- 68
-		local rig = createCameraRig(defaultRigOptions()) -- 69
-		local trajectory = createTrajectoryView( -- 70
-			Director.ui, -- 70
-			trajectoryOptions() -- 70
-		) -- 70
-		local aim = createAimInput(Director.ui, View.size.width, View.size.height) -- 71
-		local lastPhase = "Aiming" -- 73
-		local game = createGame( -- 74
-			level, -- 74
-			{ -- 74
-				scene = scene, -- 75
-				camera = camera, -- 75
-				rig = rig, -- 75
-				trajectory = trajectory, -- 75
-				aim = aim, -- 75
-				viewW = View.size.width, -- 76
-				viewH = View.size.height, -- 76
-				fovYDeg = View.fieldOfView, -- 77
-				aspect = View.aspectRatio, -- 77
-				onPhase = function(____, p) -- 78
-					lastPhase = p -- 78
-				end, -- 78
-				onResult = function() -- 79
-				end -- 79
-			} -- 79
-		) -- 79
-		aim:onDrag(function(a) return game:onAimDrag(a) end) -- 81
-		local frame = 0 -- 83
-		local launched = false -- 84
-		local resultFrame = 0 -- 85
-		local retried = false -- 86
-		local retryFrame = 0 -- 87
-		local shot1 = "" -- 88
-		local shot2 = "" -- 89
-		local shot3 = "" -- 90
-		local done = false -- 91
-		threadLoop(function() -- 93
-			frame = frame + 1 -- 94
-			game:update(App.deltaTime) -- 95
-			if frame == 15 then -- 95
-				shot1 = App:saveScreenshot(Path(outDir, "s21-steady")) -- 99
-				lines[#lines + 1] = "steady shot @f" .. tostring(frame) -- 100
-				flush(false) -- 101
-			end -- 101
-			if frame == 20 then -- 101
-				aim:handleOffset({x = 60, y = -80}) -- 105
-			end -- 105
-			if frame == 24 and not launched then -- 105
-				launched = true -- 107
-				game:launch(aim:current().velocity) -- 108
-				lines[#lines + 1] = "launched @f" .. tostring(frame) -- 109
-				flush(false) -- 110
-			end -- 110
-			if launched and lastPhase == "Result" and resultFrame == 0 then -- 110
-				resultFrame = frame -- 115
-				lines[#lines + 1] = "result @f" .. tostring(frame) -- 116
-				flush(false) -- 117
-			end -- 117
-			if resultFrame > 0 and not retried and frame > resultFrame + 5 then -- 117
-				retried = true -- 120
-				retryFrame = frame -- 121
-				game:retry() -- 122
-				lines[#lines + 1] = "retried @f" .. tostring(frame) -- 123
-				flush(false) -- 124
-			end -- 124
-			if retried and frame == retryFrame + 8 then -- 124
-				shot2 = App:saveScreenshot(Path(outDir, "s21-retry-mid")) -- 129
-				lines[#lines + 1] = ("retry-mid shot @f" .. tostring(frame)) .. "（相机仍在 lerp）" -- 130
-				flush(false) -- 131
-			end -- 131
-			if retried and frame == retryFrame + 40 then -- 131
-				shot3 = App:saveScreenshot(Path(outDir, "s21-retry-settled")) -- 134
-				lines[#lines + 1] = "retry-settled shot @f" .. tostring(frame) -- 135
-				flush(false) -- 136
-			end -- 136
-			if retried and frame == retryFrame + 48 and not done then -- 136
-				done = true -- 140
-				lines[#lines + 1] = "" -- 141
-				lines[#lines + 1] = "--- steady aiming ---"
-				lines[#lines + 1] = captureReport(shot1, {"steady aiming: line should start at probe"}) -- 143
-				lines[#lines + 1] = "" -- 144
-				lines[#lines + 1] = "--- retry mid-transition (camera still lerping) ---"
-				lines[#lines + 1] = captureReport(shot2, {"mid-transition: line must track probe (fix: redraw every frame)"}) -- 146
+local ____PlanView = require("game.PlanView") -- 20
+local createPlanView = ____PlanView.createPlanView -- 20
+local defaultPlanOptions = ____PlanView.defaultPlanOptions -- 20
+local ____Hud = require("game.Hud") -- 21
+local createAimInput = ____Hud.createAimInput -- 21
+local ____Game = require("game.Game") -- 22
+local createGame = ____Game.createGame -- 22
+local ____Vision = require("Test.Vision") -- 23
+local captureReport = ____Vision.captureReport -- 23
+local root = Content.searchPaths[1] -- 25
+local outDir = Path(root, ".agent", "test-results") -- 26
+if not Content:exist(outDir) then -- 26
+	Content:mkdir(outDir) -- 27
+end -- 27
+local marker = Path(outDir, "s21-line-align.txt") -- 28
+local lines = {} -- 30
+local function flush(final) -- 31
+	Content:save( -- 32
+		marker, -- 32
+		table.concat(lines, "\n") .. (final and "\nphase=done" or "") -- 32
+	) -- 32
+end -- 31
+lines[#lines + 1] = "phase=started" -- 34
+flush(false) -- 35
+local levelDef = getLevel(0) -- 37
+if levelDef == nil then -- 37
+	lines[#lines + 1] = "RESULT=FAIL reason=no-level" -- 39
+	flush(true) -- 40
+else -- 40
+	local bodies = scaledPlanets(levelDef) -- 42
+	local level = { -- 43
+		bodies = bodies, -- 44
+		probeStart = levelDef.probeStart, -- 45
+		goal = levelDef.goal, -- 46
+		escapeRadius = levelDef.escapeRadius, -- 47
+		maxSteps = levelDef.maxSteps -- 48
+	} -- 48
+	local view = Director.entry -- 51
+	view:setEnvironmentIntensity(0.35, 0.35, 1) -- 52
+	local scene = buildScene({ -- 53
+		root = view, -- 54
+		bodies = bodies, -- 55
+		visuals = levelDef.visuals, -- 56
+		probeStart = level.probeStart, -- 57
+		probeScale = 1.6, -- 58
+		spherePath = "Assets/Model/Sphere.gltf", -- 59
+		ringPath = "Assets/Model/Ring.gltf", -- 60
+		probePath = "Assets/Model/Probe.gltf" -- 61
+	}) -- 61
+	if scene == nil then -- 61
+		lines[#lines + 1] = "RESULT=FAIL reason=scene" -- 65
+		flush(true) -- 66
+	else -- 66
+		local camera = Camera3D() -- 68
+		Director:pushCamera(camera) -- 69
+		local rig = createCameraRig(defaultRigOptions()) -- 70
+		local trajectory = createTrajectoryView( -- 71
+			Director.ui, -- 71
+			trajectoryOptions() -- 71
+		) -- 71
+		local plan = createPlanView( -- 73
+			Director.ui, -- 73
+			View.size.width, -- 73
+			View.size.height, -- 73
+			defaultPlanOptions() -- 73
+		) -- 73
+		local aim = createAimInput(Director.ui, View.size.width, View.size.height) -- 74
+		local lastPhase = "Aiming" -- 76
+		local game = createGame( -- 77
+			level, -- 77
+			{ -- 77
+				scene = scene, -- 78
+				camera = camera, -- 78
+				rig = rig, -- 78
+				trajectory = trajectory, -- 78
+				plan = plan, -- 78
+				visuals = {}, -- 79
+				setWorldVisible = function() -- 79
+				end, -- 79
+				aim = aim, -- 80
+				viewW = View.size.width, -- 81
+				viewH = View.size.height, -- 81
+				fovYDeg = View.fieldOfView, -- 82
+				aspect = View.aspectRatio, -- 82
+				onPhase = function(____, p) -- 83
+					lastPhase = p -- 83
+				end, -- 83
+				onResult = function() -- 84
+				end -- 84
+			} -- 84
+		) -- 84
+		game:toggleViewMode() -- 86
+		aim:onDrag(function(a) return game:onAimDrag(a) end) -- 87
+		local frame = 0 -- 89
+		local launched = false -- 90
+		local resultFrame = 0 -- 91
+		local retried = false -- 92
+		local retryFrame = 0 -- 93
+		local shot1 = "" -- 94
+		local shot2 = "" -- 95
+		local shot3 = "" -- 96
+		local done = false -- 97
+		threadLoop(function() -- 99
+			frame = frame + 1 -- 100
+			game:update(App.deltaTime) -- 101
+			if frame == 15 then -- 101
+				shot1 = App:saveScreenshot(Path(outDir, "s21-steady")) -- 105
+				lines[#lines + 1] = "steady shot @f" .. tostring(frame) -- 106
+				flush(false) -- 107
+			end -- 107
+			if frame == 20 then -- 107
+				aim:handleOffset({x = 60, y = -80}) -- 111
+			end -- 111
+			if frame == 24 and not launched then -- 111
+				launched = true -- 113
+				game:launch(aim:current().velocity) -- 114
+				lines[#lines + 1] = "launched @f" .. tostring(frame) -- 115
+				flush(false) -- 116
+			end -- 116
+			if launched and lastPhase == "Result" and resultFrame == 0 then -- 116
+				resultFrame = frame -- 121
+				lines[#lines + 1] = "result @f" .. tostring(frame) -- 122
+				flush(false) -- 123
+			end -- 123
+			if resultFrame > 0 and not retried and frame > resultFrame + 5 then -- 123
+				retried = true -- 126
+				retryFrame = frame -- 127
+				game:retry() -- 128
+				lines[#lines + 1] = "retried @f" .. tostring(frame) -- 129
+				flush(false) -- 130
+			end -- 130
+			if retried and frame == retryFrame + 8 then -- 130
+				shot2 = App:saveScreenshot(Path(outDir, "s21-retry-mid")) -- 135
+				lines[#lines + 1] = ("retry-mid shot @f" .. tostring(frame)) .. "（相机仍在 lerp）" -- 136
+				flush(false) -- 137
+			end -- 137
+			if retried and frame == retryFrame + 40 then -- 137
+				shot3 = App:saveScreenshot(Path(outDir, "s21-retry-settled")) -- 140
+				lines[#lines + 1] = "retry-settled shot @f" .. tostring(frame) -- 141
+				flush(false) -- 142
+			end -- 142
+			if retried and frame == retryFrame + 48 and not done then -- 142
+				done = true -- 146
 				lines[#lines + 1] = "" -- 147
-				lines[#lines + 1] = "--- retry settled ---"
-				lines[#lines + 1] = captureReport(shot3, {"settled aiming: line should start at probe again"}) -- 149
+				lines[#lines + 1] = "--- steady aiming ---"
+				lines[#lines + 1] = captureReport(shot1, {"steady aiming: line should start at probe"}) -- 149
 				lines[#lines + 1] = "" -- 150
-				lines[#lines + 1] = "final phase=" .. game:phase() -- 151
-				lines[#lines + 1] = "RESULT=PASS" -- 152
-				flush(true) -- 153
-				return true -- 154
-			end -- 154
-			return false -- 157
-		end) -- 93
-	end -- 93
-end -- 93
-return ____exports -- 93
+				lines[#lines + 1] = "--- retry mid-transition (camera still lerping) ---"
+				lines[#lines + 1] = captureReport(shot2, {"mid-transition: line must track probe (fix: redraw every frame)"}) -- 152
+				lines[#lines + 1] = "" -- 153
+				lines[#lines + 1] = "--- retry settled ---"
+				lines[#lines + 1] = captureReport(shot3, {"settled aiming: line should start at probe again"}) -- 155
+				lines[#lines + 1] = "" -- 156
+				lines[#lines + 1] = "final phase=" .. game:phase() -- 157
+				lines[#lines + 1] = "RESULT=PASS" -- 158
+				flush(true) -- 159
+				return true -- 160
+			end -- 160
+			return false -- 163
+		end) -- 99
+	end -- 99
+end -- 99
+return ____exports -- 99
