@@ -584,7 +584,10 @@ export function createAimInput(
 			if (viewHandler !== undefined) viewHandler();
 		},
 	});
-	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 20);
+	// ⚠️ y 不能贴屏幕底：桌面开发版引擎在**窗口底部有一条调试工具条**（退出/刷新/✓），
+	// 它会把落在那一带的鼠标事件整个吃掉（实测：按钮放 y=20 时点下去连 `view toggle fire` 都不打）。
+	// 所以摆在**「发射」按钮正上方**（同一列、右边缘对齐），仍在右下角拇指区，且完全避开工具条。
+	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 12);
 	/** 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。 */
 	let lastViewText = '2D';
 
