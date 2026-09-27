@@ -97,6 +97,11 @@ export interface GameLevel {
 	physicsStep?: number;
 	/** 飞行回放的默认倍速（S5，来自 Tuning）：L1 要 0.05×，L6 要 16×。省略 = Config.FlightPlayback。 */
 	playback?: number;
+	/**
+	 * 瞄准期的世界时钟速率（S5，来自 Tuning）；省略 = 1（真实速度）。
+	 * 真实尺度下 L1 的绕地周期只有 0.427 秒 —— 1× 时目标每秒转 2.3 圈，玩家来不及瞄。
+	 */
+	aimClockRate?: number;
 }
 
 /**
@@ -231,6 +236,13 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	core.flight = flight;
 	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
 	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
+	// 诊断（S5 L1 验收）：把"发射那一刻的真实起点与初速"打全精度。
+	// 排查"Node 侧算得出解、引擎里却 missed"时必须看这几个数 —— 差一点就是几何完全不同。
+	print('[escape-velocity][dbg] launch p0=(' + p0.x.toFixed(6) + ',' + p0.y.toFixed(6)
+		+ ') v=(' + motion.init.x.toFixed(5) + ',' + motion.init.y.toFixed(5)
+		+ ') t0=' + core.t0.toFixed(6) + ' dt=' + core.dt.toFixed(6)
+		+ ' pts=' + flight.points.length.toFixed(0) + ' gi=' + core.goalIndex.toFixed(0)
+		+ ' outcome=' + flight.outcome + ' result=' + core.result);
 	core.flightTime = 0;
 	// S3.17：慢动作状态由 coreUpdate 逐帧重算，这里给干净的初值（发射瞬间不可能在慢动作里）
 	core.slowmo = false;
@@ -841,7 +853,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const dragging = deps.aim.isDragging();
 		// 只在**纯瞄准态**流时间：Armed（已瞄好等发射）时冻结 —— 否则目标会从瞄准线下面跑掉。
 		if (core.phase === 'Aiming' && !dragging && idlePath !== undefined) {
-			clock += dt;
+			// ⚠️ 0 = **冻结**（不是"回退成 1"）：L1 是教学关，开局状态必须完全确定，
+			//    否则"进关那几十帧"就足以让探测器自己转掉十几度（实测 0.017 秒 = 14°），
+			//    而且玩家没有任何读数可以据此瞄准。
+			clock += dt * (level.aimClockRate !== undefined && level.aimClockRate >= 0 ? level.aimClockRate : 1);
 			orbitClock += dt;
 		}
 		const idx = idleIndex();

@@ -183,6 +183,7 @@ if (levelTotal <= 0) {
 			escapeRadius: def.escapeRadius,
 			physicsStep: levelRuntime(index).physicsStep,
 			playback: levelRuntime(index).playback,
+			aimClockRate: levelRuntime(index).aimClockRate,
 			maxSteps: def.maxSteps,
 		};
 
@@ -730,6 +731,7 @@ if (levelTotal <= 0) {
 						autoWarpSteps = 0;
 						print('[escape-velocity] auto warp done (date=' + runtime.game.dateNow().toFixed(0) + ')');
 					}
+					print('[escape-velocity] auto launch burn=(' + autoVX.toFixed(5) + ',' + autoVY.toFixed(5) + ')');
 					runtime.game.launch({ x: autoVX, y: autoVY });
 					autoBackAt = autoFrame + 320;
 					autoReenterAt = autoFrame + 380;

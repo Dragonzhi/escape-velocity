@@ -39,79 +39,85 @@ ____exports.PLAN_PIN_PX = {sun = 13, planet = 8, probe = 11} -- 74
 -- 
 -- 播放倍速的推导（每关都要能"看得见"）：
 -- L1 转移飞行 0.40 游戏秒 ⇒ 0.05× 播放 = 8 真实秒；L6 飞行 513 秒 ⇒ 16× = 32 真实秒。
-____exports.LEVEL_RUNTIME = { -- 123
-	{ -- 124
-		physicsStep = 1 / 2000, -- 125
-		maxStepsPerFrame = 8, -- 125
-		sampleEvery = 1, -- 125
-		playback = 0.05, -- 126
-		playbackSpeeds = {0.02, 0.05, 0.1}, -- 126
-		cameraMin = 0.02, -- 127
-		cameraMax = 3, -- 127
-		aimMin = 0.02, -- 127
-		introCloseDist = 0.6 -- 127
-	}, -- 127
-	{ -- 129
-		physicsStep = 1 / 240, -- 130
-		maxStepsPerFrame = 8, -- 130
-		sampleEvery = 1, -- 130
-		playback = 2, -- 131
-		playbackSpeeds = {1, 2, 4}, -- 131
-		cameraMin = 20, -- 132
-		cameraMax = 200, -- 132
-		aimMin = 0.2, -- 132
-		introCloseDist = 26 -- 132
-	}, -- 132
-	{ -- 134
-		physicsStep = 1 / 240, -- 135
-		maxStepsPerFrame = 16, -- 135
-		sampleEvery = 4, -- 135
-		playback = 4, -- 136
-		playbackSpeeds = {2, 4, 8}, -- 136
-		cameraMin = 60, -- 137
-		cameraMax = 900, -- 137
-		aimMin = 0.5, -- 137
-		introCloseDist = 60 -- 137
-	}, -- 137
-	{ -- 139
-		physicsStep = 1 / 240, -- 140
-		maxStepsPerFrame = 16, -- 140
-		sampleEvery = 8, -- 140
-		playback = 8, -- 141
-		playbackSpeeds = {4, 8, 16}, -- 141
-		cameraMin = 100, -- 142
-		cameraMax = 1800, -- 142
-		aimMin = 0.5, -- 142
-		introCloseDist = 120 -- 142
-	}, -- 142
+____exports.LEVEL_RUNTIME = { -- 143
 	{ -- 144
-		physicsStep = 1 / 120, -- 145
-		maxStepsPerFrame = 32, -- 145
-		sampleEvery = 16, -- 145
-		playback = 16, -- 146
-		playbackSpeeds = {8, 16, 32}, -- 146
-		cameraMin = 200, -- 147
-		cameraMax = 3600, -- 147
-		aimMin = 0.5, -- 147
-		introCloseDist = 240 -- 147
-	}, -- 147
-	{ -- 149
-		physicsStep = 1 / 120, -- 150
-		maxStepsPerFrame = 32, -- 150
-		sampleEvery = 16, -- 150
-		playback = 16, -- 151
-		playbackSpeeds = {8, 16, 32}, -- 151
-		cameraMin = 300, -- 152
-		cameraMax = 5600, -- 152
-		aimMin = 0.5, -- 152
-		introCloseDist = 400 -- 152
-	} -- 152
-} -- 152
+		physicsStep = 1 / 2000, -- 148
+		maxStepsPerFrame = 16, -- 148
+		sampleEvery = 1, -- 148
+		playback = 0.25, -- 149
+		playbackSpeeds = {0.1, 0.25, 0.5}, -- 149
+		cameraMin = 0.02, -- 150
+		cameraMax = 3, -- 150
+		aimMin = 0.02, -- 150
+		introCloseDist = 0.6, -- 150
+		aimClockRate = 0 -- 151
+	}, -- 151
+	{ -- 153
+		physicsStep = 1 / 240, -- 154
+		maxStepsPerFrame = 8, -- 154
+		sampleEvery = 1, -- 154
+		playback = 2, -- 155
+		playbackSpeeds = {1, 2, 4}, -- 155
+		cameraMin = 20, -- 156
+		cameraMax = 200, -- 156
+		aimMin = 0.2, -- 156
+		introCloseDist = 26, -- 156
+		aimClockRate = 1 -- 156
+	}, -- 156
+	{ -- 158
+		physicsStep = 1 / 240, -- 159
+		maxStepsPerFrame = 16, -- 159
+		sampleEvery = 4, -- 159
+		playback = 4, -- 160
+		playbackSpeeds = {2, 4, 8}, -- 160
+		cameraMin = 60, -- 161
+		cameraMax = 900, -- 161
+		aimMin = 0.5, -- 161
+		introCloseDist = 60, -- 161
+		aimClockRate = 1 -- 161
+	}, -- 161
+	{ -- 163
+		physicsStep = 1 / 240, -- 164
+		maxStepsPerFrame = 16, -- 164
+		sampleEvery = 8, -- 164
+		playback = 8, -- 165
+		playbackSpeeds = {4, 8, 16}, -- 165
+		cameraMin = 100, -- 166
+		cameraMax = 1800, -- 166
+		aimMin = 0.5, -- 166
+		introCloseDist = 120, -- 166
+		aimClockRate = 1 -- 166
+	}, -- 166
+	{ -- 168
+		physicsStep = 1 / 120, -- 169
+		maxStepsPerFrame = 32, -- 169
+		sampleEvery = 16, -- 169
+		playback = 16, -- 170
+		playbackSpeeds = {8, 16, 32}, -- 170
+		cameraMin = 200, -- 171
+		cameraMax = 3600, -- 171
+		aimMin = 0.5, -- 171
+		introCloseDist = 240, -- 171
+		aimClockRate = 1 -- 171
+	}, -- 171
+	{ -- 173
+		physicsStep = 1 / 120, -- 174
+		maxStepsPerFrame = 32, -- 174
+		sampleEvery = 16, -- 174
+		playback = 16, -- 175
+		playbackSpeeds = {8, 16, 32}, -- 175
+		cameraMin = 300, -- 176
+		cameraMax = 5600, -- 176
+		aimMin = 0.5, -- 176
+		introCloseDist = 400, -- 176
+		aimClockRate = 1 -- 176
+	} -- 176
+} -- 176
 --- 取第 index 关（0 起）的运行时参数；越界退回最后一关（宁可难看，也不要 nil）。
-function ____exports.levelRuntime(index) -- 157
-	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 157
-		return ____exports.LEVEL_RUNTIME[index + 1] -- 158
-	end -- 158
-	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 159
-end -- 157
-return ____exports -- 157
+function ____exports.levelRuntime(index) -- 181
+	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 181
+		return ____exports.LEVEL_RUNTIME[index + 1] -- 182
+	end -- 182
+	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 183
+end -- 181
+return ____exports -- 181

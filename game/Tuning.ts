@@ -112,6 +112,26 @@ export interface LevelRuntime {
 	aimMin: number;
 	/** 进关特写镜头的距离（世界单位）。 */
 	introCloseDist: number;
+	/**
+	 * **瞄准期的世界时钟速率**（S5）。
+	 *
+	 * 瞄准期（Aiming 且没在拖）世界时钟在走，所以探测器沿待机轨道飞、行星也在走 ——
+	 * 这个手感本身是好的（用户：「飞行器也是一开始在运动的，围绕地球」）。
+	 * 但真实尺度下 L1 的绕地周期只有 **0.427 秒**、月球 1.259 秒：
+	 * 1× 就是每秒转 2.3 圈的**陀螺**，玩家连"月球现在在哪"都看不清，更别说打提前量。
+	 *
+	 * ⇒ 每关一个速率。1 = 真实速度；**0 = 冻结**。
+	 *
+	 * L1 取 **0（冻结）**：它是教学关，开局状态必须完全确定 —— 探测器在地球外侧 0.1 的圆轨上、
+	 * 月球在 154.7°。真实速率下探测器 0.43 秒转一圈、月球 1.26 秒转一圈，
+	 * 玩家要同时给"自己的相位 + 月球的位置 + 0.40 秒飞行里的提前量"三者打提前量，
+	 * 而屏幕上没有任何读数能支撑这件事。冻结之后这一关的时机只剩**飞行时间的提前量**
+	 * （月球在 0.40 秒里走 115°）—— 正是简报里那句「别对着它现在的位置点火」。
+	 * 探测器"已经在运动"这件事仍然成立：它由 probeVel0 与预测线那条弧线表达。
+	 * ⚠️ 它只缩放**瞄准期**的时间流逝，不碰物理：发射瞬间把 clock 交给 t0，
+	 *    此后一切照旧按真实时间算。
+	 */
+	aimClockRate: number;
 }
 
 /**
@@ -122,34 +142,38 @@ export interface LevelRuntime {
  */
 export const LEVEL_RUNTIME: LevelRuntime[] = [
 	{ // L1 月球：地月系，整个世界只有 0.6 单位宽
-		physicsStep: 1 / 2000, maxStepsPerFrame: 8, sampleEvery: 1,
-		playback: 0.05, playbackSpeeds: [0.02, 0.05, 0.1],
+		// 播放倍速：转移飞行 0.40~0.62 秒游戏时间、整段上限 1.2 秒。
+		// ⚠️ 不能取太小：0.05× 会让一段飞行要 40 秒挂钟时间（实测验收脚本 6 秒就等不下去把它腰斩了）。
+		// 0.25× ⇒ 命中约 2 秒、整段最多 4.8 秒，"看得见"与"不拖沓"的平衡点。
+		physicsStep: 1 / 2000, maxStepsPerFrame: 16, sampleEvery: 1,
+		playback: 0.25, playbackSpeeds: [0.1, 0.25, 0.5],
 		cameraMin: 0.02, cameraMax: 3, aimMin: 0.02, introCloseDist: 0.6,
+		aimClockRate: 0,
 	},
 	{ // L2 金星：飞行 6.7 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 8, sampleEvery: 1,
 		playback: 2, playbackSpeeds: [1, 2, 4],
-		cameraMin: 20, cameraMax: 200, aimMin: 0.2, introCloseDist: 26,
+		cameraMin: 20, cameraMax: 200, aimMin: 0.2, introCloseDist: 26, aimClockRate: 1,
 	},
 	{ // L3 木星：飞行 45.8 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 4,
 		playback: 4, playbackSpeeds: [2, 4, 8],
-		cameraMin: 60, cameraMax: 900, aimMin: 0.5, introCloseDist: 60,
+		cameraMin: 60, cameraMax: 900, aimMin: 0.5, introCloseDist: 60, aimClockRate: 1,
 	},
 	{ // L4 土星：飞行 ~101 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 8,
 		playback: 8, playbackSpeeds: [4, 8, 16],
-		cameraMin: 100, cameraMax: 1800, aimMin: 0.5, introCloseDist: 120,
+		cameraMin: 100, cameraMax: 1800, aimMin: 0.5, introCloseDist: 120, aimClockRate: 1,
 	},
 	{ // L5 天王星：飞行 ~269 秒
 		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16,
 		playback: 16, playbackSpeeds: [8, 16, 32],
-		cameraMin: 200, cameraMax: 3600, aimMin: 0.5, introCloseDist: 240,
+		cameraMin: 200, cameraMax: 3600, aimMin: 0.5, introCloseDist: 240, aimClockRate: 1,
 	},
 	{ // L6 海王星：飞行 ~513 秒
 		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16,
 		playback: 16, playbackSpeeds: [8, 16, 32],
-		cameraMin: 300, cameraMax: 5600, aimMin: 0.5, introCloseDist: 400,
+		cameraMin: 300, cameraMax: 5600, aimMin: 0.5, introCloseDist: 400, aimClockRate: 1,
 	},
 ];
 
