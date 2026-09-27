@@ -33,7 +33,7 @@ import { Color, DrawNode, Node, Size, Touch, Vec2 } from 'Dora';
 import { CameraBasis, screenToPlaneY } from 'game/Projection';
 import { P2 } from 'game/Gravity';
 import {
-	AimMaxDragPx, AimMaxSpeed, AimMinSpeed, PlaneToWorldX, PlaneToWorldZ,
+	AimMaxDragPx, AimMaxSpeed, AimMinSpeed, FlightPlayback, PlaneToWorldX, PlaneToWorldZ,
 	TimeWarpRate, TimeWarpStep, WarpHoldDelaySec,
 } from 'game/Config';
 import { ResultKind } from 'game/Game';
@@ -232,6 +232,19 @@ export interface AimInput {
 	onViewToggle: (callback: () => void) => void;
 	/** 由主循环同步当前视图：按钮文字跟着状态走（不自己翻转局部变量）。 */
 	setViewMode: (mode: PlanViewMode) => void;
+	/**
+	 * 「播放倍速」按钮被点（S3.17，飞行中可见）：收到 1 / 2 / 4（玩家的手动兜底档）。
+	 * 掠过天体时的自动慢动作叠在这个档位上（× 1/4），不经过按钮 —— 按钮只表达意图，
+	 * 状态在 GameCore.playback 里（与其它按钮同一条分层原则）。
+	 */
+	onPlayback: (callback: (speed: number) => void) => void;
+	/** 由主循环同步当前倍速档：三颗按钮的高亮跟着状态走（不自己翻转局部变量）。 */
+	setPlayback: (speed: number) => void;
+	/**
+	 * 倍速按钮的显隐（状态驱动，AGENTS 硬约束 4/5）：只在 **Flying** 态出现。
+	 * 隐藏时必须同时断触摸（只设 visible = false 会让隐藏的按钮继续吞点击）。
+	 */
+	setPlaybackVisible: (on: boolean) => void;
 	/**
 	 * 整屏瞄准（S3.15）：2D 规划视图里**整屏拖动都算瞄准**。
 	 *
@@ -591,6 +604,61 @@ export function createAimInput(
 	/** 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。 */
 	let lastViewText = '2D';
 
+	// ---- 播放倍速 1× / 2× / 4×（S3.17；只在飞行中出现）----
+	// 设计稿定稿十条第 2 条："掠过时自动近景慢动作（1/4 速、贴近行星），平时正常速度；
+	// 给玩家 1×/2×/4× 兜底"。自动慢动作叠在玩家选的档位上（× 1/4），不替换它。
+	// ⚠️ 状态型按钮 ⇒ 保持 fireOn: 'release'（默认），与时间流按钮共用 createButton 的
+	//    0.5 秒防抖；幂等由调用方保证（同一个档位设两遍没有副作用）。
+	// ⚠️ 高亮跟着 GameCore.playback 走（setPlayback 每帧同步）—— 按钮不自己存"当前档位"，
+	//    否则"按钮显示的"与"播出来的"迟早分家（AGENTS 硬约束 5）。
+	const PlaybackButtonW = 116;
+	const PlaybackButtonH = 64;
+	const playbackGap = 10;
+	const playbackButtons: UiButton[] = [];
+	const playbackSpeeds: number[] = [];
+	let playbackHandler: ((speed: number) => void) | undefined = undefined;
+	let playbackSpeed = FlightPlayback;
+	/** 已应用到节点上的显隐状态。初值 false 如实反映"建出来就隐藏"（照 warp 按钮的教训）。 */
+	let playbackVisible = false;
+	const paintPlayback = (): void => {
+		for (let i = 0; i < playbackButtons.length; i++) {
+			const on = playbackSpeeds[i] === playbackSpeed;
+			playbackButtons[i].setColors(on ? ResultButtonBgHex : ResultButtonAltBgHex, ResultButtonFgHex);
+		}
+	};
+	const makePlaybackButton = (speed: number, x: number): void => {
+		const btn = createButton(root, {
+			w: PlaybackButtonW,
+			h: PlaybackButtonH,
+			text: speed.toFixed(0) + '×',
+			fontSize: 30,
+			bgHex: ResultButtonAltBgHex,
+			fgHex: ResultButtonFgHex,
+			borderHex: ResultButtonBorderHex,
+			onTap: (): void => {
+				// 证据打点（AGENTS：每次动作一行日志 —— 有行 = 事件到了、没行 = 事件没到）
+				print('[escape-velocity] playback button fire ' + speed.toFixed(0) + 'x (release)');
+				playbackSpeed = speed;
+				paintPlayback(); // 先重绘再通知：只通知的话按钮颜色不跟着变（刹车按钮的教训）
+				if (playbackHandler !== undefined) playbackHandler(speed);
+			},
+		});
+		// 左下角、与「发射」按钮同一行高（y 96..160）：完全避开引擎底部调试工具条
+		// （实测 y=20 一带的鼠标事件会被它整个吃掉，见 viewButton 的注释）
+		btn.root.position = Vec2(x, 96);
+		playbackButtons.push(btn);
+		playbackSpeeds.push(speed);
+	};
+	makePlaybackButton(1, 24);
+	makePlaybackButton(2, 24 + PlaybackButtonW + playbackGap);
+	makePlaybackButton(4, 24 + (PlaybackButtonW + playbackGap) * 2);
+	paintPlayback();
+	// 飞行中才出现：建出来先隐藏 + 断触摸（只设 visible 不够 —— 硬约束 4）
+	for (const b of playbackButtons) {
+		b.root.visible = false;
+		b.setEnabled(false);
+	}
+
 	const brakeRightX = viewW - BrakeButtonW - 20;
 	makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
 	makeBrakeButton('刹车', true, brakeRightX);
@@ -639,6 +707,22 @@ export function createAimInput(
 			if (mode === lastViewText) return;
 			lastViewText = mode;
 			viewButton.setText(mode);
+		},
+		onPlayback: (callback: (speed: number) => void): void => {
+			playbackHandler = callback;
+		},
+		setPlayback: (speed: number): void => {
+			if (speed === playbackSpeed) return; // 每帧都会被调用：状态没变就别重绘
+			playbackSpeed = speed;
+			paintPlayback();
+		},
+		setPlaybackVisible: (on: boolean): void => {
+			if (on === playbackVisible) return; // 每帧都会被调用（状态驱动，硬约束 5）
+			playbackVisible = on;
+			for (const b of playbackButtons) {
+				b.root.visible = on;
+				b.setEnabled(on);
+			}
 		},
 		setFullScreenAim: (on: boolean): void => {
 			fullScreenAim = on;

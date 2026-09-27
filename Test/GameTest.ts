@@ -5,12 +5,12 @@
  *   const m = requireProjectModule("Test.GameTest"); print(m.runTests())
  */
 import { Body, P2 } from 'game/Gravity';
-import { FlightPlayback, PhysicsStep } from 'game/Config';
+import { FlightPlayback, PhysicsStep, SlowMoFactor, SlowMoFloorDist, SlowMoRadiusFactor } from 'game/Config';
 import { GoalSpec } from 'game/LevelData';
 import {
-	GameLevel, coreArm, coreBackToSelect, coreCancelArm, coreHandoffDate, coreLaunch, coreProbeIndex, coreRetry,
-	coreTimeWarpAllowed, coreToggleView, coreUpdate,
-	createCore, resolveResult,
+	GameLevel, anchorBodyIndex, coreArm, coreBackToSelect, coreCancelArm, coreHandoffDate, coreLaunch,
+	coreProbeIndex, coreRetry, coreTimeWarpAllowed, coreToggleView, coreUpdate,
+	createCore, resolveResult, slowMotionBody,
 } from 'game/Game';
 
 interface Failure {
@@ -362,6 +362,104 @@ function testViewMode(): void {
 	check('view-back-to-select-2d', coreBackToSelect(core2) === true && core2.viewMode === '2D', `viewMode=${core2.viewMode} phase=${core2.phase}`);
 }
 
+
+/**
+ * 13) 掠过自动慢动作（S3.17）：触发口径「最近接近任何天体」+ 播放倍速。
+ *
+ * 守四件事：① 阈值 = max(半径 × 5, 8)，锚点（太阳）不参与；② 阈值内取**最近**的天体；
+ * ③ 慢动作 = 手动档 × 1/4（默认 2× ⇒ 0.5× 实时，不是 0.25× 实时也不是 1.5×）；
+ * ④ **同样帧数下推进的世界时间更少** —— 这是"真的放慢了"的确定性表述。
+ */
+function testSlowMotion(): void {
+	// 场：太阳（锚点，半径 28）+ 一颗绕日行星（半径 4.63，t=0 时在 (60,0)）
+	const bodies: Body[] = [
+		{ gm: 72000, radius: 28, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
+		{ gm: 0, radius: 4.63, orbitCenter: { x: 0, y: 0 }, orbitRadius: 60, orbitPeriod: 600, phase0: 0, orbitDirection: 1 },
+	];
+	const anchor = anchorBodyIndex(bodies);
+	check('slowmo-anchor-sun', anchor === 0, 'anchor=' + anchor + '（应是不绕别人转的太阳）');
+
+	// 阈值 = max(4.63 × 5, 8) = 23.15
+	const threshold = Math.max(4.63 * SlowMoRadiusFactor, SlowMoFloorDist);
+	check('slowmo-threshold-value', Math.abs(threshold - 23.15) < 1e-9, 'threshold=' + threshold);
+	check('slowmo-outside', slowMotionBody(bodies, { x: 30, y: 0 }, 0, anchor) === -1, '距行星 30 > 23.15 不该触发');
+	check('slowmo-inside', slowMotionBody(bodies, { x: 50, y: 0 }, 0, anchor) === 1, '距行星 10 < 23.15 应触发');
+	// 锚点排除：太阳半径 28 × 5 = 140 > 探测器出发距离 80 ⇒ 不排除就是六关全程慢动作
+	check('slowmo-anchor-excluded', slowMotionBody(bodies, { x: 20, y: 0 }, 0, anchor) === -1,
+		'太阳（锚点）即使在阈值内也不触发');
+	// 小天体走地板：半径 1 ⇒ 阈值 8（不是 5）—— 月球抵达容差 5 必须被盖住
+	const tiny: Body[] = [
+		bodies[0],
+		{ gm: 0, radius: 1.0, orbitCenter: { x: 0, y: 0 }, orbitRadius: 60, orbitPeriod: 600, phase0: 0, orbitDirection: 1 },
+	];
+	check('slowmo-floor-in', slowMotionBody(tiny, { x: 55, y: 0 }, 0, anchor) === 1, '距 5 < 地板 8 ⇒ 触发');
+	check('slowmo-floor-out', slowMotionBody(tiny, { x: 50, y: 0 }, 0, anchor) === -1, '距 10 > 地板 8 ⇒ 不触发');
+	// 多个天体在阈值内 ⇒ 最近的那个赢（"最近接近任何天体"）
+	const two: Body[] = [
+		bodies[0],
+		{ gm: 0, radius: 4.63, orbitCenter: { x: 0, y: 0 }, orbitRadius: 60, orbitPeriod: 600, phase0: 0, orbitDirection: 1 },
+		{ gm: 0, radius: 3.04, orbitCenter: { x: 0, y: 0 }, orbitRadius: 60, orbitPeriod: 600, phase0: (20 * Math.PI) / 180, orbitDirection: 1 },
+	];
+	check('slowmo-nearest-a', slowMotionBody(two, { x: 58, y: 10 }, 0, anchor) === 1, '离 1 号更近 ⇒ 选 1 号');
+	check('slowmo-nearest-b', slowMotionBody(two, { x: 57, y: 15 }, 0, anchor) === 2, '离 2 号更近 ⇒ 选 2 号');
+}
+
+/** 13b) 播放倍速：手动档 1/2/4 × 慢动作 1/4；同样帧数下世界时间更少。 */
+function testPlaybackSpeed(): void {
+	const level = testLevel();
+
+	// 默认手动档 = FlightPlayback = 2×（历史行为不变）
+	const core = createCore();
+	check('playback-default', core.playback === FlightPlayback && core.playback === 2, 'playback=' + core.playback);
+	coreLaunch(core, { x: 6, y: -12 }, level);
+	core.playback = 4;
+	const t0 = core.flightTime;
+	for (let i = 0; i < 60; i++) coreUpdate(core, 1 / 60);
+	check('playback-4x', Math.abs(core.flightTime - t0 - 4) < 1e-9,
+		'60 帧 × 1/60 秒 × 4× = 4.000，实际 Δt=' + (core.flightTime - t0).toFixed(3));
+
+	// 慢动作：同样 60 帧只推进 1 秒（4 × 0.25）——"同样帧数下推进的世界时间更少"
+	core.slowmo = true;
+	const t1 = core.flightTime;
+	for (let i = 0; i < 60; i++) coreUpdate(core, 1 / 60);
+	check('playback-slowmo-quarter', Math.abs(core.flightTime - t1 - 1) < 1e-9,
+		'4× 慢动作 60 帧应推进 1.000，实际 Δt=' + (core.flightTime - t1).toFixed(3));
+
+	// 基准口径（写进注释的那个）：默认手动档 2× 的慢动作 = 0.5× 实时
+	const core2 = createCore();
+	coreLaunch(core2, { x: 6, y: -12 }, level);
+	core2.slowmo = true;
+	const t2 = core2.flightTime;
+	for (let i = 0; i < 60; i++) coreUpdate(core2, 1 / 60);
+	check('playback-default-slowmo-half', Math.abs(core2.flightTime - t2 - 0.5) < 1e-9,
+		'2× 慢动作 60 帧应推进 0.500（≈0.5× 实时），实际 Δt=' + (core2.flightTime - t2).toFixed(3));
+
+	// 不传 level ⇒ 不判定慢动作（旧路径/测试行为不变）
+	const core3 = createCore();
+	coreLaunch(core3, { x: 6, y: -12 }, level);
+	for (let i = 0; i < 30; i++) coreUpdate(core3, 1 / 60);
+	check('playback-no-level', !core3.slowmo && core3.slowmoBody === -1, 'slowmo=' + core3.slowmo + ' body=' + core3.slowmoBody);
+
+	// level 驱动：出发就在阈值内 ⇒ coreUpdate 自己打开慢动作，速度掉到 2 × 0.25
+	const bodies: Body[] = [
+		{ gm: 72000, radius: 28, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
+		{ gm: 0, radius: 4.63, orbitCenter: { x: 0, y: 0 }, orbitRadius: 60, orbitPeriod: 600, phase0: 0, orbitDirection: 1 },
+	];
+	const nearLevel: GameLevel = {
+		bodies,
+		probeStart: { x: 50, y: 0 }, // 距行星 (60,0) 10 < 23.15 ⇒ 出发即在慢动作里（gm=0：不被引力搅局）
+		goal: { kind: 'escape', planetIndex: -1, tolerance: 0 },
+		escapeRadius: 400,
+		maxSteps: 600,
+	};
+	const core4 = createCore();
+	coreLaunch(core4, { x: 0, y: 5 }, nearLevel);
+	const t3 = core4.flightTime;
+	for (let i = 0; i < 60; i++) coreUpdate(core4, 1 / 60, nearLevel);
+	check('playback-level-driven', core4.slowmo && core4.slowmoBody === 1 && Math.abs(core4.flightTime - t3 - 0.5) < 1e-9,
+		'slowmo=' + core4.slowmo + ' body=' + core4.slowmoBody + ' Δt=' + (core4.flightTime - t3).toFixed(3) + ' 期望 0.500');
+}
+
 export function runTests(): string {
 	testResolveResult();
 	testTimeWarpGuard();
@@ -374,6 +472,8 @@ export function runTests(): string {
 	testDeterministicCycle();
 	testGoalTruncation();
 	testViewMode();
+	testSlowMotion();
+	testPlaybackSpeed();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

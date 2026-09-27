@@ -25,7 +25,7 @@
  */
 import { Camera3D, Vec3 } from 'Dora';
 import { AimInput, AimResult } from 'game/Hud';
-import { Body, BrakeThrust, Outcome, P2, SimResult, bodyPositionAt, simulate, sub } from 'game/Gravity';
+import { Body, BrakeThrust, Outcome, P2, SimResult, bodyPositionAt, distance, simulate, sub } from 'game/Gravity';
 import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
@@ -34,7 +34,8 @@ import { GoalSpec, PlanetVisualDef, findGoalIndex, goalWaypoints, waypointProgre
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
-	IntroDurationSec, PhysicsStep, PredictSteps, TimeWarpStep,
+	IntroDurationSec, PhysicsStep, PredictSteps, SlowMoCloseDist, SlowMoFactor, SlowMoFloorDist,
+	SlowMoRadiusFactor, TimeWarpStep,
 } from 'game/Config';
 
 /**
@@ -125,6 +126,16 @@ export interface GameCore {
 	 * 手动切过之后，下一次相态流转会把视图拉回该相态该有的样子（发射一定进 3D）。
 	 */
 	viewMode: PlanViewMode;
+	/**
+	 * 飞行回放的**手动倍速档**（S3.17）：1 / 2 / 4，默认 `FlightPlayback`（2×）。
+	 * 玩家用 HUD 的 1×/2×/4× 三颗状态型按钮覆盖它；掠过天体的自动慢动作**叠在**它上面
+	 * （× SlowMoFactor = 1/4），不替换它。
+	 */
+	playback: number;
+	/** 当前是否处于「掠过自动慢动作」（S3.17）。由 coreUpdate 按 level 判定，取景与日志读它。 */
+	slowmo: boolean;
+	/** 触发慢动作的天体索引（-1 = 没有）。取景时相机贴近这颗天体。 */
+	slowmoBody: number;
 }
 
 export function createCore(): GameCore {
@@ -140,6 +151,10 @@ export function createCore(): GameCore {
 		result: undefined,
 		// 进关先给 2D：设计稿第 4 条"进关/瞄准在 2D"（发射那一刻才切 3D）
 		viewMode: '2D',
+		// S3.17：默认 2×（历史行为不变）；慢动作字段每帧由 coreUpdate 重算，这里给初值
+		playback: FlightPlayback,
+		slowmo: false,
+		slowmoBody: -1,
 	};
 }
 
@@ -208,6 +223,9 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
 	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
 	core.flightTime = 0;
+	// S3.17：慢动作状态由 coreUpdate 逐帧重算，这里给干净的初值（发射瞬间不可能在慢动作里）
+	core.slowmo = false;
+	core.slowmoBody = -1;
 	core.phase = 'Flying';
 	// 设计稿第 4 条：**按下发射自动切 3D** —— 它是相态流转的一部分，不是 UI 的补丁
 	core.viewMode = '3D';
@@ -265,6 +283,53 @@ export function coreHandoffDate(t0: number, clock: number, toT0: boolean): { t0:
 	return { t0: 0, clock: t0 };
 }
 
+/**
+ * 取景锚点的索引（S3.12 的同款逻辑，提成纯函数）。
+ *
+ * L2~L6 是太阳（gm 72000、不绕别的天体转）；L1 场里也有太阳（物理统一），所以六关一致。
+ * 返回 -1 = 场里没有「不绕别人转」的天体。
+ *
+ * S3.17 的慢动作触发也要用它：**锚点是舞台中心，不是被掠过的对象** ——
+ * 太阳半径 28，任何 ≥3 的阈值系数都会让「整个太阳系」落在慢动作阈值里，机制直接失效。
+ */
+export function anchorBodyIndex(bodies: Body[]): number {
+	let best = -1;
+	for (let i = 0; i < bodies.length; i++) {
+		const b = bodies[i];
+		if (b.orbitRadius !== 0) continue;
+		if (best < 0 || b.gm > bodies[best].gm) best = i;
+	}
+	return best;
+}
+
+/**
+ * S3.17 慢动作触发判定（纯函数，可单测）：「**最近接近任何天体**」。
+ *
+ * 探测器与某个天体的距离进入阈值即算数 —— 抵达月球与掠过木星因此共用同一套手感。
+ * 阈值 = `max(天体半径 × SlowMoRadiusFactor, SlowMoFloorDist)`（世界单位，理由见 Config）：
+ *   - 半径 × 系数：木星 23.2 / 土星 21.5 / 月球 8（地板）；
+ *   - **锚点天体（太阳）不参与**：它半径 28，乘出来比探测器出发距离（80）还大，
+ *     不排除就是六关全程慢动作。掠过景由取景里的锚点预算负责，不由慢动作负责。
+ *
+ * @param anchor 锚点天体索引（-1 = 没有锚点）；传 anchorBodyIndex(bodies) 的结果。
+ * @returns 触发的天体索引（**最近**的那个）；-1 = 不在任何天体的阈值内。
+ */
+export function slowMotionBody(bodies: Body[], probe: P2, t: number, anchor: number): number {
+	let best = -1;
+	let bestD = 1e9;
+	for (let i = 0; i < bodies.length; i++) {
+		if (i === anchor) continue;
+		const b = bodies[i];
+		const threshold = Math.max(b.radius * SlowMoRadiusFactor, SlowMoFloorDist);
+		const d = distance(probe, bodyPositionAt(b, t));
+		if (d < threshold && d < bestD) {
+			bestD = d;
+			best = i;
+		}
+	}
+	return best;
+}
+
 /** 当前帧探测器在 flight.points 中的索引（夹紧到有效范围）。 */
 export function coreProbeIndex(core: GameCore): number {
 	if (core.flight === undefined) return 0;
@@ -280,10 +345,27 @@ export function coreProbeIndex(core: GameCore): number {
  *
  * 飞行终点 = min(自然终点, 目标到达点)：到达目标即刻成功收束。
  * 收束时把回放时间吸附到终点索引，冻结帧恰好停在到达/终点的位置。
+ *
+ * ===== S3.17 掠过自动慢动作：全项目**唯一**的播放速度入口 =====
+ *
+ * `level` 给了才判定（天体位置随时间动，需要 bodies + tWorld；测试与旧路径省略 = 不触发）。
+ * 判定写在**推进之前**（用这一帧起始位置的探测器），结果落回 `core.slowmo` / `core.slowmoBody`
+ * —— 相机取景与 HUD 读的就是这两个字段，全项目只有这一个地方写它们。
+ * 有效倍速 = 手动档（1×/2×/4×）× (慢动作 ? SlowMoFactor : 1)，只改「每帧推进多少模拟时间」：
+ * **不重算物理、不动确定性、不引入第二套时钟**（轨迹在发射那刻就已算完）。
  */
-export function coreUpdate(core: GameCore, dt: number): boolean {
+export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boolean {
 	if (core.phase !== 'Flying' || core.flight === undefined) return false;
-	core.flightTime += dt * FlightPlayback;
+	// ⚠️ 不传 level = **不判定**（不清标志）：测试与回归脚本可以直接驱动 core.slowmo。
+	//    真实游戏里 updateFlying 每帧都传 level ⇒ 标志每帧重算，不会留下陈旧值。
+	if (level !== undefined) {
+		const idx = coreProbeIndex(core);
+		core.slowmoBody = slowMotionBody(level.bodies, core.flight.points[idx], core.t0 + core.flightTime, anchorBodyIndex(level.bodies));
+		core.slowmo = core.slowmoBody >= 0;
+	}
+	// 基准（别算错）：默认手动档 2× ⇒ 慢动作期间 2 × 0.25 = 0.5× 实时
+	const speed = core.playback * (core.slowmo ? SlowMoFactor : 1);
+	core.flightTime += dt * speed;
 	const naturalEnd = core.flight.points.length - 1;
 	const endIdx = core.goalIndex >= 0 && core.goalIndex < naturalEnd ? core.goalIndex : naturalEnd;
 	if (coreProbeIndex(core) >= endIdx) {
@@ -304,6 +386,8 @@ export function coreRetry(core: GameCore): void {
 	core.flightTime = 0;
 	core.goalIndex = -1;
 	core.result = undefined;
+	core.slowmo = false;
+	core.slowmoBody = -1;
 	core.aim = { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
 }
 
@@ -327,6 +411,8 @@ export function coreBackToSelect(core: GameCore): boolean {
 	core.flightTime = 0;
 	core.goalIndex = -1;
 	core.result = undefined;
+	core.slowmo = false;
+	core.slowmoBody = -1;
 	return true;
 }
 
@@ -404,6 +490,13 @@ export interface Game {
 	setBrakeMode: (on: boolean) => void;
 	/** 读当前刹车模式（HUD 按钮同步用）。 */
 	brakeMode: () => boolean;
+	/**
+	 * 播放倍速（S3.17）：玩家手动兜底档 1 / 2 / 4。掠过天体的自动慢动作**叠在**它上面
+	 * （× 1/4），不替换它 —— 所以 HUD 上高亮的一直是玩家选的那个档。
+	 */
+	setPlaybackSpeed: (speed: number) => void;
+	/** 当前手动倍速档（HUD 三颗按钮的高亮同步用；状态是唯一事实来源）。 */
+	playbackSpeed: () => number;
 	/** 每帧调用一次。 */
 	update: (dt: number) => void;
 }
@@ -493,6 +586,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	 * 从前那套"没在拖就把待机轨道画成预测线"会让玩家调好的线被覆盖成初始状态。
 	 */
 	let aimed = false;
+	/** S3.17：慢动作的上一帧状态（打迁移日志用）与飞行日志累加器（每 0.5 真实秒一行）。 */
+	let lastSlowmo = false;
+	let lastSlowmoBody = -1;
+	let flightLogT = 0;
 	/** 探测器**此刻**在哪 / 以什么速度前进（待机会绕着地球走，所以不能写死 probeStart）。 */
 	let probePos: P2 = { x: level.probeStart.x, y: level.probeStart.y };
 	let probeVel: P2 = level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 };
@@ -549,11 +646,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	 * L2~L6 是太阳（gm 72000，玩家绕的就是它）；L1 是地球（2600 —— 地月系里玩家绕的是地球，
 	 * 而 L1 场里根本没有太阳）。取景与"空间宏大"都靠它：它必须**完整**在画面内。
 	 */
-	let anchorDef: Body | undefined = undefined;
-	for (const b of level.bodies) {
-		if (b.orbitRadius !== 0) continue;
-		if (anchorDef === undefined || b.gm > anchorDef.gm) anchorDef = b;
-	}
+	// 取景锚点（S3.12 的选取逻辑提成纯函数 anchorBodyIndex：S3.17 的慢动作触发也复用它）
+	const anchorIdx = anchorBodyIndex(level.bodies);
+	const anchorDef: Body | undefined = anchorIdx >= 0 ? level.bodies[anchorIdx] : undefined;
 
 	/** 目标链上下一个**还没掠过**的站（取景用；没有航点或已走完 ⇒ undefined）。 */
 	const nextStationBody = (): Body | undefined => {
@@ -808,7 +903,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	const updateFlying = (dt: number): boolean => {
 		deps.aim.setEnabled(false);
-		const entered = coreUpdate(core, dt);
+		// S3.17：慢动作判定在 coreUpdate 里做（要 level：天体位置随时间动），
+		// 结果写回 core.slowmo / core.slowmoBody —— 这一帧的取景与日志读它们
+		const entered = coreUpdate(core, dt, level);
 		if (core.flight === undefined) return entered;
 
 		const idx = coreProbeIndex(core);
@@ -818,14 +915,49 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 行星模型却回到 t=0 的姿态（错）-- 用户实测到的「模型位置跳回时间 0」。
 		const tWorld = core.t0 + core.flightTime;
 
+		// 慢动作状态迁移打点（AGENTS：每次动作一行日志 —— 有行 = 状态真的换了）
+		if (core.slowmo !== lastSlowmo || core.slowmoBody !== lastSlowmoBody) {
+			lastSlowmo = core.slowmo;
+			lastSlowmoBody = core.slowmoBody;
+			const near = core.slowmoBody >= 0 ? level.bodies[core.slowmoBody] : undefined;
+			const nearD = near !== undefined ? distance(pos, bodyPositionAt(near, tWorld)) : 0;
+			print('[escape-velocity] slow-mo ' + (core.slowmo ? 'engage' : 'release') +
+				' body#' + core.slowmoBody.toFixed(0) +
+				' r=' + (near !== undefined ? near.radius.toFixed(2) : '-') +
+				' d=' + nearD.toFixed(1) + ' t=' + core.flightTime.toFixed(2));
+		}
+		// 定频飞行日志（每 0.5 真实秒一行）：**同样帧数下推进的世界时间更少**就是"真的放慢了"
+		// 的直接证据（S3.17 验收第 4 条）。慢动作期间 speed 从 2.00 掉到 0.50，一行就看得出。
+		flightLogT += dt;
+		if (flightLogT >= 0.5) {
+			flightLogT = 0;
+			const total = (core.flight.points.length - 1) * core.dt;
+			print('[escape-velocity] flight t=' + core.flightTime.toFixed(2) + '/' + total.toFixed(1) +
+				' idx=' + idx.toFixed(0) +
+				' speed=' + (core.playback * (core.slowmo ? SlowMoFactor : 1)).toFixed(2) +
+				' (playback=' + core.playback.toFixed(0) + 'x slowmo=' + (core.slowmo ? '1' : '0') + ')');
+		}
+
 		deps.scene.syncBodies(tWorld);
 		deps.scene.syncProbe(pos);
 		if (idx > 0) {
 			deps.scene.faceVelocity(sub(pos, core.flight.points[idx - 1]));
 		}
 
-		const fr = framingPoints(pos, tWorld);
-		const frame = deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii);
+		// 取景（S3.17）：慢动作期间**贴近被掠过的天体** —— 复用 CameraRig 的逐点半径求解，
+		// 关键点换成 [探测器, 被掠天体]（锚点/目标环出画，特写让位），距离下限放到
+		// SlowMoCloseDist（否则 CameraMinDistance=60 把"贴近"吃掉：实测相机只从 ~110 收到
+		// 60、木星在画面里只大 1.8 倍，不像特写）。
+		let fr: { pts: P2[]; radii: number[] };
+		let closeDist: number | undefined = undefined;
+		if (core.slowmo && core.slowmoBody >= 0) {
+			const near = level.bodies[core.slowmoBody];
+			fr = { pts: [pos, bodyPositionAt(near, tWorld)], radii: [deps.scene.probeRadius, near.radius] };
+			closeDist = SlowMoCloseDist;
+		} else {
+			fr = framingPoints(pos, tWorld);
+		}
+		const frame = deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii, closeDist);
 		deps.rig.apply(deps.camera, frame);
 		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
@@ -1003,6 +1135,13 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 预测线要跟着重算（缓存键里带了 brakeMode，下一帧自然会重算）
 		},
 		brakeMode: (): boolean => core.brakeMode,
+		setPlaybackSpeed: (speed: number): void => {
+			// 只认 HUD 那三个档（1/2/4）；别的值忽略，别把 playback 写成奇怪的比例
+			if (speed !== 1 && speed !== 2 && speed !== 4) return;
+			core.playback = speed;
+			print('[escape-velocity] playback speed -> ' + speed.toFixed(0) + 'x (phase=' + core.phase + ')');
+		},
+		playbackSpeed: (): number => core.playback,
 		// 包一层箭头函数：简写属性会触发 TS100016（见 Hud.ts 同名注释）
 		update: (frameDt: number): void => update(frameDt),
 	};

@@ -5,19 +5,23 @@ local ____exports = {} -- 1
 local ____Config = require("game.Config") -- 8
 local FlightPlayback = ____Config.FlightPlayback -- 8
 local PhysicsStep = ____Config.PhysicsStep -- 8
+local SlowMoFloorDist = ____Config.SlowMoFloorDist -- 8
+local SlowMoRadiusFactor = ____Config.SlowMoRadiusFactor -- 8
 local ____Game = require("game.Game") -- 10
+local anchorBodyIndex = ____Game.anchorBodyIndex -- 11
 local coreArm = ____Game.coreArm -- 11
 local coreBackToSelect = ____Game.coreBackToSelect -- 11
 local coreCancelArm = ____Game.coreCancelArm -- 11
 local coreHandoffDate = ____Game.coreHandoffDate -- 11
 local coreLaunch = ____Game.coreLaunch -- 11
-local coreProbeIndex = ____Game.coreProbeIndex -- 11
-local coreRetry = ____Game.coreRetry -- 11
+local coreProbeIndex = ____Game.coreProbeIndex -- 12
+local coreRetry = ____Game.coreRetry -- 12
 local coreTimeWarpAllowed = ____Game.coreTimeWarpAllowed -- 12
 local coreToggleView = ____Game.coreToggleView -- 12
 local coreUpdate = ____Game.coreUpdate -- 12
 local createCore = ____Game.createCore -- 13
 local resolveResult = ____Game.resolveResult -- 13
+local slowMotionBody = ____Game.slowMotionBody -- 13
 local failures = {} -- 21
 local checks = 0 -- 22
 local function check(name, ok, detail) -- 24
@@ -467,29 +471,236 @@ local function testViewMode() -- 322
 		(("viewMode=" .. core2.viewMode) .. " phase=") .. core2.phase -- 362
 	) -- 362
 end -- 322
-function ____exports.runTests() -- 365
-	testResolveResult() -- 366
-	testTimeWarpGuard() -- 367
-	testDateHandoff() -- 368
-	testLaunch() -- 369
-	testArmed() -- 370
-	testPlayback() -- 371
-	testRetry() -- 372
-	testIndexClamp() -- 373
-	testDeterministicCycle() -- 374
-	testGoalTruncation() -- 375
-	testViewMode() -- 376
-	local lines = {} -- 378
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 379
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 380
-	local limit = #failures < 12 and #failures or 12 -- 381
-	do -- 381
-		local i = 0 -- 382
-		while i < limit do -- 382
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 383
-			i = i + 1 -- 382
-		end -- 382
-	end -- 382
-	return table.concat(lines, "\n") -- 385
-end -- 365
-return ____exports -- 365
+--- 13) 掠过自动慢动作（S3.17）：触发口径「最近接近任何天体」+ 播放倍速。
+-- 
+-- 守四件事：① 阈值 = max(半径 × 5, 8)，锚点（太阳）不参与；② 阈值内取**最近**的天体；
+-- ③ 慢动作 = 手动档 × 1/4（默认 2× ⇒ 0.5× 实时，不是 0.25× 实时也不是 1.5×）；
+-- ④ **同样帧数下推进的世界时间更少** —— 这是"真的放慢了"的确定性表述。
+local function testSlowMotion() -- 373
+	local bodies = {{ -- 375
+		gm = 72000, -- 376
+		radius = 28, -- 376
+		orbitCenter = {x = 0, y = 0}, -- 376
+		orbitRadius = 0, -- 376
+		orbitPeriod = 0, -- 376
+		phase0 = 0, -- 376
+		orbitDirection = 1 -- 376
+	}, { -- 376
+		gm = 0, -- 377
+		radius = 4.63, -- 377
+		orbitCenter = {x = 0, y = 0}, -- 377
+		orbitRadius = 60, -- 377
+		orbitPeriod = 600, -- 377
+		phase0 = 0, -- 377
+		orbitDirection = 1 -- 377
+	}} -- 377
+	local anchor = anchorBodyIndex(bodies) -- 379
+	check( -- 380
+		"slowmo-anchor-sun", -- 380
+		anchor == 0, -- 380
+		("anchor=" .. tostring(anchor)) .. "（应是不绕别人转的太阳）" -- 380
+	) -- 380
+	local threshold = math.max(4.63 * SlowMoRadiusFactor, SlowMoFloorDist) -- 383
+	check( -- 384
+		"slowmo-threshold-value", -- 384
+		math.abs(threshold - 23.15) < 1e-9, -- 384
+		"threshold=" .. tostring(threshold) -- 384
+	) -- 384
+	check( -- 385
+		"slowmo-outside", -- 385
+		slowMotionBody(bodies, {x = 30, y = 0}, 0, anchor) == -1, -- 385
+		"距行星 30 > 23.15 不该触发" -- 385
+	) -- 385
+	check( -- 386
+		"slowmo-inside", -- 386
+		slowMotionBody(bodies, {x = 50, y = 0}, 0, anchor) == 1, -- 386
+		"距行星 10 < 23.15 应触发" -- 386
+	) -- 386
+	check( -- 388
+		"slowmo-anchor-excluded", -- 388
+		slowMotionBody(bodies, {x = 20, y = 0}, 0, anchor) == -1, -- 388
+		"太阳（锚点）即使在阈值内也不触发" -- 389
+	) -- 389
+	local tiny = {bodies[1], { -- 391
+		gm = 0, -- 393
+		radius = 1, -- 393
+		orbitCenter = {x = 0, y = 0}, -- 393
+		orbitRadius = 60, -- 393
+		orbitPeriod = 600, -- 393
+		phase0 = 0, -- 393
+		orbitDirection = 1 -- 393
+	}} -- 393
+	check( -- 395
+		"slowmo-floor-in", -- 395
+		slowMotionBody(tiny, {x = 55, y = 0}, 0, anchor) == 1, -- 395
+		"距 5 < 地板 8 ⇒ 触发" -- 395
+	) -- 395
+	check( -- 396
+		"slowmo-floor-out", -- 396
+		slowMotionBody(tiny, {x = 50, y = 0}, 0, anchor) == -1, -- 396
+		"距 10 > 地板 8 ⇒ 不触发" -- 396
+	) -- 396
+	local two = {bodies[1], { -- 398
+		gm = 0, -- 400
+		radius = 4.63, -- 400
+		orbitCenter = {x = 0, y = 0}, -- 400
+		orbitRadius = 60, -- 400
+		orbitPeriod = 600, -- 400
+		phase0 = 0, -- 400
+		orbitDirection = 1 -- 400
+	}, { -- 400
+		gm = 0, -- 401
+		radius = 3.04, -- 401
+		orbitCenter = {x = 0, y = 0}, -- 401
+		orbitRadius = 60, -- 401
+		orbitPeriod = 600, -- 401
+		phase0 = 20 * math.pi / 180, -- 401
+		orbitDirection = 1 -- 401
+	}} -- 401
+	check( -- 403
+		"slowmo-nearest-a", -- 403
+		slowMotionBody(two, {x = 58, y = 10}, 0, anchor) == 1, -- 403
+		"离 1 号更近 ⇒ 选 1 号" -- 403
+	) -- 403
+	check( -- 404
+		"slowmo-nearest-b", -- 404
+		slowMotionBody(two, {x = 57, y = 15}, 0, anchor) == 2, -- 404
+		"离 2 号更近 ⇒ 选 2 号" -- 404
+	) -- 404
+end -- 373
+--- 13b) 播放倍速：手动档 1/2/4 × 慢动作 1/4；同样帧数下世界时间更少。
+local function testPlaybackSpeed() -- 408
+	local level = testLevel() -- 409
+	local core = createCore() -- 412
+	check( -- 413
+		"playback-default", -- 413
+		core.playback == FlightPlayback and core.playback == 2, -- 413
+		"playback=" .. tostring(core.playback) -- 413
+	) -- 413
+	coreLaunch(core, {x = 6, y = -12}, level) -- 414
+	core.playback = 4 -- 415
+	local t0 = core.flightTime -- 416
+	do -- 416
+		local i = 0 -- 417
+		while i < 60 do -- 417
+			coreUpdate(core, 1 / 60) -- 417
+			i = i + 1 -- 417
+		end -- 417
+	end -- 417
+	check( -- 418
+		"playback-4x", -- 418
+		math.abs(core.flightTime - t0 - 4) < 1e-9, -- 418
+		"60 帧 × 1/60 秒 × 4× = 4.000，实际 Δt=" .. __TS__NumberToFixed(core.flightTime - t0, 3) -- 419
+	) -- 419
+	core.slowmo = true -- 422
+	local t1 = core.flightTime -- 423
+	do -- 423
+		local i = 0 -- 424
+		while i < 60 do -- 424
+			coreUpdate(core, 1 / 60) -- 424
+			i = i + 1 -- 424
+		end -- 424
+	end -- 424
+	check( -- 425
+		"playback-slowmo-quarter", -- 425
+		math.abs(core.flightTime - t1 - 1) < 1e-9, -- 425
+		"4× 慢动作 60 帧应推进 1.000，实际 Δt=" .. __TS__NumberToFixed(core.flightTime - t1, 3) -- 426
+	) -- 426
+	local core2 = createCore() -- 429
+	coreLaunch(core2, {x = 6, y = -12}, level) -- 430
+	core2.slowmo = true -- 431
+	local t2 = core2.flightTime -- 432
+	do -- 432
+		local i = 0 -- 433
+		while i < 60 do -- 433
+			coreUpdate(core2, 1 / 60) -- 433
+			i = i + 1 -- 433
+		end -- 433
+	end -- 433
+	check( -- 434
+		"playback-default-slowmo-half", -- 434
+		math.abs(core2.flightTime - t2 - 0.5) < 1e-9, -- 434
+		"2× 慢动作 60 帧应推进 0.500（≈0.5× 实时），实际 Δt=" .. __TS__NumberToFixed(core2.flightTime - t2, 3) -- 435
+	) -- 435
+	local core3 = createCore() -- 438
+	coreLaunch(core3, {x = 6, y = -12}, level) -- 439
+	do -- 439
+		local i = 0 -- 440
+		while i < 30 do -- 440
+			coreUpdate(core3, 1 / 60) -- 440
+			i = i + 1 -- 440
+		end -- 440
+	end -- 440
+	check( -- 441
+		"playback-no-level", -- 441
+		not core3.slowmo and core3.slowmoBody == -1, -- 441
+		(("slowmo=" .. tostring(core3.slowmo)) .. " body=") .. tostring(core3.slowmoBody) -- 441
+	) -- 441
+	local bodies = {{ -- 444
+		gm = 72000, -- 445
+		radius = 28, -- 445
+		orbitCenter = {x = 0, y = 0}, -- 445
+		orbitRadius = 0, -- 445
+		orbitPeriod = 0, -- 445
+		phase0 = 0, -- 445
+		orbitDirection = 1 -- 445
+	}, { -- 445
+		gm = 0, -- 446
+		radius = 4.63, -- 446
+		orbitCenter = {x = 0, y = 0}, -- 446
+		orbitRadius = 60, -- 446
+		orbitPeriod = 600, -- 446
+		phase0 = 0, -- 446
+		orbitDirection = 1 -- 446
+	}} -- 446
+	local nearLevel = { -- 448
+		bodies = bodies, -- 449
+		probeStart = {x = 50, y = 0}, -- 450
+		goal = {kind = "escape", planetIndex = -1, tolerance = 0}, -- 451
+		escapeRadius = 400, -- 452
+		maxSteps = 600 -- 453
+	} -- 453
+	local core4 = createCore() -- 455
+	coreLaunch(core4, {x = 0, y = 5}, nearLevel) -- 456
+	local t3 = core4.flightTime -- 457
+	do -- 457
+		local i = 0 -- 458
+		while i < 60 do -- 458
+			coreUpdate(core4, 1 / 60, nearLevel) -- 458
+			i = i + 1 -- 458
+		end -- 458
+	end -- 458
+	check( -- 459
+		"playback-level-driven", -- 459
+		core4.slowmo and core4.slowmoBody == 1 and math.abs(core4.flightTime - t3 - 0.5) < 1e-9, -- 459
+		((((("slowmo=" .. tostring(core4.slowmo)) .. " body=") .. tostring(core4.slowmoBody)) .. " Δt=") .. __TS__NumberToFixed(core4.flightTime - t3, 3)) .. " 期望 0.500" -- 460
+	) -- 460
+end -- 408
+function ____exports.runTests() -- 463
+	testResolveResult() -- 464
+	testTimeWarpGuard() -- 465
+	testDateHandoff() -- 466
+	testLaunch() -- 467
+	testArmed() -- 468
+	testPlayback() -- 469
+	testRetry() -- 470
+	testIndexClamp() -- 471
+	testDeterministicCycle() -- 472
+	testGoalTruncation() -- 473
+	testViewMode() -- 474
+	testSlowMotion() -- 475
+	testPlaybackSpeed() -- 476
+	local lines = {} -- 478
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 479
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 480
+	local limit = #failures < 12 and #failures or 12 -- 481
+	do -- 481
+		local i = 0 -- 482
+		while i < limit do -- 482
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 483
+			i = i + 1 -- 482
+		end -- 482
+	end -- 482
+	return table.concat(lines, "\n") -- 485
+end -- 463
+return ____exports -- 463

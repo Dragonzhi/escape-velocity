@@ -87,8 +87,12 @@ export interface CameraRig {
 	 * @param probeRadius 探测器模型的外接半径（世界单位）；计入取景，免得天线被画面边缘切掉。
 	 * @param radii 逐个关键点的外接半径（S3.12）：太阳这类大体量天体必须**完整**在画面内 ——
 	 *        只约束中心点会让它压在画面边缘外（截图实测：太阳被裁掉一块）。省略 = 旧行为。
+	 * @param minDistance 临时把**距离下限**改小（S3.17 掠过慢动作的特写用）：同一套逐点半径
+	 *        求解器，只是把夹紧区间 [minDistance, maxDistance] 的左端换掉 —— 不是另写一套取景。
+	 *        只接受比 `options.minDistance` 小的值（放大镜不许把日常取景也顶进去）；
+	 *        装不下时求解器自己会往后退，相机不会穿进天体。省略 = 用默认下限。
 	 */
-	step(points: P2[], probeRadius?: number, radii?: number[]): RigFrame;
+	step(points: P2[], probeRadius?: number, radii?: number[], minDistance?: number): RigFrame;
 	/** 纯查询：这组关键点需要多远才能全部装下（不改机架状态）。 */
 	wantDistance(points: P2[], probeRadius?: number, radii?: number[]): number;
 	/** 把机架参数写到真实相机。 */
@@ -270,8 +274,22 @@ export function createCameraRig(opts?: RigOptions): CameraRig {
 	const state: RigState = { focusX: 0, focusY: 0, distance: options.minDistance, initialized: false };
 
 	return {
-		step: (points: P2[], probeRadius?: number, radii?: number[]): RigFrame => {
-			return computeRigStep(state, points, options, probeRadius, radii);
+		step: (points: P2[], probeRadius?: number, radii?: number[], minDistance?: number): RigFrame => {
+			// S3.17：慢动作特写的下限覆盖。只复制要改的那一个字段（TSTL 对对象展开的支持面窄，
+			// 显式列一遍最稳）；传了更大/非法的值就忽略，日常取景的下限不许被顶下去。
+			let opts = options;
+			if (minDistance !== undefined && minDistance > 0 && minDistance < options.minDistance) {
+				opts = {
+					tiltDeg: options.tiltDeg,
+					minDistance,
+					maxDistance: options.maxDistance,
+					lerp: options.lerp,
+					fovYDeg: options.fovYDeg,
+					aspect: options.aspect,
+					margin: options.margin,
+				};
+			}
+			return computeRigStep(state, points, opts, probeRadius, radii);
 		},
 		// 纯查询：**不改机架状态**地算出"这组关键点需要多远"（取景预算判断用，S3.12）
 		wantDistance: (points: P2[], probeRadius?: number, radii?: number[]): number => {

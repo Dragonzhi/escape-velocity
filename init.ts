@@ -314,6 +314,13 @@ if (levelTotal <= 0) {
 			print('[escape-velocity] brake mode = ' + (on ? 'on' : 'off') + ' (L' + (index + 1).toFixed(0) + ')');
 		});
 		aim.setBrake(game.brakeMode());
+		// 播放倍速 1×/2×/4×（S3.17）：按钮只表达意图，状态在 GameCore.playback 里；
+		// 掠过天体的自动慢动作叠在玩家选的档位上（× 1/4），不经过按钮。
+		aim.onPlayback((speed: number): void => {
+			game.setPlaybackSpeed(speed);
+			print('[escape-velocity] playback speed -> ' + speed.toFixed(0) + 'x (L' + (index + 1).toFixed(0) + ')');
+		});
+		aim.setPlayback(game.playbackSpeed());
 
 			const runtime: LevelRuntime = {
 			index,
@@ -645,6 +652,9 @@ if (levelTotal <= 0) {
 			runtime.aim.setArmed(runtime.game.armed());
 			// 视图也是状态：右下角那颗按钮的文字跟着 core.viewMode 走（别自己翻转局部变量）
 			runtime.aim.setViewMode(runtime.game.viewMode());
+			// 倍速兜底按钮（S3.17）：只在飞行态出现（隐藏 + 断触摸），高亮跟着 core.playback 走
+			runtime.aim.setPlaybackVisible(phaseNow === 'Flying');
+			runtime.aim.setPlayback(runtime.game.playbackSpeed());
 			// 开发钩子的自动发射（见上方 enter-request 说明）
 			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0 || autoArmAt >= 0) {
 				autoFrame += 1;

@@ -10,6 +10,7 @@ local defaultRigOptions = ____CameraRig.defaultRigOptions -- 7
 local ____Config = require("game.Config") -- 8
 local PlaneToWorldX = ____Config.PlaneToWorldX -- 8
 local PlaneToWorldZ = ____Config.PlaneToWorldZ -- 8
+local SlowMoCloseDist = ____Config.SlowMoCloseDist -- 8
 local ____Projection = require("game.Projection") -- 10
 local FLIP_Y = ____Projection.FLIP_Y -- 10
 local HANDEDNESS = ____Projection.HANDEDNESS -- 10
@@ -244,24 +245,105 @@ local function testSmoothing() -- 195
 		("moved=" .. __TS__NumberToFixed(moved, 2)) .. "（应在 0 与 100 之间）" -- 205
 	) -- 205
 end -- 195
-function ____exports.runTests() -- 208
-	testFit() -- 209
-	testDistanceMonotonic() -- 210
-	testClamp() -- 211
-	testTilt() -- 212
-	testSmoothing() -- 213
-	testFraming() -- 214
-	local lines = {} -- 216
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 217
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 218
-	local limit = #failures < 12 and #failures or 12 -- 219
-	do -- 219
-		local i = 0 -- 220
-		while i < limit do -- 220
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 221
-			i = i + 1 -- 220
-		end -- 220
-	end -- 220
-	return table.concat(lines, "\n") -- 223
-end -- 208
-return ____exports -- 208
+--- 7) 慢动作特写的距离下限（S3.17）：step 的第 4 个参数只换夹紧左端，不另写一套取景。
+-- 
+-- 判据：① 同一组关键点 + 逐点半径，传了更小的下限就**真的更近**（贴近被掠过的天体）；
+-- ② 下限只是地板，求解器仍保证全部关键点（含半径）在画面内；③ 日常取景（不传）不受影响。
+local function testSlowMoCloseup() -- 215
+	local opts = defaultRigOptions(45, 601 / 1066) -- 216
+	local pts = {{x = 0, y = 13}, {x = 0, y = 0}} -- 218
+	local radii = {2.13, 4.63} -- 219
+	local wide = createCameraRig(opts).step(pts, 2.13, radii) -- 222
+	local close = createCameraRig(opts).step(pts, 2.13, radii, SlowMoCloseDist) -- 223
+	local function dist(f) -- 224
+		local dx = f.eye.x - f.target.x -- 225
+		local dy = f.eye.y - f.target.y -- 226
+		local dz = f.eye.z - f.target.z -- 227
+		return math.sqrt(dx * dx + dy * dy + dz * dz) -- 228
+	end -- 224
+	check( -- 230
+		"rig-slowmo-closer", -- 230
+		dist(close) < dist(wide) - 20, -- 230
+		((("close=" .. __TS__NumberToFixed( -- 231
+			dist(close), -- 231
+			1 -- 231
+		)) .. " wide=") .. __TS__NumberToFixed( -- 231
+			dist(wide), -- 231
+			1 -- 231
+		)) .. "（贴近被掠过的天体）" -- 231
+	) -- 231
+	check( -- 232
+		"rig-slowmo-floor", -- 232
+		dist(close) >= SlowMoCloseDist * 0.999, -- 232
+		(("dist=" .. __TS__NumberToFixed( -- 233
+			dist(close), -- 233
+			2 -- 233
+		)) .. " floor=") .. tostring(SlowMoCloseDist) -- 233
+	) -- 233
+	local view = { -- 236
+		eye = close.eye, -- 237
+		target = close.target, -- 238
+		up = {x = 0, y = 1, z = 0}, -- 239
+		fovYDeg = opts.fovYDeg, -- 240
+		aspect = opts.aspect, -- 241
+		viewW = 2, -- 242
+		viewH = 2 -- 243
+	} -- 243
+	local basis = prepareCamera(view, HANDEDNESS, FLIP_Y) -- 245
+	local worst = 0 -- 246
+	do -- 246
+		local i = 0 -- 247
+		while i < #pts do -- 247
+			local p = projectPrepared({x = pts[i + 1].x * PlaneToWorldX, y = 0, z = pts[i + 1].y * PlaneToWorldZ}, basis) -- 248
+			if p == nil then -- 248
+				worst = 99 -- 249
+				break -- 249
+			end -- 249
+			local ry = radii[i + 1] / p.vz * basis.focal -- 250
+			local rx = ry / opts.aspect -- 251
+			if math.abs(p.x) + rx > worst then -- 251
+				worst = math.abs(p.x) + rx -- 252
+			end -- 252
+			if math.abs(p.y) + ry > worst then -- 252
+				worst = math.abs(p.y) + ry -- 253
+			end -- 253
+			i = i + 1 -- 247
+		end -- 247
+	end -- 247
+	check( -- 255
+		"rig-slowmo-fits", -- 255
+		worst <= 1 - opts.margin + 0.000001, -- 255
+		(("max|ndc|=" .. __TS__NumberToFixed(worst, 4)) .. " limit=") .. __TS__NumberToFixed(1 - opts.margin, 2) -- 256
+	) -- 256
+	local again = createCameraRig(opts).step(pts, 2.13, radii) -- 259
+	check( -- 260
+		"rig-slowmo-opt-in", -- 260
+		math.abs(dist(again) - opts.minDistance) < 1, -- 260
+		(("dist=" .. __TS__NumberToFixed( -- 261
+			dist(again), -- 261
+			1 -- 261
+		)) .. " 期望夹在 ") .. tostring(opts.minDistance) -- 261
+	) -- 261
+end -- 215
+function ____exports.runTests() -- 264
+	testFit() -- 265
+	testDistanceMonotonic() -- 266
+	testClamp() -- 267
+	testTilt() -- 268
+	testSmoothing() -- 269
+	testFraming() -- 270
+	testSlowMoCloseup() -- 271
+	local lines = {} -- 273
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 274
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 275
+	local limit = #failures < 12 and #failures or 12 -- 276
+	do -- 276
+		local i = 0 -- 277
+		while i < limit do -- 277
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 278
+			i = i + 1 -- 277
+		end -- 277
+	end -- 277
+	return table.concat(lines, "\n") -- 280
+end -- 264
+return ____exports -- 264

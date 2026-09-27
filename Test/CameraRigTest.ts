@@ -5,7 +5,7 @@
  *   const m = requireProjectModule("Test.CameraRigTest"); print(m.runTests())
  */
 import { RigFrame, RigOptions, createCameraRig, computeFit, defaultRigOptions } from 'game/CameraRig';
-import { PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
+import { PlaneToWorldX, PlaneToWorldZ, SlowMoCloseDist } from 'game/Config';
 import { P2 } from 'game/Gravity';
 import { CameraView, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 
@@ -205,6 +205,62 @@ function testSmoothing(): void {
 	check('rig-smoothing-partial', moved > 0.5 && moved < 99, `moved=${moved.toFixed(2)}（应在 0 与 100 之间）`);
 }
 
+
+/**
+ * 7) 慢动作特写的距离下限（S3.17）：step 的第 4 个参数只换夹紧左端，不另写一套取景。
+ *
+ * 判据：① 同一组关键点 + 逐点半径，传了更小的下限就**真的更近**（贴近被掠过的天体）；
+ * ② 下限只是地板，求解器仍保证全部关键点（含半径）在画面内；③ 日常取景（不传）不受影响。
+ */
+function testSlowMoCloseup(): void {
+	const opts = defaultRigOptions(45, 601 / 1066);
+	// L3 掠过瞬间：探测器 (0,13)、木星 (0,0)（阈值 23.2 内），半径 2.13 / 4.63
+	const pts: P2[] = [{ x: 0, y: 13 }, { x: 0, y: 0 }];
+	const radii = [2.13, 4.63];
+	// ⚠️ 宽/近各用一台**全新的 rig**：step 带平滑状态（首帧吸附、之后 lerp），
+	//    同一台 rig 连调两次，第二次只向目标移动 10%（实测 60 → 56.6），比不出"贴近"。
+	const wide = createCameraRig(opts).step(pts, 2.13, radii);
+	const close = createCameraRig(opts).step(pts, 2.13, radii, SlowMoCloseDist);
+	const dist = (f: RigFrame): number => {
+		const dx = f.eye.x - f.target.x;
+		const dy = f.eye.y - f.target.y;
+		const dz = f.eye.z - f.target.z;
+		return Math.sqrt(dx * dx + dy * dy + dz * dz);
+	};
+	check('rig-slowmo-closer', dist(close) < dist(wide) - 20,
+		'close=' + dist(close).toFixed(1) + ' wide=' + dist(wide).toFixed(1) + '（贴近被掠过的天体）');
+	check('rig-slowmo-floor', dist(close) >= SlowMoCloseDist * 0.999,
+		'dist=' + dist(close).toFixed(2) + ' floor=' + SlowMoCloseDist);
+
+	// 关键点仍全部在画面内（逐点半径约束没被绕过）—— overflowOf 只算 pts[0] 的半径，这里逐点算
+	const view: CameraView = {
+		eye: close.eye,
+		target: close.target,
+		up: { x: 0, y: 1, z: 0 },
+		fovYDeg: opts.fovYDeg,
+		aspect: opts.aspect,
+		viewW: 2,
+		viewH: 2,
+	};
+	const basis = prepareCamera(view, HANDEDNESS, FLIP_Y);
+	let worst = 0;
+	for (let i = 0; i < pts.length; i++) {
+		const p = projectPrepared({ x: pts[i].x * PlaneToWorldX, y: 0, z: pts[i].y * PlaneToWorldZ }, basis);
+		if (p === undefined) { worst = 99; break; }
+		const ry = (radii[i] / p.vz) * basis.focal;
+		const rx = ry / opts.aspect;
+		if (Math.abs(p.x) + rx > worst) worst = Math.abs(p.x) + rx;
+		if (Math.abs(p.y) + ry > worst) worst = Math.abs(p.y) + ry;
+	}
+	check('rig-slowmo-fits', worst <= 1 - opts.margin + 1e-6,
+		'max|ndc|=' + worst.toFixed(4) + ' limit=' + (1 - opts.margin).toFixed(2));
+
+	// 不传下限 ⇒ 日常取景仍被 CameraMinDistance 夹住（60），不受慢动作参数影响
+	const again = createCameraRig(opts).step(pts, 2.13, radii);
+	check('rig-slowmo-opt-in', Math.abs(dist(again) - opts.minDistance) < 1,
+		'dist=' + dist(again).toFixed(1) + ' 期望夹在 ' + opts.minDistance);
+}
+
 export function runTests(): string {
 	testFit();
 	testDistanceMonotonic();
@@ -212,6 +268,7 @@ export function runTests(): string {
 	testTilt();
 	testSmoothing();
 	testFraming();
+	testSlowMoCloseup();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');
