@@ -416,6 +416,9 @@ export function createAimInput(
 	};
 	// ---- Δv 读数（S3.9.2b 用户："德塔V的限制没有 UI 的显示，不明不白"）----
 	// 左上角一行字：本次点火要花多少 / 这一关给了多少；拖动时实时更新。
+	// ⚠️ S3.12：太阳的光晕会扫过左上角，纯文字在亮底上几乎看不见（截图实测）⇒ 底下垫一块
+	// **半透明暗板**。UI 是 2D 层、画在 3D 之上，所以垫板是"提高对比度"而不是"遮挡"。
+	createPanel(root, 220, 50, 0x0a0e14, { alpha: 0.45 });
 	const dvLabel = createLabel(root, 'Δv — / —', 30, ResultHintHex);
 	if (dvLabel !== undefined) {
 		dvLabel.position = Vec2(24, viewH - 44);
@@ -462,6 +465,7 @@ export function createAimInput(
 			b.setEnabled(on);
 		}
 		if (dateLabel !== undefined) dateLabel.visible = vis;
+		datePlate.visible = vis;
 	};
 	const makeWarpButton = (text: string, dir: number, x: number): void => {
 		const btn = createButton(root, {
@@ -500,6 +504,9 @@ export function createAimInput(
 	const warpLeftX = viewW - (WarpButtonW * 2 + 8) - 20;
 	makeWarpButton('◀ 回退', -1, warpLeftX);
 	makeWarpButton('加速 ▶', 1, warpLeftX + WarpButtonW + 8);
+	// 日期读数同样垫一块暗板（它横跨到屏幕中部，光晕扫过来时更明显）
+	const datePlate = createPanel(root, 300, 50, 0x0a0e14, { alpha: 0.45 });
+	datePlate.position = Vec2(warpLeftX - 316, viewH - 96 - WarpButtonH + 8);
 	const dateLabel = createLabel(root, '发射日期 —', 30, ResultHintHex);
 	if (dateLabel !== undefined) {
 		// ⚠️ **右对齐到时间流按钮的左边**（不是从左往 24 起排）：601 宽的竖屏下

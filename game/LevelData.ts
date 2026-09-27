@@ -294,7 +294,10 @@ function sun(): Body {
 
 /** 太阳的视觉（亮黄，模型 Sun.glb）。 */
 function sunVisual(): PlanetVisualDef {
-	return { r: 1.0, g: 0.90, b: 0.62, displayRadius: SunRadius, ring: false, model: 'Sun', emissive: { r: 0.95, g: 0.72, b: 0.30 } };
+	// ⚠️ S3.12：太阳现在是**点光源本体**，它自己的表面再也照不到了（光在它内部 ⇒ 表面法线朝外、
+	// 与光的来向相反）⇒ 必须靠 emissive 把自己点亮。原来是 (0.95,0.72,0.30) 的土黄，
+	// 配上光晕之后看起来像一颗**被啃掉一半的暗球**（截图实测），改成过曝的暖白。
+	return { r: 1.0, g: 0.97, b: 0.88, displayRadius: SunRadius, ring: false, model: 'Sun', emissive: { r: 1.0, g: 0.95, b: 0.82 } };
 }
 
 /** 绕日公转的行星（S3.7：圆心 = 太阳 = 原点）。 */

@@ -32,8 +32,8 @@ import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { GoalSpec, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
 import {
-	AimMinSpeed, BrakeShare, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist, IntroDurationSec, PhysicsStep,
-	PredictSteps, TimeWarpStep,
+	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
+	IntroDurationSec, PhysicsStep, PredictSteps, TimeWarpStep,
 } from 'game/Config';
 
 /**
@@ -475,6 +475,70 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		return i;
 	};
 
+	/**
+	 * **锚点天体**：场里 gm 最大、且不绕别的天体转的那个（S3.12）。
+	 *
+	 * L2~L6 是太阳（gm 72000，玩家绕的就是它）；L1 是地球（2600 —— 地月系里玩家绕的是地球，
+	 * 而 L1 场里根本没有太阳）。取景与"空间宏大"都靠它：它必须**完整**在画面内。
+	 */
+	let anchorDef: Body | undefined = undefined;
+	for (const b of level.bodies) {
+		if (b.orbitRadius !== 0) continue;
+		if (anchorDef === undefined || b.gm > anchorDef.gm) anchorDef = b;
+	}
+
+	/** 目标链上下一个**还没掠过**的站（取景用；没有航点或已走完 ⇒ undefined）。 */
+	const nextStationBody = (): Body | undefined => {
+		const wps = goalWaypoints(level.goal);
+		if (wps.length === 0) return undefined;
+		let passed = 0;
+		if (core.flight !== undefined) {
+			const upto = Math.floor(core.flightTime / core.dt);
+			passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, upto, core.flight.velocities).passed;
+		}
+		if (passed >= wps.length) return undefined;
+		return level.bodies[wps[passed].planetIndex];
+	};
+
+	/**
+	 * 取景点与逐点半径（S3.12）：**探测器 + 锚点天体 + 下一站**。
+	 *
+	 * 从前的取景集合是"探测器 + **全部**行星" ⇒ 相机被迫一路拉远（甚至撑到 CameraMaxDistance），
+	 * 画面里什么都小、太阳还会被裁掉一块。用户的原话是：
+	 * 「玩家所面对的其实是轨道的一部分，不是能看到整个轨道」—— 远处还没轮到的行星**允许出画**，
+	 * 想看全景的玩家自己捏合拉远（observeZoom），开场分镜也还给过一次全景。
+	 */
+	const framingPoints = (probe: P2, t: number): { pts: P2[]; radii: number[] } => {
+		// ① 核心：探测器 + 下一站。下一站的半径取 **max(本体半径, 到达容差)** ——
+		//    玩家真正要够的是那个"圈"，圈被画面切掉就没法瞄了。
+		const corePts: P2[] = [probe];
+		const coreRadii: number[] = [deps.scene.probeRadius];
+		const next = nextStationBody();
+		let nextTol = 0;
+		if (next !== undefined) {
+			corePts.push(bodyPositionAt(next, t));
+			const wps = goalWaypoints(level.goal);
+			let passed = 0;
+			if (core.flight !== undefined) {
+				passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, Math.floor(core.flightTime / core.dt), core.flight.velocities).passed;
+			}
+			if (passed < wps.length) nextTol = wps[passed].tolerance;
+			const r = nextTol > next.radius ? nextTol : next.radius;
+			coreRadii.push(r);
+		}
+		// ② 锚点天体（太阳/地球）：**装得下才装**（见 Config.CameraFramingBudget 的取舍说明）
+		if (anchorDef === undefined) return { pts: corePts, radii: coreRadii };
+		const withAnchorPts: P2[] = [probe, bodyPositionAt(anchorDef, t)];
+		const withAnchorRadii: number[] = [deps.scene.probeRadius, anchorDef.radius];
+		for (let i = 1; i < corePts.length; i++) {
+			withAnchorPts.push(corePts[i]);
+			withAnchorRadii.push(coreRadii[i]);
+		}
+		const want = deps.rig.wantDistance(withAnchorPts, deps.scene.probeRadius, withAnchorRadii);
+		if (want <= CameraFramingBudget) return { pts: withAnchorPts, radii: withAnchorRadii };
+		return { pts: corePts, radii: coreRadii };
+	};
+
 	/** 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。 */
 	const goalRingsAt = (t: number, upto?: number): GoalRing[] => {
 		const wps = goalWaypoints(level.goal);
@@ -537,10 +601,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.scene.syncProbe(probePos);
 		if (idlePath !== undefined && idx > 0) deps.scene.faceVelocity(sub(probePos, idlePath.points[idx - 1]));
 
-		const planetPts: P2[] = [];
-		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, tNow));
-
-		let frame = deps.rig.step([probePos, ...planetPts], deps.scene.probeRadius);
+		// 取景（S3.12）：探测器 + 锚点天体（太阳/地球）+ 下一站 —— 远处的行星允许出画
+		const fr = framingPoints(probePos, tNow);
+		let frame = deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii);
 		// 进关镜头（S3.10 三段，用户：「先聚焦飞行器，然后摄像头放大到需要前往的星球」）：
 		// ① 近景贴探测器 → ② 拉远看整条航线 → ③ 推向**下一站行星** → ④ 交还控制权。一拖就跳过（introT 被推到满）。
 		if (introT < IntroDurationSec) {
@@ -675,10 +738,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.scene.faceVelocity(sub(pos, core.flight.points[idx - 1]));
 		}
 
-		const planetPts: P2[] = [];
-		for (const p of deps.scene.planets) planetPts.push(bodyPositionAt(p.def, tWorld));
-
-		const frame = deps.rig.step([pos, ...planetPts], deps.scene.probeRadius);
+		const fr = framingPoints(pos, tWorld);
+		const frame = deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii);
 		deps.rig.apply(deps.camera, frame);
 		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);

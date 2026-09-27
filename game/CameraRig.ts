@@ -85,8 +85,12 @@ export interface CameraRig {
 	 *
 	 * @param points 需要保持在画面内的关键点（探测器、行星、目标）；**约定 points[0] = 探测器**。
 	 * @param probeRadius 探测器模型的外接半径（世界单位）；计入取景，免得天线被画面边缘切掉。
+	 * @param radii 逐个关键点的外接半径（S3.12）：太阳这类大体量天体必须**完整**在画面内 ——
+	 *        只约束中心点会让它压在画面边缘外（截图实测：太阳被裁掉一块）。省略 = 旧行为。
 	 */
-	step(points: P2[], probeRadius?: number): RigFrame;
+	step(points: P2[], probeRadius?: number, radii?: number[]): RigFrame;
+	/** 纯查询：这组关键点需要多远才能全部装下（不改机架状态）。 */
+	wantDistance(points: P2[], probeRadius?: number, radii?: number[]): number;
 	/** 把机架参数写到真实相机。 */
 	apply(camera: Camera3D.Type, frame: RigFrame): void;
 }
@@ -169,6 +173,8 @@ function frameFits(
 	distance: number,
 	probeRadius: number,
 	opts: RigOptions,
+	/** 逐个关键点的**外接半径**（S3.12）；省略 = 只有 points[0] 用 probeRadius（旧行为）。 */
+	radii?: number[],
 ): boolean {
 	const frame = frameAt(centerX, centerY, distance, opts);
 	const view: CameraView = {
@@ -186,7 +192,7 @@ function frameFits(
 	for (let i = 0; i < points.length; i++) {
 		const p = projectPrepared(planeToWorld(points[i], 0), basis);
 		if (p === undefined) return false; // 落在相机后方：这一帧装不下
-		const r = i === 0 ? probeRadius : 0;
+		const r = radii !== undefined && radii[i] !== undefined ? radii[i] : (i === 0 ? probeRadius : 0);
 		const ry = r > 0 ? (r / p.vz) * basis.focal : 0;
 		const rx = ry / opts.aspect;
 		if (Math.abs(p.x) + rx > limit) return false;
@@ -207,17 +213,18 @@ function fitDistance(
 	centerY: number,
 	probeRadius: number,
 	opts: RigOptions,
+	radii?: number[],
 ): number {
 	const lo = opts.minDistance;
 	const hi = opts.maxDistance;
-	if (frameFits(points, centerX, centerY, lo, probeRadius, opts)) return lo;
-	if (!frameFits(points, centerX, centerY, hi, probeRadius, opts)) return hi;
+	if (frameFits(points, centerX, centerY, lo, probeRadius, opts, radii)) return lo;
+	if (!frameFits(points, centerX, centerY, hi, probeRadius, opts, radii)) return hi;
 
 	let a = lo;
 	let b = hi;
 	for (let i = 0; i < 24; i++) {
 		const mid = (a + b) / 2;
-		if (frameFits(points, centerX, centerY, mid, probeRadius, opts)) b = mid; else a = mid;
+		if (frameFits(points, centerX, centerY, mid, probeRadius, opts, radii)) b = mid; else a = mid;
 	}
 	return b;
 }
@@ -232,11 +239,13 @@ export function computeRigStep(
 	points: P2[],
 	opts: RigOptions,
 	probeRadius?: number,
+	/** 逐个关键点的外接半径（S3.12）：太阳这类大体量天体必须完整在画面内，不能压边。 */
+	radii?: number[],
 ): RigFrame {
 	const fit = computeFit(points);
 	const radius = probeRadius !== undefined ? probeRadius : 0;
 
-	const wantDistance = fitDistance(points, fit.centerX, fit.centerY, radius, opts);
+	const wantDistance = fitDistance(points, fit.centerX, fit.centerY, radius, opts, radii);
 
 	if (!state.initialized) {
 		// 首帧直接吸附，避免从原点“飞过去”的镜头运动
@@ -261,8 +270,13 @@ export function createCameraRig(opts?: RigOptions): CameraRig {
 	const state: RigState = { focusX: 0, focusY: 0, distance: options.minDistance, initialized: false };
 
 	return {
-		step: (points: P2[], probeRadius?: number): RigFrame => {
-			return computeRigStep(state, points, options, probeRadius);
+		step: (points: P2[], probeRadius?: number, radii?: number[]): RigFrame => {
+			return computeRigStep(state, points, options, probeRadius, radii);
+		},
+		// 纯查询：**不改机架状态**地算出"这组关键点需要多远"（取景预算判断用，S3.12）
+		wantDistance: (points: P2[], probeRadius?: number, radii?: number[]): number => {
+			const fit = computeFit(points);
+			return fitDistance(points, fit.centerX, fit.centerY, probeRadius !== undefined ? probeRadius : 0, options, radii);
 		},
 		apply: (camera: Camera3D.Type, frame: RigFrame): void => {
 			camera.lookAt(frame.eye, frame.target, Vec3(0, 1, 0));

@@ -33,54 +33,54 @@ end -- 51
 -- 
 -- 关键点通常包含：探测器、所有行星、目标点。
 -- 半对角随“探测器飞离场景中心”单调增长 → 相机单调拉远。
-function ____exports.computeFit(points) -- 117
-	if #points == 0 then -- 117
-		return {centerX = 0, centerY = 0, extent = 0} -- 118
-	end -- 118
-	local minX = points[1].x -- 120
-	local maxX = points[1].x -- 121
-	local minY = points[1].y -- 122
-	local maxY = points[1].y -- 123
-	do -- 123
-		local i = 1 -- 124
-		while i < #points do -- 124
-			local p = points[i + 1] -- 125
-			if p.x < minX then -- 125
-				minX = p.x -- 126
-			end -- 126
-			if p.x > maxX then -- 126
-				maxX = p.x -- 127
-			end -- 127
-			if p.y < minY then -- 127
-				minY = p.y -- 128
-			end -- 128
-			if p.y > maxY then -- 128
-				maxY = p.y -- 129
-			end -- 129
-			i = i + 1 -- 124
-		end -- 124
-	end -- 124
-	local hw = (maxX - minX) / 2 -- 132
-	local hh = (maxY - minY) / 2 -- 133
-	return { -- 134
-		centerX = (minX + maxX) / 2, -- 135
-		centerY = (minY + maxY) / 2, -- 136
-		extent = math.sqrt(hw * hw + hh * hh) -- 137
-	} -- 137
-end -- 117
+function ____exports.computeFit(points) -- 121
+	if #points == 0 then -- 121
+		return {centerX = 0, centerY = 0, extent = 0} -- 122
+	end -- 122
+	local minX = points[1].x -- 124
+	local maxX = points[1].x -- 125
+	local minY = points[1].y -- 126
+	local maxY = points[1].y -- 127
+	do -- 127
+		local i = 1 -- 128
+		while i < #points do -- 128
+			local p = points[i + 1] -- 129
+			if p.x < minX then -- 129
+				minX = p.x -- 130
+			end -- 130
+			if p.x > maxX then -- 130
+				maxX = p.x -- 131
+			end -- 131
+			if p.y < minY then -- 131
+				minY = p.y -- 132
+			end -- 132
+			if p.y > maxY then -- 132
+				maxY = p.y -- 133
+			end -- 133
+			i = i + 1 -- 128
+		end -- 128
+	end -- 128
+	local hw = (maxX - minX) / 2 -- 136
+	local hh = (maxY - minY) / 2 -- 137
+	return { -- 138
+		centerX = (minX + maxX) / 2, -- 139
+		centerY = (minY + maxY) / 2, -- 140
+		extent = math.sqrt(hw * hw + hh * hh) -- 141
+	} -- 141
+end -- 121
 --- 由注视点（平面坐标）与距离构造一帧相机参数（纯计算，不碰引擎相机对象）。
-local function frameAt(centerX, centerY, distance, opts) -- 142
-	local targetWorld = planeToWorld({x = centerX, y = centerY}, 0) -- 143
-	local tilt = opts.tiltDeg * math.pi / 180 -- 144
-	return { -- 145
-		target = targetWorld, -- 146
-		eye = Vec3( -- 147
-			targetWorld.x, -- 148
-			targetWorld.y + math.sin(tilt) * distance, -- 149
-			targetWorld.z + math.cos(tilt) * distance -- 150
-		) -- 150
-	} -- 150
-end -- 142
+local function frameAt(centerX, centerY, distance, opts) -- 146
+	local targetWorld = planeToWorld({x = centerX, y = centerY}, 0) -- 147
+	local tilt = opts.tiltDeg * math.pi / 180 -- 148
+	return { -- 149
+		target = targetWorld, -- 150
+		eye = Vec3( -- 151
+			targetWorld.x, -- 152
+			targetWorld.y + math.sin(tilt) * distance, -- 153
+			targetWorld.z + math.cos(tilt) * distance -- 154
+		) -- 154
+	} -- 154
+end -- 146
 --- 这一组关键点在给定距离下，是否**全部**落在“画面内缩 margin”的安全区内。
 -- 
 -- 投影走 game/Projection.ts（与渲染、预测线同一套已标定公式）。
@@ -89,134 +89,155 @@ end -- 142
 -- 
 -- @param probeRadius points[0]（探测器）的模型外接半径（世界单位）；它是**有体积**的，
 -- 只约束中心点会让碟形天线被边缘切掉。屏幕上多占的 NDC ≈ (r / 深度) × focal。
-local function frameFits(points, centerX, centerY, distance, probeRadius, opts) -- 165
-	local frame = frameAt(centerX, centerY, distance, opts) -- 173
-	local view = { -- 174
-		eye = frame.eye, -- 175
-		target = frame.target, -- 176
-		up = {x = 0, y = 1, z = 0}, -- 177
-		fovYDeg = opts.fovYDeg, -- 178
-		aspect = opts.aspect, -- 179
-		viewW = 2, -- 180
-		viewH = 2 -- 181
-	} -- 181
-	local basis = prepareCamera(view, HANDEDNESS, FLIP_Y) -- 183
-	local limit = 1 - opts.margin -- 184
-	do -- 184
-		local i = 0 -- 186
-		while i < #points do -- 186
-			local p = projectPrepared( -- 187
-				planeToWorld(points[i + 1], 0), -- 187
-				basis -- 187
-			) -- 187
-			if p == nil then -- 187
-				return false -- 188
-			end -- 188
-			local r = i == 0 and probeRadius or 0 -- 189
-			local ry = r > 0 and r / p.vz * basis.focal or 0 -- 190
-			local rx = ry / opts.aspect -- 191
-			if math.abs(p.x) + rx > limit then -- 191
-				return false -- 192
-			end -- 192
-			if math.abs(p.y) + ry > limit then -- 192
-				return false -- 193
-			end -- 193
-			i = i + 1 -- 186
-		end -- 186
-	end -- 186
-	return true -- 195
-end -- 165
+local function frameFits(points, centerX, centerY, distance, probeRadius, opts, radii) -- 169
+	local frame = frameAt(centerX, centerY, distance, opts) -- 179
+	local view = { -- 180
+		eye = frame.eye, -- 181
+		target = frame.target, -- 182
+		up = {x = 0, y = 1, z = 0}, -- 183
+		fovYDeg = opts.fovYDeg, -- 184
+		aspect = opts.aspect, -- 185
+		viewW = 2, -- 186
+		viewH = 2 -- 187
+	} -- 187
+	local basis = prepareCamera(view, HANDEDNESS, FLIP_Y) -- 189
+	local limit = 1 - opts.margin -- 190
+	do -- 190
+		local i = 0 -- 192
+		while i < #points do -- 192
+			local p = projectPrepared( -- 193
+				planeToWorld(points[i + 1], 0), -- 193
+				basis -- 193
+			) -- 193
+			if p == nil then -- 193
+				return false -- 194
+			end -- 194
+			local r = radii ~= nil and radii[i + 1] ~= nil and radii[i + 1] or (i == 0 and probeRadius or 0) -- 195
+			local ry = r > 0 and r / p.vz * basis.focal or 0 -- 196
+			local rx = ry / opts.aspect -- 197
+			if math.abs(p.x) + rx > limit then -- 197
+				return false -- 198
+			end -- 198
+			if math.abs(p.y) + ry > limit then -- 198
+				return false -- 199
+			end -- 199
+			i = i + 1 -- 192
+		end -- 192
+	end -- 192
+	return true -- 201
+end -- 169
 --- 把所有关键点塞进画面所需的最小相机距离。
 -- 
 -- 距离越大画面越广 ⇒ 约束单调，可以二分；每一步只在“确实装得下”时收紧上界，
 -- 所以返回值**一定**满足约束（两个端点都装不下时退化为 maxDistance）。
-local function fitDistance(points, centerX, centerY, probeRadius, opts) -- 204
-	local lo = opts.minDistance -- 211
-	local hi = opts.maxDistance -- 212
-	if frameFits( -- 212
-		points, -- 213
-		centerX, -- 213
-		centerY, -- 213
-		lo, -- 213
-		probeRadius, -- 213
-		opts -- 213
-	) then -- 213
-		return lo -- 213
-	end -- 213
-	if not frameFits( -- 213
-		points, -- 214
-		centerX, -- 214
-		centerY, -- 214
-		hi, -- 214
-		probeRadius, -- 214
-		opts -- 214
-	) then -- 214
-		return hi -- 214
-	end -- 214
-	local a = lo -- 216
-	local b = hi -- 217
-	do -- 217
-		local i = 0 -- 218
-		while i < 24 do -- 218
-			local mid = (a + b) / 2 -- 219
-			if frameFits( -- 219
-				points, -- 220
-				centerX, -- 220
-				centerY, -- 220
-				mid, -- 220
-				probeRadius, -- 220
-				opts -- 220
-			) then -- 220
-				b = mid -- 220
-			else -- 220
-				a = mid -- 220
-			end -- 220
-			i = i + 1 -- 218
-		end -- 218
-	end -- 218
-	return b -- 222
-end -- 204
+local function fitDistance(points, centerX, centerY, probeRadius, opts, radii) -- 210
+	local lo = opts.minDistance -- 218
+	local hi = opts.maxDistance -- 219
+	if frameFits( -- 219
+		points, -- 220
+		centerX, -- 220
+		centerY, -- 220
+		lo, -- 220
+		probeRadius, -- 220
+		opts, -- 220
+		radii -- 220
+	) then -- 220
+		return lo -- 220
+	end -- 220
+	if not frameFits( -- 220
+		points, -- 221
+		centerX, -- 221
+		centerY, -- 221
+		hi, -- 221
+		probeRadius, -- 221
+		opts, -- 221
+		radii -- 221
+	) then -- 221
+		return hi -- 221
+	end -- 221
+	local a = lo -- 223
+	local b = hi -- 224
+	do -- 224
+		local i = 0 -- 225
+		while i < 24 do -- 225
+			local mid = (a + b) / 2 -- 226
+			if frameFits( -- 226
+				points, -- 227
+				centerX, -- 227
+				centerY, -- 227
+				mid, -- 227
+				probeRadius, -- 227
+				opts, -- 227
+				radii -- 227
+			) then -- 227
+				b = mid -- 227
+			else -- 227
+				a = mid -- 227
+			end -- 227
+			i = i + 1 -- 225
+		end -- 225
+	end -- 225
+	return b -- 229
+end -- 210
 --- 纯计算：根据关键点集合，算出这一帧的相机参数。
 -- 
 -- `points` 中应包含探测器、行星与目标；**约定 points[0] = 探测器**（`probeRadius` 只作用于它）。
-function ____exports.computeRigStep(state, points, opts, probeRadius) -- 230
-	local fit = ____exports.computeFit(points) -- 236
-	local radius = probeRadius ~= nil and probeRadius or 0 -- 237
-	local wantDistance = fitDistance( -- 239
-		points, -- 239
-		fit.centerX, -- 239
-		fit.centerY, -- 239
-		radius, -- 239
-		opts -- 239
-	) -- 239
-	if not state.initialized then -- 239
-		state.focusX = fit.centerX -- 243
-		state.focusY = fit.centerY -- 244
-		state.distance = wantDistance -- 245
-		state.initialized = true -- 246
-	else -- 246
-		local k = opts.lerp < 0 and 0 or (opts.lerp > 1 and 1 or opts.lerp) -- 248
-		state.focusX = state.focusX + (fit.centerX - state.focusX) * k -- 249
-		state.focusY = state.focusY + (fit.centerY - state.focusY) * k -- 250
-		state.distance = state.distance + (wantDistance - state.distance) * k -- 251
-	end -- 251
-	return frameAt(state.focusX, state.focusY, state.distance, opts) -- 255
-end -- 230
+function ____exports.computeRigStep(state, points, opts, probeRadius, radii) -- 237
+	local fit = ____exports.computeFit(points) -- 245
+	local radius = probeRadius ~= nil and probeRadius or 0 -- 246
+	local wantDistance = fitDistance( -- 248
+		points, -- 248
+		fit.centerX, -- 248
+		fit.centerY, -- 248
+		radius, -- 248
+		opts, -- 248
+		radii -- 248
+	) -- 248
+	if not state.initialized then -- 248
+		state.focusX = fit.centerX -- 252
+		state.focusY = fit.centerY -- 253
+		state.distance = wantDistance -- 254
+		state.initialized = true -- 255
+	else -- 255
+		local k = opts.lerp < 0 and 0 or (opts.lerp > 1 and 1 or opts.lerp) -- 257
+		state.focusX = state.focusX + (fit.centerX - state.focusX) * k -- 258
+		state.focusY = state.focusY + (fit.centerY - state.focusY) * k -- 259
+		state.distance = state.distance + (wantDistance - state.distance) * k -- 260
+	end -- 260
+	return frameAt(state.focusX, state.focusY, state.distance, opts) -- 264
+end -- 237
 --- 创建一个机架（持有平滑状态）。
-function ____exports.createCameraRig(opts) -- 259
-	local options = opts ~= nil and opts or ____exports.defaultRigOptions() -- 260
-	local state = {focusX = 0, focusY = 0, distance = options.minDistance, initialized = false} -- 261
-	return { -- 263
-		step = function(points, probeRadius) -- 264
-			return ____exports.computeRigStep(state, points, options, probeRadius) -- 265
-		end, -- 264
-		apply = function(camera, frame) -- 267
-			camera:lookAt( -- 268
-				frame.eye, -- 268
-				frame.target, -- 268
-				Vec3(0, 1, 0) -- 268
-			) -- 268
-		end -- 267
-	} -- 267
-end -- 259
-return ____exports -- 259
+function ____exports.createCameraRig(opts) -- 268
+	local options = opts ~= nil and opts or ____exports.defaultRigOptions() -- 269
+	local state = {focusX = 0, focusY = 0, distance = options.minDistance, initialized = false} -- 270
+	return { -- 272
+		step = function(points, probeRadius, radii) -- 273
+			return ____exports.computeRigStep( -- 274
+				state, -- 274
+				points, -- 274
+				options, -- 274
+				probeRadius, -- 274
+				radii -- 274
+			) -- 274
+		end, -- 273
+		wantDistance = function(points, probeRadius, radii) -- 277
+			local fit = ____exports.computeFit(points) -- 278
+			return fitDistance( -- 279
+				points, -- 279
+				fit.centerX, -- 279
+				fit.centerY, -- 279
+				probeRadius ~= nil and probeRadius or 0, -- 279
+				options, -- 279
+				radii -- 279
+			) -- 279
+		end, -- 277
+		apply = function(camera, frame) -- 281
+			camera:lookAt( -- 282
+				frame.eye, -- 282
+				frame.target, -- 282
+				Vec3(0, 1, 0) -- 282
+			) -- 282
+		end -- 281
+	} -- 281
+end -- 268
+return ____exports -- 268

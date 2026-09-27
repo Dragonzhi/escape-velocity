@@ -23,8 +23,13 @@
  * - 星空：一张程序化星图贴在贴着相机的四边形背板上（方案 B，2026-09-25 用户拍板；
  *   每帧由 syncBackdrop 钉到视线前方），见 buildScene 内注释。
  */
-import { Color, Color3, Content, DirectionalLight3D, Model3D, Node3D, Texture2D, Vec3 } from 'Dora';
-import { OrbitRingTintHex, PlaneToWorldX, PlaneToWorldZ } from 'game/Config';
+import {
+	Color, Color3, Content, DirectionalLight3D, MaterialAlphaMode3D, Model3D, Node3D, PointLight3D, Texture2D, Vec3,
+} from 'Dora';
+import {
+	OrbitRingTintHex, PlaneToWorldX, PlaneToWorldZ,
+	SunGlowScale, SunLightIntensity, SunLightRange, SunMinGmForLight,
+} from 'game/Config';
 import { Body, P2, bodyPositionAt } from 'game/Gravity';
 
 /** 平面坐标 → 世界坐标（y 恒为 0，黄道面水平）。 */
@@ -401,17 +406,52 @@ export function createStarBackdrop(root: Node3D.Type): StarBackdrop | undefined 
 export function buildScene(options: SceneOptions): GameScene | undefined {
 	const { root, bodies, visuals, probeStart } = options;
 
-	// ---- 光源：一盏方向光（愿景 §6）----
-	// ⚠️ 晨昏线（2026-09-25 用户反馈“行星没有晨昏线”）：光的**方位角必须与相机视线错开**——
-	// 相机沿 -Z 俯视，若光也大致从 +Z 侧照过来，亮面正对镜头，只剩边缘渐变、看不出明暗界线。
-	// angleY 转到 ~75°（从画面侧面来光）+ 环境光压到 0.12（init.ts），暗面才沉得下去。
-	// 符号/角度按截图标定（教程基准 angleX=-48/angleY=-35 的同族取值）。
-	const light = DirectionalLight3D();
-	light.color = Color3(0xfff3da);
-	light.intensity = 3.6;
-	light.angleX = -42;
-	light.angleY = 75;
-	root.addChild(light);
+	// ---- 恒星（太阳）：它就是光源本身（S3.12）----
+	// 判据：**场里 gm 最大、且不绕别的天体转**的那个天体 = 恒星（L2~L6 是 bodies[0] 的太阳；
+	// L1 是地月系，只有地球 gm 2600 ⇒ 低于 SunMinGmForLight，退回方向光）。
+	// 从前这里无条件是一盏方向光，方位角写死（angleX=-42/angleY=75）——
+	// 于是"太阳在哪"与"光从哪来"毫无关系：行星的明暗交界线不指向太阳，太阳自己也只是
+	// 一颗被照亮的土黄球（用户会话 44 原话："太阳本身不发光"）。
+	let starWorld: Vec3.Type | undefined = undefined;
+	let starRadius = 0;
+	let starGm = 0;
+	for (let i = 0; i < bodies.length; i++) {
+		const b = bodies[i];
+		if (b.orbitRadius !== 0) continue; // 会绕别的天体转的不可能是恒星
+		if (b.gm <= starGm) continue;
+		starGm = b.gm;
+		starRadius = b.radius;
+		starWorld = planeToWorld({ x: b.orbitCenter.x, y: b.orbitCenter.y }, 0);
+	}
+	const hasStar = starWorld !== undefined && starGm >= SunMinGmForLight;
+	const sunTex = hasStar ? Texture2D('Assets/Image/sun_tex.png') : undefined;
+	// ⚠️ **为什么最终还是方向光**（S3.12 实测过一版点光源）：
+	// 把点光源放在太阳中心（几何上唯一正确的位置）之后，光照按距离衰减 ——
+	// 太阳半径 28、行星轨道 55~195，同一盏灯的强度没法同时照亮金星与海王星：
+	// 实测强度 2.4 与 8.0 两档，**外圈行星全部发黑**（截图对比：木星/土星从暖褐变成暗灰）。
+	// 用户要的"发光"是**视觉**上的（原话："太阳本身不发光就算了"），那件事由
+	// ①太阳本体的自发光贴图 + ②朝向相机的光晕面片完成（见 buildSunGlow），
+	// 行星的晨昏线继续由这盏方向光负责（它的方位角是按截图标定的）。
+	{
+		const light = DirectionalLight3D();
+		light.color = Color3(0xfff3da);
+		light.intensity = 3.6;
+		light.angleX = -42;
+		light.angleY = 75;
+		root.addChild(light);
+	}
+	// 恒星索引：它的表面照不到自己（光在球心）⇒ 必须靠自发光贴图把自己点亮
+	let starIndex = -1;
+	if (hasStar) {
+		let best = 0;
+		for (let i = 0; i < bodies.length; i++) {
+			const b = bodies[i];
+			if (b.orbitRadius === 0 && b.gm > best) {
+				best = b.gm;
+				starIndex = i;
+			}
+		}
+	}
 
 	// ---- 行星 ----
 	const planets: PlanetNode[] = [];
@@ -449,6 +489,10 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 			const em = vis.emissive;
 			// ⚠️ Color3 吃的是 0–255 的整数（或 0xRRGGBB），不是 0–1 的浮点（Earth 那处写的是 0x0c1622）
 			if (em !== undefined) mat.emissive = Color3(Math.round(em.r * 255), Math.round(em.g * 255), Math.round(em.b * 255));
+			// ⚠️ 恒星（太阳）还要**贴一张自发光贴图**：实测 Material3D.emissive 只有在配了
+			// 自发光贴图时才看得出来（星空背板就是这么用的）。没有它就只剩一颗**灰球** ——
+			// 而太阳的表面又照不到自己（点光源/方向光的来向都在它背后或内部）。
+			if (i === starIndex && sunTex !== undefined) mat.setEmissiveTexture(sunTex);
 			mi += 1;
 		}
 
@@ -545,6 +589,41 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 	// 素材、亮度旋钮与"每帧钉在视线前方"的理由都收在 createStarBackdrop 里（S3.3 开场复用同一份）。
 	const backdrop = createStarBackdrop(root);
 
+	// ---- 太阳光晕（S3.12）：一张朝向相机的自发光面片 ----
+	// 引擎不做后处理，所以"发光"只能靠**自发光贴图 + 面片**（Assets/Image/glow.png 由
+	// Test/gen_glow.py 生成）。配方与星空背板同源：baseColor 留黑、只吃 emissive；
+	// 区别是这张要**混合**（alphaMode=Blend），否则会是一块黑方块盖住星空。
+	// ⚠️ 只绕 Y 转（"圆筒式"朝向相机）—— 引擎的 Euler 次序没标定过，只转一个轴就不受次序影响；
+	//    俯视造成的 Y 方向压缩用 1/cos(tilt) 在 scale 上补回来（见 syncBackdrop）。
+	let glowNode: Model3D.Type | undefined = undefined;
+	// `StarQuad.gltf` 是单位四边形（±0.5）⇒ scale **就是直径**。
+	// 所以"光晕直径 = SunGlowScale × 恒星直径"要写成 scale = SunGlowScale × 半径 × 2。
+	let glowScale = 0;
+	if (hasStar && starWorld !== undefined) {
+		glowScale = SunGlowScale * starRadius * 2;
+		const glowPath = 'Assets/Model/StarQuad.gltf';
+		if (Content.exist(glowPath)) {
+			const glowModel = Model3D(glowPath);
+			if (glowModel !== undefined) {
+				const glowTex = Texture2D('Assets/Image/glow.png');
+				const gl = glowModel.getMaterial(0);
+				if (gl !== undefined && glowTex !== undefined) {
+					gl.setBaseColorTexture(glowTex);
+					gl.setEmissiveTexture(glowTex);
+					gl.baseColor = Color(0, 0, 0, 255);
+					gl.emissive = Color3(0xc8b898);
+					gl.roughness = 1.0;
+					gl.metallic = 0.0;
+					gl.alphaMode = MaterialAlphaMode3D.Blend;
+				}
+				glowModel.scale = Vec3(glowScale, glowScale, glowScale);
+				glowModel.position = starWorld;
+				root.addChild(glowModel);
+				glowNode = glowModel;
+			}
+		}
+	}
+
 	// ---- 同步函数 ----
 	const syncBodies = (t: number): void => {
 		for (const p of planets) {
@@ -578,6 +657,21 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 	// 每帧把背板钉到「相机视线前方 BackdropDist」处（eye/target 来自机架当前帧；理由见背板注释）
 	const syncBackdrop = (eye: Vec3.Type, target: Vec3.Type): void => {
 		if (backdrop !== undefined) backdrop.sync(eye, target);
+		// 光晕面片：绕 Y 转到"正对相机"，再把俯视压缩补回 Y 方向
+		if (glowNode !== undefined && starWorld !== undefined) {
+			const dx = eye.x - starWorld.x;
+			const dy = eye.y - starWorld.y;
+			const dz = eye.z - starWorld.z;
+			if (Math.abs(dx) > 1e-6 || Math.abs(dz) > 1e-6) {
+				glowNode.angleY = (Math.atan2(dx, dz) * 180) / Math.PI;
+			}
+			// 相机越俯视，世界 Y 在屏幕上被压得越扁 ⇒ 把面片的 Y 拉长补回来（夹在 1~2.2）
+			const flat = Math.sqrt(dy * dy + dz * dz);
+			const tilt = flat > 1e-6 ? Math.atan2(Math.abs(dy), flat) : 0;
+			const c = Math.cos(tilt);
+			const stretch = c > 0.45 ? 1 / c : 2.2;
+			glowNode.scale = Vec3(glowScale, glowScale * stretch, glowScale);
+		}
 	};
 
 	// 初始化到 t=0 的姿态

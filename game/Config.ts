@@ -79,7 +79,7 @@ export const CameraTiltDefault = 45;
  * 否则远端的行星会被夹在画面外（"拉不开、没有宇宙感"的根因之一）。
  */
 export const CameraMinDistance = 60;
-export const CameraMaxDistance = 420;
+export const CameraMaxDistance = 300;
 
 /** 相机跟随的平滑系数（0–1，每帧向目标插值的比例）。 */
 export const CameraLerp = 0.1;
@@ -139,6 +139,34 @@ export const BrakeShare = 0.75;
 
 /** 拖动多远算“满力”（**视图像素**）。 */
 export const AimMaxDragPx = 380;
+
+// ---- 太阳（S3.12 用户："太阳本身不发光就算了，还有点过于小了"）----
+
+/**
+ * 恒星（太阳）的点光源强度与有效范围。
+ *
+ * 从前场景里是一盏**方向光**（angleX/angleY 写死），它的方位与"太阳在哪"无关 ——
+ * 于是行星的明暗交界线不指向太阳，太阳自己也只是一颗被照亮的球（"不发光"）。
+ * 现在：场里 gm 最大且不绕别的天体转的那个天体就是光源本体，位置/光晕/自发光都绑在它身上。
+ */
+/**
+ * 取景预算（S3.12）：把**锚点天体（太阳/地球）**也装进画面所需的最大相机距离。
+ *
+ * 为什么要预算：用户要的是"玩家面对的其实是**轨道的一部分**，不是整个轨道"，
+ * 同时"较远的地方可以看到一个发光的太阳"。两者冲突时这样取舍：
+ * 先保证"探测器 + 下一站（含它那个到达圈）"装得下；锚点天体**装得下才装** ——
+ * 装不下就让它在画外（它的光晕还会从画面边缘扫进来，反而更像"远处一颗恒星"）。
+ * 实测：不设预算时太阳会把取景顶到贴脸（太阳半屏、探测器变成一个小点）。
+ */
+export const CameraFramingBudget = 240;
+
+export const SunLightIntensity = 8.0;
+/** 点光源有效范围：要盖到海王星轨道（195）×2 还留余量。 */
+export const SunLightRange = 1600;
+/** 光晕面片的缩放（× 恒星半径）：太小看不出"发光"，太大会糊住行星。 */
+export const SunGlowScale = 1.7;
+/** 认定"这是一颗恒星"的 gm 下限：L2~L6 的太阳是 72000，L1 的地球只有 2600（L1 不设点光源）。 */
+export const SunMinGmForLight = 10000;
 
 /** 飞行回放速度（模拟秒 / 真实秒）。1 = 实时；2 = 两倍速。 */
 export const FlightPlayback = 2;
