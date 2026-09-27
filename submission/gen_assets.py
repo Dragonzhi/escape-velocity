@@ -155,7 +155,7 @@ def composite_mask(base, mask, color, blur=0.0, glow_gain=1.0):
     return over(base, color, m)
 
 
-def sphere_disc(tex, out_px, lon0=0.0, lat0=0.0, limb=0.42, ss=2):
+def sphere_disc(tex, out_px, lon0=0.0, lat0=0.0, limb=0.42, ss=2, twist=0.0, hot=0.0):
     """把等距柱状贴图映射成一个球面圆盘（正交视图），带边缘变暗。返回 RGBA，尺寸 out_px。"""
     D = int(out_px * ss)
     t = np_of(tex)
@@ -165,8 +165,8 @@ def sphere_disc(tex, out_px, lon0=0.0, lat0=0.0, limb=0.42, ss=2):
     ny = -(yy + 0.5 - D / 2.0) / (D / 2.0)
     r2 = nx * nx + ny * ny
     nz = np.sqrt(np.clip(1.0 - r2, 0.0, None))
-    lon = np.arctan2(nx, np.maximum(nz, 1e-6)) + lon0
     lat = np.arcsin(np.clip(ny, -1.0, 1.0)) * 0.82 + lat0
+    lon = np.arctan2(nx, np.maximum(nz, 1e-6)) + lon0 + twist * lat
     u = (lon / (2.0 * np.pi) + 0.5) % 1.0
     v = np.clip(0.5 - lat / np.pi, 0.0, 1.0)
 
@@ -185,6 +185,9 @@ def sphere_disc(tex, out_px, lon0=0.0, lat0=0.0, limb=0.42, ss=2):
 
     shade = (1.0 - limb * (1.0 - nz ** 0.55))[..., None]
     c = np.clip(c * shade, 0.0, 1.0)
+    if hot > 0.0:   # 自发光天体：中心偏热白，像“在发光”而不是被照亮
+        k = (hot * (nz ** 1.7))[..., None]
+        c = np.clip(c + (np.asarray([1.0, 0.94, 0.80], dtype=np.float32) - c) * k, 0.0, 1.0)
     a = np.clip((1.0 - np.sqrt(r2)) * (D / 2.0), 0.0, 1.0)
     rgba = np.concatenate([c, a[..., None]], axis=2)
     disc = Image.fromarray((rgba * 255.0 + 0.5).astype(np.uint8))
@@ -247,7 +250,7 @@ def probe_sprite(scale=1.0):
 def build_icon():
     S = 1024
     sf = load_rgb(ASSETS / "starfield.png")
-    bg = starfield_panel(S, S, sf, (512, 0, 1024, 512), 2.0, boost=2.1, level=0.010)
+    bg = starfield_panel(S, S, sf, (512, 0, 1024, 512), 2.0, boost=2.0, level=0.030)
     bg = bg * vignette(S, S, 0.62, 2.0)[..., None]
     base = np.clip(bg, 0.0, 1.0).copy()
 
@@ -255,8 +258,8 @@ def build_icon():
     sun_r = 232.0
 
     # 日冕 / 暖色光晕
-    base = screen(base, (255, 148, 56), (radial_mask(S, S, sun_c[0], sun_c[1], 660, 2.8) * 0.62))
-    base = screen(base, (255, 206, 130), (radial_mask(S, S, sun_c[0], sun_c[1], 420, 3.0) * 0.45))
+    base = screen(base, (255, 146, 52), (radial_mask(S, S, sun_c[0], sun_c[1], 680, 2.6) * 0.68))
+    base = screen(base, (255, 204, 126), (radial_mask(S, S, sun_c[0], sun_c[1], 400, 2.6) * 0.55))
 
     # 轨迹虚线（先算好掩膜，稍后连同辉光一起叠在太阳之上）
     arc_r = 348.0
@@ -264,7 +267,8 @@ def build_icon():
                             alpha0=0.40, alpha1=1.0)
 
     # 太阳（贴图取无黑子窗口；外缘补一圈亮边，小尺寸下更“实”）
-    sun = sphere_disc(clean_sun(), int(sun_r * 2), lon0=0.0, lat0=-0.2, limb=0.34)
+    sun = sphere_disc(clean_sun(), int(sun_r * 2), lon0=0.0, lat0=-0.2, limb=0.30,
+                      twist=0.55, hot=0.30)
     base = screen(base, (255, 176, 96), radial_mask(S, S, sun_c[0], sun_c[1], sun_r + 26, 3.2) * 0.5)
     paste_rgba(base, sun, int(sun_c[0] - sun_r), int(sun_c[1] - sun_r))
 
@@ -293,10 +297,10 @@ def build_icon():
 # ---------------------------------------------------------------- 封面（S4.2）
 
 COVER_W, COVER_H = 1080, 1920
-# level-6.png（601x1066）里 HUD 的位置：右上按钮 y<=155，左下 Δv 文本 y<=50，
-# 「发射日期」y<=155，底部引擎工具条 y>=975。裁 152..972 即得到干净画面（无任何 HUD）。
-SHOT_CROP = (0, 152, 601, 972)
-BAND_H = 1474
+# level-6.png（601x1066）里 HUD 的位置（逐行扫出来的）：右上按钮最后一行蓝像素在 y=161，
+# 「发射日期」y<=155，底部引擎工具条第一行亮像素在 y=1016。裁 164..972 即得到无 HUD 的干净画面。
+SHOT_CROP = (0, 164, 601, 972)
+BAND_H = 1452
 
 
 def build_cover(shot_name="level-6.png", crop=SHOT_CROP, band_h=BAND_H):
@@ -376,7 +380,7 @@ def main(argv):
         save_qa(cover, "s4-cover-thumb.png", (270, 480))
     if what == "variants":
         # 候选底图对比（只写到 test-results，不进 submission/）
-        for nm, crop in (("level-1.png", (0, 152, 601, 900)), ("level-4.png", (0, 152, 601, 972)),
+        for nm, crop in (("level-1.png", (0, 164, 601, 900)), ("level-4.png", (0, 164, 601, 972)),
                          ("level-6.png", SHOT_CROP)):
             v = build_cover(nm, crop, int((crop[3] - crop[1]) * COVER_W / 601.0))
             tag = nm.replace("level-", "L").replace(".png", "")
