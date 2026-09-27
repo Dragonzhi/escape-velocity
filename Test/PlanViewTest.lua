@@ -233,36 +233,41 @@ local function testArrivalRingIsRealTolerance() -- 161
 		math.abs(arrivalRingRadius(l1.goal) - l1.goal.tolerance) < 1e-12, -- 164
 		(("ring=" .. tostring(arrivalRingRadius(l1.goal))) .. " tol=") .. tostring(l1.goal.tolerance) -- 164
 	) -- 164
-	check( -- 167
-		"ring-l1-is-not-visual-radius", -- 167
-		math.abs(arrivalRingRadius(l1.goal) - l1.visuals[3].displayRadius) > 0.000001, -- 167
-		(("ring=" .. tostring(arrivalRingRadius(l1.goal))) .. " 视觉半径=") .. tostring(l1.visuals[3].displayRadius) -- 167
-	) -- 167
-	local l6 = getLevel(5) -- 170
-	if l6 ~= nil then -- 170
-		check( -- 172
-			"ring-l6-chain-max", -- 172
-			math.abs(arrivalRingRadius(l6.goal) - 120) < 1e-9, -- 172
-			("ring=" .. tostring(arrivalRingRadius(l6.goal))) .. "（链上最大容差）" -- 172
-		) -- 172
-	end -- 172
+	local ringBefore = arrivalRingRadius(l1.goal) -- 169
+	local savedRadius = l1.visuals[3].displayRadius -- 170
+	l1.visuals[3].displayRadius = savedRadius * 3 + 1 -- 171
+	local ringAfter = arrivalRingRadius(l1.goal) -- 172
+	l1.visuals[3].displayRadius = savedRadius -- 173
+	check( -- 174
+		"ring-l1-ignores-visual-radius", -- 174
+		ringBefore == ringAfter, -- 174
+		((((((("ring=" .. tostring(ringBefore)) .. " -> ") .. tostring(ringAfter)) .. "（视觉半径从 ") .. tostring(savedRadius)) .. " 改成 ") .. tostring(savedRadius * 3 + 1)) .. " 后到达圈必须不变）" -- 174
+	) -- 174
+	local l6 = getLevel(5) -- 177
+	if l6 ~= nil then -- 177
+		check( -- 179
+			"ring-l6-chain-max", -- 179
+			math.abs(arrivalRingRadius(l6.goal) - 120) < 1e-9, -- 179
+			("ring=" .. tostring(arrivalRingRadius(l6.goal))) .. "（链上最大容差）" -- 179
+		) -- 179
+	end -- 179
 end -- 161
-function ____exports.runTests() -- 177
-	testArrivalRingIsRealTolerance() -- 178
-	testMapping() -- 179
-	testPlaneToScreen() -- 180
-	testFitRadius() -- 181
-	local lines = {} -- 183
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 184
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 185
-	local limit = #failures < 12 and #failures or 12 -- 186
-	do -- 186
-		local i = 0 -- 187
-		while i < limit do -- 187
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 188
-			i = i + 1 -- 187
-		end -- 187
-	end -- 187
-	return table.concat(lines, "\n") -- 190
-end -- 177
-return ____exports -- 177
+function ____exports.runTests() -- 184
+	testArrivalRingIsRealTolerance() -- 185
+	testMapping() -- 186
+	testPlaneToScreen() -- 187
+	testFitRadius() -- 188
+	local lines = {} -- 190
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 191
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 192
+	local limit = #failures < 12 and #failures or 12 -- 193
+	do -- 193
+		local i = 0 -- 194
+		while i < limit do -- 194
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 195
+			i = i + 1 -- 194
+		end -- 194
+	end -- 194
+	return table.concat(lines, "\n") -- 197
+end -- 184
+return ____exports -- 184

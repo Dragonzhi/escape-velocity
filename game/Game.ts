@@ -102,6 +102,14 @@ export interface GameLevel {
 	 * 真实尺度下 L1 的绕地周期只有 0.427 秒 —— 1× 时目标每秒转 2.3 圈，玩家来不及瞄。
 	 */
 	aimClockRate?: number;
+	/** 慢动作阈值地板（S5，来自 Tuning）；省略 = Config.SlowMoFloorDist。 */
+	slowMoFloor?: number;
+	/**
+	 * 瞄准力度**下限**（最小点火 Δv，S5，来自 Tuning.aimMin）。
+	 * 省略 = Config.AimMinSpeed（5）。L1 必须给 0.02：它的 Δv 预算总共才 0.35，
+	 * 用全局的 5 会让静止态读数显示 5.0、一出手就飞出地月系。
+	 */
+	aimMin?: number;
 }
 
 /**
@@ -152,10 +160,20 @@ export interface GameCore {
 	slowmoBody: number;
 }
 
+/** 中性瞄准（没拖过时的姿态）：朝目标、力度取这一关的下限。 */
+function neutralAim(minSpeed: number): AimResult {
+	return { velocity: { x: 0, y: -minSpeed }, power: 0, unit: { x: 0, y: -1 } };
+}
+
+/** 这一关的瞄准力度下限（省略 = 全局 AimMinSpeed）。 */
+function levelAimMin(aimMin: number | undefined): number {
+	return aimMin !== undefined && aimMin >= 0 ? aimMin : AimMinSpeed;
+}
+
 export function createCore(dt?: number): GameCore {
 	return {
 		phase: 'Aiming',
-		aim: { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } },
+		aim: neutralAim(AimMinSpeed),
 		flight: undefined,
 		dt: dt !== undefined && dt > 0 ? dt : PhysicsStep,
 		brakeMode: false,
@@ -314,6 +332,29 @@ export function coreHandoffDate(t0: number, clock: number, toT0: boolean): { t0:
  * 太阳半径 28，任何 ≥3 的阈值系数都会让「整个太阳系」落在慢动作阈值里，机制直接失效。
  */
 export function anchorBodyIndex(bodies: Body[]): number {
+	// S5：先找"有别的天体绕着它转"的那个（L1 的地球 —— 月球 host = 地球）。
+	// 它是这一关真正的世界中心：探测器围着它转、取景该以它为主。
+	//
+	// ⚠️ 判据**不能比对象身份**（bodies[j].host === b）：LevelData.scaledPlanets 会为每个天体
+	//    各自拷贝一份宿主链（applyScalesLocal 递归复制 host），于是 moon.host 与 bodies[1]
+	//    是两个不同对象，身份比较永远 false —— 宿主链"看起来断了"，锚点就被挑回太阳，
+	//    取景包围盒被拉到 80 单位宽（实测 target 的 y 被拽到 40，3D 里只剩星空）。
+	//    同一个坑在 PlanView.planFitRadius 踩过一次（2026-09-27）。
+	// ⇒ 用**结构等价**：同 gm、同半径、同轨道半径就认为是同一颗天体。
+	let host = -1;
+	for (let i = 0; i < bodies.length; i++) {
+		const b = bodies[i];
+		let isHost = false;
+		for (let j = 0; j < bodies.length; j++) {
+			const h = bodies[j].host;
+			if (h === undefined) continue;
+			if (h.gm === b.gm && h.radius === b.radius && h.orbitRadius === b.orbitRadius) { isHost = true; break; }
+		}
+		if (!isHost) continue;
+		if (host < 0 || b.gm > bodies[host].gm) host = i;
+	}
+	if (host >= 0) return host;
+	// 没有宿主链（L2~L6）⇒ 退回原口径：不绕转且 gm 最大（太阳）
 	let best = -1;
 	for (let i = 0; i < bodies.length; i++) {
 		const b = bodies[i];
@@ -333,15 +374,19 @@ export function anchorBodyIndex(bodies: Body[]): number {
  *     不排除就是六关全程慢动作。掠过景由取景里的锚点预算负责，不由慢动作负责。
  *
  * @param anchor 锚点天体索引（-1 = 没有锚点）；传 anchorBodyIndex(bodies) 的结果。
+ * @param floor 阈值的地板（世界单位）。**必须按关卡给**：L1 的世界只有 0.6 单位宽，
+ *        用全局的 8 会让"整段飞行 100% 处于慢动作特写"（用户实测「发射后屏幕被探测器占满」）。
+ *        省略 = Config.SlowMoFloorDist（L2–L6 的历史行为）。
  * @returns 触发的天体索引（**最近**的那个）；-1 = 不在任何天体的阈值内。
  */
-export function slowMotionBody(bodies: Body[], probe: P2, t: number, anchor: number): number {
+export function slowMotionBody(bodies: Body[], probe: P2, t: number, anchor: number, floor?: number): number {
+	const floorDist = floor !== undefined && floor > 0 ? floor : SlowMoFloorDist;
 	let best = -1;
 	let bestD = 1e9;
 	for (let i = 0; i < bodies.length; i++) {
 		if (i === anchor) continue;
 		const b = bodies[i];
-		const threshold = Math.max(b.radius * SlowMoRadiusFactor, SlowMoFloorDist);
+		const threshold = Math.max(b.radius * SlowMoRadiusFactor, floorDist);
 		const d = distance(probe, bodyPositionAt(b, t));
 		if (d < threshold && d < bestD) {
 			bestD = d;
@@ -381,7 +426,7 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 	//    真实游戏里 updateFlying 每帧都传 level ⇒ 标志每帧重算，不会留下陈旧值。
 	if (level !== undefined) {
 		const idx = coreProbeIndex(core);
-		core.slowmoBody = slowMotionBody(level.bodies, core.flight.points[idx], core.t0 + core.flightTime, anchorBodyIndex(level.bodies));
+		core.slowmoBody = slowMotionBody(level.bodies, core.flight.points[idx], core.t0 + core.flightTime, anchorBodyIndex(level.bodies), level.slowMoFloor);
 		core.slowmo = core.slowmoBody >= 0;
 	}
 	// 基准（别算错）：默认手动档 2× ⇒ 慢动作期间 2 × 0.25 = 0.5× 实时
@@ -399,7 +444,7 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 }
 
 /** 重试本关：回到 Aiming，清空飞行与结算。 */
-export function coreRetry(core: GameCore): void {
+export function coreRetry(core: GameCore, aimMin?: number): void {
 	core.phase = 'Aiming';
 	// 重试 = 重新规划：回 2D（设计稿第 4 条）
 	core.viewMode = '2D';
@@ -409,7 +454,7 @@ export function coreRetry(core: GameCore): void {
 	core.result = undefined;
 	core.slowmo = false;
 	core.slowmoBody = -1;
-	core.aim = { velocity: { x: 0, y: -AimMinSpeed }, power: 0, unit: { x: 0, y: -1 } };
+	core.aim = neutralAim(levelAimMin(aimMin));
 }
 
 /**
@@ -597,6 +642,13 @@ export interface Game {
 	setPlaybackSpeed: (speed: number) => void;
 	/** 当前手动倍速档（HUD 三颗按钮的高亮同步用；状态是唯一事实来源）。 */
 	playbackSpeed: () => number;
+	/**
+	 * 当前瞄准的 Δv 大小（点火向量的模；静止态 = 力度下限）。
+	 *
+	 * 存在的理由：HUD 的 Δv 读数要**每帧**刷新（用户实测「2D 状态下德塔 V 怎么给的是 0」——
+	 * 旧实现只在拖动回调里更新，静止态永远停在初始值 0）。
+	 */
+	burnNow: () => number;
 	/** 每帧调用一次。 */
 	update: (dt: number) => void;
 }
@@ -659,6 +711,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	// 进关镜头（S3.9）：从"贴着探测器"缓动到"自动取景"（能看见下一站），1.4 秒；一拖就跳过。
 	let introT = IntroDurationSec;
 	let introLogged = false;
+	/** 相机诊断行的打印计数（只打前几帧，别刷屏）。 */
+	let frameLogged = 0;
 
 	// ---- 待机时钟（S3.9.4）----
 	// 用户："飞行器不进行操控的时候会按照时间尺度绕地球转，在操控的时候时间变成超级慢或者干脆暂停。"
@@ -744,12 +798,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	};
 
 	/**
-	 * **锚点天体**：场里 gm 最大、且不绕别的天体转的那个（S3.12）。
+	 * **锚点天体**：这一关的"世界中心"（S3.12；**S5 修订口径**）。
 	 *
-	 * L2~L6 是太阳（gm 72000，玩家绕的就是它）；L1 是地球（2600 —— 地月系里玩家绕的是地球，
-	 * 而 L1 场里根本没有太阳）。取景与"空间宏大"都靠它：它必须**完整**在画面内。
+	 * L2~L6 是太阳（玩家绕的就是它）；L1 是**地球** —— 地月系里玩家绕的是地球。
+	 *
+	 * ⚠️ S5 之前的口径是「不绕转（orbitRadius = 0）且 gm 最大」，归正后它**挑错了**：
+	 *    L1 的太阳 orbitRadius = 0、gm 72000，地球 orbitRadius = 80 ⇒ 锚点变成太阳，
+	 *    取景包围盒被拉到 80 单位宽，地球被压成远处一个点（用户实测「3D 完全看不到地球」）。
+	 *    新口径（见 anchorBodyIndex 的文档）：**有别的天体绕着它转的优先**，其次才是不绕转且 gm 最大。
 	 */
-	// 取景锚点（S3.12 的选取逻辑提成纯函数 anchorBodyIndex：S3.17 的慢动作触发也复用它）
 	const anchorIdx = anchorBodyIndex(level.bodies);
 	const anchorDef: Body | undefined = anchorIdx >= 0 ? level.bodies[anchorIdx] : undefined;
 
@@ -794,8 +851,20 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		}
 		// ② 锚点天体（太阳/地球）：**装得下才装**（见 Config.CameraFramingBudget 的取舍说明）
 		if (anchorDef === undefined) return { pts: corePts, radii: coreRadii };
+		// ⚠️ S5.1：锚点的半径要用**视觉半径**（visuals 里的 displayRadius），不能用物理半径。
+		//    真实尺度下地球物理半径 0.0034、视觉 0.06 —— 差 17 倍。相机只保证"中心点入画"的话，
+		//    地球会被切掉一大块（用户实测 3D 里地球占满屏幕、月球被挤出画面）。
+		//    取景的职责就是"看得见"，所以它必须知道模型实际有多大。
+		let anchorR = anchorDef.radius;
+		for (let i = 0; i < level.bodies.length; i++) {
+			const b = level.bodies[i];
+			if (b.gm === anchorDef.gm && b.radius === anchorDef.radius && b.orbitRadius === anchorDef.orbitRadius) {
+				if (i < deps.visuals.length && deps.visuals[i].displayRadius > anchorR) anchorR = deps.visuals[i].displayRadius;
+				break;
+			}
+		}
 		const withAnchorPts: P2[] = [probe, bodyPositionAt(anchorDef, t)];
-		const withAnchorRadii: number[] = [deps.scene.probeRadius, anchorDef.radius];
+		const withAnchorRadii: number[] = [deps.scene.probeRadius, anchorR];
 		for (let i = 1; i < corePts.length; i++) {
 			withAnchorPts.push(corePts[i]);
 			withAnchorRadii.push(coreRadii[i]);
@@ -882,6 +951,23 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 取景（S3.12）：探测器 + 锚点天体（太阳/地球）+ 下一站 —— 远处的行星允许出画
 		const fr = framingPoints(probePos, tNow);
 		let frame = deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii);
+		// 诊断（S5.1 L1 呈现层验收）：把取景点与相机参数打出来。
+		// 「3D 看不到地球」这类问题，看这几个数就能定位是 target 被拽走还是距离被解太大。
+		if (frameLogged < 6) {
+			frameLogged += 1;
+			const d = Math.sqrt(
+				(frame.eye.x - frame.target.x) * (frame.eye.x - frame.target.x)
+				+ (frame.eye.y - frame.target.y) * (frame.eye.y - frame.target.y)
+				+ (frame.eye.z - frame.target.z) * (frame.eye.z - frame.target.z));
+			const sunD = Math.sqrt(frame.eye.x * frame.eye.x + frame.eye.z * frame.eye.z);
+			print('[escape-velocity][cam] aim pts=' + fr.pts.length
+				+ ' target=(' + frame.target.x.toFixed(3) + ',' + frame.target.y.toFixed(3) + ',' + frame.target.z.toFixed(3) + ')'
+				+ ' eye=(' + frame.eye.x.toFixed(3) + ',' + frame.eye.y.toFixed(3) + ',' + frame.eye.z.toFixed(3) + ')'
+				+ ' dist=' + d.toFixed(4) + ' sunDist=' + sunD.toFixed(3)
+				+ ' probeR=' + deps.scene.probeRadius.toFixed(7)
+				+ ' slowmo=' + (core.slowmo ? 1 : 0)
+				+ ' pts=[' + fr.pts.map((p) => '(' + p.x.toFixed(3) + ',' + p.y.toFixed(3) + ')').join(' ') + ']');
+		}
 		// 进关镜头（S3.10 三段，用户：「先聚焦飞行器，然后摄像头放大到需要前往的星球」）：
 		// ① 近景贴探测器 → ② 拉远看整条航线 → ③ 推向**下一站行星** → ④ 交还控制权。一拖就跳过（introT 被推到满）。
 		if (introT < IntroDurationSec) {
@@ -1104,7 +1190,16 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		let closeDist: number | undefined = undefined;
 		if (core.slowmo && core.slowmoBody >= 0) {
 			const near = level.bodies[core.slowmoBody];
-			fr = { pts: [pos, bodyPositionAt(near, tWorld)], radii: [deps.scene.probeRadius, near.radius] };
+			// S5.1：同 framingPoints —— 特写也要用视觉半径，否则模型被画面切掉
+			let nearR = near.radius;
+			for (let i = 0; i < level.bodies.length; i++) {
+				const b = level.bodies[i];
+				if (b.gm === near.gm && b.radius === near.radius && b.orbitRadius === near.orbitRadius) {
+					if (i < deps.visuals.length && deps.visuals[i].displayRadius > nearR) nearR = deps.visuals[i].displayRadius;
+					break;
+				}
+			}
+			fr = { pts: [pos, bodyPositionAt(near, tWorld)], radii: [deps.scene.probeRadius, nearR] };
 			closeDist = SlowMoCloseDist;
 		} else {
 			fr = framingPoints(pos, tWorld);
@@ -1237,7 +1332,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (core.phase !== 'Result') return;
 			handoffDate(false); // 把日期从 t0 拿回 clock：重试保留玩家挑好的时机
 			aimed = false;      // 重新瞄准：预测线回到"还没瞄过"的状态
-			coreRetry(core);
+			coreRetry(core, level.aimMin);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
 			deps.trajectory.clearGoalRings();
@@ -1265,7 +1360,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 复用 coreRetry 的“清空一切回到 Aiming”：它对相态没有守卫，
 			// 正好当作“重置本关”用（coreRetry 本身不改）。
 			aimed = false;
-			coreRetry(core);
+			coreRetry(core, level.aimMin);
 			// 机架的平滑状态也归零：终章（S3.18）的相机是**绕开机架**直接写到 1000 单位外的，
 			// 不清的话下一关的相机会从 1000 一路 lerp 回日常取景（半秒钟的“Zoom in”）。
 			deps.rig.reset();
@@ -1311,6 +1406,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			print('[escape-velocity] playback speed -> ' + speed.toFixed(0) + 'x (phase=' + core.phase + ')');
 		},
 		playbackSpeed: (): number => core.playback,
+	burnNow: (): number => Math.sqrt(core.aim.velocity.x * core.aim.velocity.x + core.aim.velocity.y * core.aim.velocity.y),
 		// 包一层箭头函数：简写属性会触发 TS100016（见 Hud.ts 同名注释）
 		update: (frameDt: number): void => update(frameDt),
 	};

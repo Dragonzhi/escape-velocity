@@ -49,6 +49,8 @@ interface LevelRuntime {
 	plan: PlanView;
 	/** 这一关有没有"时间流"（= 关卡数据里有 timeWindow）。 */
 	levelHasTimeWindow: boolean;
+	/** 这一关的 Δv 预算（HUD 的 Δv 读数每帧刷新要用；见 game.burnNow） */
+	dvBudget: number;
 	/** 时间流量程（秒）；没有时间轴时为 0。 */
 	dateSpan: number;
 }
@@ -184,6 +186,8 @@ if (levelTotal <= 0) {
 			physicsStep: levelRuntime(index).physicsStep,
 			playback: levelRuntime(index).playback,
 			aimClockRate: levelRuntime(index).aimClockRate,
+			slowMoFloor: levelRuntime(index).slowMoFloor,
+			aimMin: levelRuntime(index).aimMin,
 			maxSteps: def.maxSteps,
 		};
 
@@ -199,8 +203,10 @@ if (levelTotal <= 0) {
 			probeStart: level.probeStart,
 			// S3.14 建模交付：探测器分成**两版**（太阳能板 / RTG 核电池），见 LevelDef.probeVariant。
 			// 每版都是「机体 + 天线」两个文件（引擎拿不到 glTF 子节点 ⇒ 不拆文件就没法转天线）。
-			// scale 2.2：新机体的最长轴是 Z ±0.87（旧单体是 3.227）⇒ 屏幕上的尺寸和以前相当。
-			probeScale: 2.2,
+			// S5.1：scale 来自 Tuning 的每关探测器视觉半径（L1 = 0.0015，别处 2.2）。
+			// 它同时决定模型大小与相机取景用的 probeRadius，写死会让 L1 的探测器
+			// 比月球轨道还大（用户实测「整个屏幕被探测器占满」）。
+			probeScale: levelRuntime(index).probeVisualRadius,
 			spherePath: 'Assets/Model/Sphere.gltf',
 			ringPath: 'Assets/Model/Ring.gltf',
 			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
@@ -236,7 +242,7 @@ if (levelTotal <= 0) {
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
 		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds);
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
-		aim.setBurnInfo(0, def.dvBudget);
+		aim.setBurnInfo(0, def.dvBudget); // 初值；此后由主循环每帧刷新（见 burnNow）
 		// 时间流按钮（S3.9.4）：只有带 timeWindow 的关卡才启用
 		const dateSpan = def.timeWindow !== undefined ? def.timeWindow.span : 0;
 		aim.setDate(0, dateSpan); // 读数在每帧循环里刷新
@@ -358,6 +364,7 @@ if (levelTotal <= 0) {
 			trajectory,
 			plan,
 			levelHasTimeWindow: def.timeWindow !== undefined,
+			dvBudget: def.dvBudget,
 			dateSpan,
 		};
 		slot.built = true;
@@ -696,6 +703,8 @@ if (levelTotal <= 0) {
 		const runtime = activeRuntime();
 		if (runtime !== undefined) {
 			runtime.game.update(App.deltaTime);
+			// Δv 读数：每帧刷新。旧实现只在 onDrag 里更新 ⇒ 静止态永远显示 0（用户实测）。
+			runtime.aim.setBurnInfo(runtime.game.burnNow(), runtime.dvBudget);
 			// 时间流读数：每帧刷新（日期在走，滑杆/按钮本身不存状态）
 			if (runtime.levelHasTimeWindow) {
 				runtime.aim.setDate(runtime.game.dateNow(), runtime.dateSpan);

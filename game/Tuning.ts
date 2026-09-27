@@ -45,6 +45,26 @@ export const PROBE_VISUAL_RADIUS = 0.0015;
  * 取值口径：**让玩家在 3D 里能读出「我在被这颗行星掰弯」**，不是"还原真实比例"。
  * 太阳不放大 —— 用户要的就是「很远的地方一颗很亮的恒星」（见 `docs/L1 指示.excalidraw`）。
  */
+/**
+ * 各天体的视觉半径（世界单位）。
+ *
+ * ⚠️ 单一份表服务六关，但 **L1 的尺度与别处差 130 倍**（别处看 80~2400 单位的日心系，
+ * L1 看 0.6 单位宽的地月系）。同一个 0.025 在 L2–L6 是合理的点，在 L1 只占世界宽度的 4%，
+ * 3D 里几乎看不见（用户实测「3D 状态下完全看不到地球」）。
+ *
+ * ⇒ L1 的地月系用**专用值**：地球 0.06（世界宽度的 10%）、月球 0.02。
+ * 取值只影响看得见的大小，**不参与任何物理判定**。
+ */
+const BODY_VISUAL_L1: { [key: string]: number } = {
+	sun: 0.8,       // 在 L1 里太阳远在 80 单位外，给它一个"亮星"的尺寸就够
+	// 地球 0.03 / 月球 0.012：真实比例里月球轨 = 10 个地球半径，把地球放到 0.06
+	// 会让它占满画面、月球被挤成边角料（实测截图）。0.03 ≈ 月球轨的 15%，
+	// 三个天体（地球 / 月球 / 探测器）能同框且都看得清。
+	earth: 0.03,
+	moon: 0.012,
+	probe: 0.0015,
+};
+
 export const BODY_VISUAL_RADIUS: { [key: string]: number } = {
 	sun: 1.6,
 	venus: 0.03,
@@ -56,9 +76,16 @@ export const BODY_VISUAL_RADIUS: { [key: string]: number } = {
 	neptune: 0.4,
 };
 
-/** 取某个天体的视觉半径；表里没有就退回真实半径（不会静默变成 0）。 */
-export function visualRadius(key: string, trueRadius: number): number {
-	const v = BODY_VISUAL_RADIUS[key];
+/**
+ * 取某个天体的视觉半径。
+ *
+ * @param levelIndex 关卡下标（0 = L1）：L1 用地月系专用表，别处用日心系表。
+ * @param key 天体键（'earth' / 'moon' / ...）
+ * @param trueRadius 真实半径（查不到时的兜底，不会静默变成 0）
+ */
+export function visualRadius(key: string, trueRadius: number, levelIndex?: number): number {
+	const table = levelIndex === 0 ? BODY_VISUAL_L1 : BODY_VISUAL_RADIUS;
+	const v = table[key];
 	return v !== undefined ? v : trueRadius;
 }
 
@@ -132,6 +159,28 @@ export interface LevelRuntime {
 	 *    此后一切照旧按真实时间算。
 	 */
 	aimClockRate: number;
+	/**
+	 * **探测器的视觉半径**（世界单位，S5.1）。
+	 *
+	 * 它同时决定两件事，所以必须按关卡给：
+	 *   ① 3D 模型的 scale（Scene.createProbe 的 opts.scale）；
+	 *   ② 相机取景用的 probeRadius（createProbe 的 radius = bodyRadius × scale × 1.1）。
+	 * 之前 probeScale 是写死的 2.2（旧尺度），S5 之后 L1 的世界只有 0.6 单位宽 ——
+	 * 2.2 的探测器比月球轨道还大，相机要么把它顶满屏幕、要么被它拽着跑
+	 * （用户实测：「发射后视角距离探测器太近了，整个屏幕被探测器占满」）。
+	 *
+	 * L1 取 0.0015（用户 2026-09-27 拍板的可见性下限）；L2–L6 沿用旧的 2.2 ——
+	 * 那几关的世界尺度是 80~2400 单位，等它们的验收轮次再统一归一。
+	 */
+	probeVisualRadius: number;
+	/**
+	 * 慢动作触发阈值的**地板**（世界单位，S5）。
+	 *
+	 * 必须按关卡给：全局的 8 是给"木星 23.2 / 月球 8"那一版尺度调的，而 L1 的世界只有
+	 * **0.6 单位宽** —— 用 8 会让探测器全程都在慢动作特写里（用户实测「发射后视角距探测器太近、
+	 * 整个屏幕被探测器占满」）。L1 取 0.05（= 月球轨 0.2056 的 1/4）：只有真正接近月球才特写。
+	 */
+	slowMoFloor: number;
 }
 
 /**
@@ -145,35 +194,37 @@ export const LEVEL_RUNTIME: LevelRuntime[] = [
 		// 播放倍速：转移飞行 0.40~0.62 秒游戏时间、整段上限 1.2 秒。
 		// ⚠️ 不能取太小：0.05× 会让一段飞行要 40 秒挂钟时间（实测验收脚本 6 秒就等不下去把它腰斩了）。
 		// 0.25× ⇒ 命中约 2 秒、整段最多 4.8 秒，"看得见"与"不拖沓"的平衡点。
+		// cameraMax 3 → 0.9：3 会让"装下整个地月系"的解偏大、地球缩得太小；
+		// 0.9 刚好覆盖月球轨 0.2056 + 容差 0.02 再加余量，地球在画面里是主体。
 		physicsStep: 1 / 2000, maxStepsPerFrame: 16, sampleEvery: 1,
 		playback: 0.25, playbackSpeeds: [0.1, 0.25, 0.5],
-		cameraMin: 0.02, cameraMax: 3, aimMin: 0.02, introCloseDist: 0.6,
-		aimClockRate: 0,
+		cameraMin: 0.02, cameraMax: 1.2, aimMin: 0.02, introCloseDist: 0.6,
+		aimClockRate: 0, slowMoFloor: 0.05, probeVisualRadius: 0.0015,
 	},
 	{ // L2 金星：飞行 6.7 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 8, sampleEvery: 1,
 		playback: 2, playbackSpeeds: [1, 2, 4],
-		cameraMin: 20, cameraMax: 200, aimMin: 0.2, introCloseDist: 26, aimClockRate: 1,
+		cameraMin: 20, cameraMax: 200, aimMin: 0.2, introCloseDist: 26, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L3 木星：飞行 45.8 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 4,
 		playback: 4, playbackSpeeds: [2, 4, 8],
-		cameraMin: 60, cameraMax: 900, aimMin: 0.5, introCloseDist: 60, aimClockRate: 1,
+		cameraMin: 60, cameraMax: 900, aimMin: 0.5, introCloseDist: 60, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L4 土星：飞行 ~101 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 8,
 		playback: 8, playbackSpeeds: [4, 8, 16],
-		cameraMin: 100, cameraMax: 1800, aimMin: 0.5, introCloseDist: 120, aimClockRate: 1,
+		cameraMin: 100, cameraMax: 1800, aimMin: 0.5, introCloseDist: 120, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L5 天王星：飞行 ~269 秒
 		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16,
 		playback: 16, playbackSpeeds: [8, 16, 32],
-		cameraMin: 200, cameraMax: 3600, aimMin: 0.5, introCloseDist: 240, aimClockRate: 1,
+		cameraMin: 200, cameraMax: 3600, aimMin: 0.5, introCloseDist: 240, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L6 海王星：飞行 ~513 秒
 		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16,
 		playback: 16, playbackSpeeds: [8, 16, 32],
-		cameraMin: 300, cameraMax: 5600, aimMin: 0.5, introCloseDist: 400, aimClockRate: 1,
+		cameraMin: 300, cameraMax: 5600, aimMin: 0.5, introCloseDist: 400, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 ];
 

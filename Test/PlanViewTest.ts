@@ -163,9 +163,16 @@ function testArrivalRingIsRealTolerance(): void {
 	if (l1 === undefined) { check('ring-l1', false, 'getLevel(0) undefined'); return; }
 	check('ring-l1-equals-tolerance', Math.abs(arrivalRingRadius(l1.goal) - l1.goal.tolerance) < 1e-12,
 		`ring=${arrivalRingRadius(l1.goal)} tol=${l1.goal.tolerance}`);
-	// L1 的月球视觉半径是 0.012，到达圈是 0.02 —— 两者**必须不等**（相等说明还画着视觉半径）
-	check('ring-l1-is-not-visual-radius', Math.abs(arrivalRingRadius(l1.goal) - l1.visuals[2].displayRadius) > 1e-6,
-		`ring=${arrivalRingRadius(l1.goal)} 视觉半径=${l1.visuals[2].displayRadius}`);
+	// ⚠️ 不能写成"两者必须不相等"：L1 的月球视觉半径（0.02）恰好与到达容差（0.02）同一个数，
+	//    数值相等会让这条断言误判成"画的是视觉半径"。改成**结构性**判据：把视觉半径改掉之后，
+	//    到达圈半径必须**不动** —— 动的就是拿视觉半径当圈了。
+	const ringBefore = arrivalRingRadius(l1.goal);
+	const savedRadius = l1.visuals[2].displayRadius;
+	l1.visuals[2].displayRadius = savedRadius * 3 + 1;
+	const ringAfter = arrivalRingRadius(l1.goal);
+	l1.visuals[2].displayRadius = savedRadius; // 还原，别污染后面的断言
+	check('ring-l1-ignores-visual-radius', ringBefore === ringAfter,
+		`ring=${ringBefore} -> ${ringAfter}（视觉半径从 ${savedRadius} 改成 ${savedRadius * 3 + 1} 后到达圈必须不变）`);
 	// 链式关卡取链上最大容差（L6：J40/S60/U90/N120 ⇒ 120）
 	const l6 = getLevel(5);
 	if (l6 !== undefined) {

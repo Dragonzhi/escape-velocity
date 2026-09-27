@@ -30,6 +30,7 @@ import { Body, P2, bodyPositionAt, distance } from 'game/Gravity';
 import { FlowDotsPerOrbit, flowDotPosition } from 'game/OrbitFlow';
 import { GoalRing, decimate } from 'game/Trajectory';
 import { PlanetVisualDef } from 'game/LevelData';
+import { PROBE_VISUAL_RADIUS } from 'game/Tuning';
 import { colorFromHex } from 'game/Ui';
 
 /** 视图模式：`'2D'` = 规划（线稿示意图），`'3D'` = 观赏（发光太阳、真实比例、掠过被掰弯）。 */
@@ -197,6 +198,12 @@ export interface PlanOptions {
 	sunGmMin: number;
 	/** 探测器图钉半径。 */
 	probePinRadius: number;
+	/**
+	 * 图钉半径的**上限**（像素，S5）。
+	 * 半径改成了 max(固定像素, 真实视觉半径 × scale)，L1 的地球视觉半径 0.06 × scale ≈ 63px，
+	 * 不设上限会让"行星图钉"大过一个按钮，把 2D 图变成卡通画。
+	 */
+	maxPinRadius: number;
 	/** 探测器"此刻速度方向"的小短线长度（像素）。 */
 	probeTickLen: number;
 	/** 预测线颜色（120,200,255，与 3D 预测线同色）。 */
@@ -228,6 +235,7 @@ export function defaultPlanOptions(): PlanOptions {
 		sunPinRadius: 13,
 		sunGmMin: 10000,
 		probePinRadius: 11,
+	maxPinRadius: 26,
 		probeTickLen: 22,
 		predictHex: 0x78c8ff,
 		predictWidth: 2.5,
@@ -396,11 +404,22 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		drawPolyline(trail, trailColor, options.trailWidth);
 		drawPolyline(pred, predictColor, options.predictWidth);
 
-		// ④ 图钉：行星用关卡自己的视觉色（与 3D 里同一颗行星同色），固定像素大小
+		// ④ 图钉：行星用关卡自己的视觉色（与 3D 里同一颗行星同色）。
+		// ⚠️ S5：半径 = max(固定像素, **真实视觉半径 × scale**)。
+		//    只用固定像素的话，L1 的探测器图钉（11px）在 0.2256 视野下 ≈ 0.0105 单位，
+		//    而它真实的视觉半径只有 0.0015 —— 图钉被**放大了 7 倍**，
+		//    "位置感觉不对"就是这么来的（用户 2026-09-27 实测）。
+		//    L2–L6 视野大（半径上百单位），视觉半径 × scale 远小于固定像素 ⇒ 行为不变。
 		for (let i = 0; i < bodies.length; i++) {
 			const b = bodies[i];
 			const s = planeToScreen(bodyPositionAt(b, tWorld), map);
-			const r = b.gm >= options.sunGmMin ? options.sunPinRadius : options.pinRadius;
+			let r = b.gm >= options.sunGmMin ? options.sunPinRadius : options.pinRadius;
+			if (i < visuals.length) {
+				const v = visuals[i];
+				const vr = v.displayRadius > 0 ? v.displayRadius * map.scale : 0;
+				if (vr > r) r = vr;
+				if (r > options.maxPinRadius) r = options.maxPinRadius;
+			}
 			let col = orbitColor;
 			if (i < visuals.length) {
 				const v = visuals[i];
@@ -411,8 +430,11 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 
 		// ⑤ 探测器：亮点 + 一圈细环（一眼分清"我"与行星）+ 速度方向短线
 		const ps = planeToScreen(probe, map);
-		pinDraw.drawDot(Vec2(ps.x, ps.y), options.probePinRadius, probeColor);
-		pinDraw.drawPolygon(circleVerts(ps.x, ps.y, options.probePinRadius + 5, 24), noFill, 1.5, probeColor);
+		let pr = options.probePinRadius;
+		if (PROBE_VISUAL_RADIUS > 0 && PROBE_VISUAL_RADIUS * map.scale > pr) pr = PROBE_VISUAL_RADIUS * map.scale;
+		if (pr > options.maxPinRadius) pr = options.maxPinRadius;
+		pinDraw.drawDot(Vec2(ps.x, ps.y), pr, probeColor);
+		pinDraw.drawPolygon(circleVerts(ps.x, ps.y, pr + 5, 24), noFill, 1.5, probeColor);
 		const vlen = Math.sqrt(probeVel.x * probeVel.x + probeVel.y * probeVel.y);
 		if (vlen > 1e-6) {
 			const dx = probeVel.x / vlen;

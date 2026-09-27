@@ -21,22 +21,22 @@ local trueOrbit = ____Scale.trueOrbit -- 52
 local trueRadius = ____Scale.trueRadius -- 52
 local ____Tuning = require("game.Tuning") -- 54
 local visualRadius = ____Tuning.visualRadius -- 54
-function applyScalesLocal(bodies, gravityScale, orbitScale) -- 615
-	local out = {} -- 616
-	for ____, b in ipairs(bodies) do -- 617
-		out[#out + 1] = { -- 618
-			gm = b.gm * gravityScale, -- 619
-			radius = b.radius, -- 620
-			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 621
-			orbitRadius = b.orbitRadius, -- 622
-			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 623
-			phase0 = b.phase0, -- 624
-			orbitDirection = b.orbitDirection, -- 625
-			host = b.host ~= nil and applyScalesLocal({b.host}, gravityScale, orbitScale)[1] or nil -- 627
-		} -- 627
-	end -- 627
-	return out -- 630
-end -- 630
+function applyScalesLocal(bodies, gravityScale, orbitScale) -- 621
+	local out = {} -- 622
+	for ____, b in ipairs(bodies) do -- 623
+		out[#out + 1] = { -- 624
+			gm = b.gm * gravityScale, -- 625
+			radius = b.radius, -- 626
+			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 627
+			orbitRadius = b.orbitRadius, -- 628
+			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 629
+			phase0 = b.phase0, -- 630
+			orbitDirection = b.orbitDirection, -- 631
+			host = b.host ~= nil and applyScalesLocal({b.host}, gravityScale, orbitScale)[1] or nil -- 633
+		} -- 633
+	end -- 633
+	return out -- 636
+end -- 636
 --- 导出名与旧版一致（外部调用方按这个名字找）。
 function ____exports.bodyVelocityAt(b, t) -- 168
 	if b.orbitPeriod == 0 or b.orbitRadius <= 0 then -- 168
@@ -210,53 +210,53 @@ local function satellite(key, host, orbitRadius, phaseDeg) -- 311
 		host = host -- 321
 	} -- 321
 end -- 311
---- 视觉：`key` 只用来查 Tuning 里的视觉半径，`body.radius` 是查不到时的兜底。
-local function planetVisual(key, body, r, g, b, model, ring) -- 326
-	return { -- 327
-		r = r, -- 327
-		g = g, -- 327
-		b = b, -- 327
-		displayRadius = visualRadius(key, body.radius), -- 327
-		ring = ring, -- 327
-		model = model -- 327
-	} -- 327
-end -- 326
+--- 视觉描述。`levelIndex` 决定用哪张视觉半径表：0 = L1 用地月系专用表（见 Tuning）。
+local function planetVisual(key, body, r, g, b, model, ring, levelIndex) -- 329
+	return { -- 330
+		r = r, -- 330
+		g = g, -- 330
+		b = b, -- 330
+		displayRadius = visualRadius(key, body.radius, levelIndex), -- 330
+		ring = ring, -- 330
+		model = model -- 330
+	} -- 330
+end -- 329
 --- 太阳的视觉（自发光 + 光晕）。
-local function sunVisual() -- 331
-	return { -- 333
-		r = 1, -- 333
-		g = 0.97, -- 333
-		b = 0.88, -- 333
-		displayRadius = visualRadius("sun", SunRadius), -- 333
-		ring = false, -- 333
-		model = "Sun", -- 333
-		emissive = {r = 1, g = 0.95, b = 0.82} -- 333
-	} -- 333
-end -- 331
+local function sunVisual(levelIndex) -- 334
+	return { -- 336
+		r = 1, -- 336
+		g = 0.97, -- 336
+		b = 0.88, -- 336
+		displayRadius = visualRadius("sun", SunRadius, levelIndex), -- 336
+		ring = false, -- 336
+		model = "Sun", -- 336
+		emissive = {r = 1, g = 0.95, b = 0.82} -- 336
+	} -- 336
+end -- 334
 --- 出发轨道半径 = 1 AU（地球轨道）。六关共用 —— L1 的地球就在这里，L2–L6 从这里出发。
-____exports.EarthOrbitRadius = trueOrbit(REAL.earth.au) -- 343
+____exports.EarthOrbitRadius = trueOrbit(REAL.earth.au) -- 346
 --- 该点的日心圆轨速度（30.00 平面单位/秒 —— 全套尺度的速度锚点）。
-____exports.EarthOrbitSpeed = circularSpeed(SunGm, ____exports.EarthOrbitRadius) -- 346
+____exports.EarthOrbitSpeed = circularSpeed(SunGm, ____exports.EarthOrbitRadius) -- 349
 --- 相位表 —— **全部由 `node tools/level-phases.mjs <关号> --dirs 240 --dvs 31 --tmax N` 解出**，不许手填。
 -- 
 -- ⚠️ 同一颗行星在**不同关的相位不同**，这是对的：相位代表"哪一天的太阳系"，
 --    每一关的可行发射窗口本来就不一样。物理量（gm / 半径 / 轨道 / 周期）才是六关共用、不许变的。
 -- 
 -- 每一行后面的注释就是它的出处（工具输出），改数值必须重跑工具。
-local PH = { -- 356
-	venus = 79.6, -- 358
-	jupiter3 = 186.1, -- 363
-	jupiter4 = 184.4, -- 364
-	jupiter5 = 175.6, -- 365
-	jupiter6 = 175.2, -- 366
-	saturn4 = 199.6, -- 368
-	saturn5 = 190.8, -- 369
-	saturn6 = 190.3, -- 370
-	uranus5 = 202.8, -- 372
-	uranus6 = 201.8, -- 373
-	neptune6 = 207.6, -- 375
-	moon = 154.7 -- 383
-} -- 383
+local PH = { -- 359
+	venus = 79.6, -- 361
+	jupiter3 = 186.1, -- 366
+	jupiter4 = 184.4, -- 367
+	jupiter5 = 175.6, -- 368
+	jupiter6 = 175.2, -- 369
+	saturn4 = 199.6, -- 371
+	saturn5 = 190.8, -- 372
+	saturn6 = 190.3, -- 373
+	uranus5 = 202.8, -- 375
+	uranus6 = 201.8, -- 376
+	neptune6 = 207.6, -- 378
+	moon = 154.7 -- 386
+} -- 386
 --- L1：地月系。
 -- 
 -- - 地球是**真天体**：真 gm、真半径，自己在绕日公转（这是"物理统一"的试纸）；
@@ -264,320 +264,322 @@ local PH = { -- 356
 -- - 探测器在**绕地圆轨道**上，半径 0.1 单位（= 18.7 万 km = 月球距离的 49%）：
 --   初始速度 = 地球的公转速度 + 绕地圆轨速度（顺行），所以预测线一上来就是一条弧线；
 -- - 点火目标：抬升到月球轨道 0.2056 做霍曼转移，半程 0.4034 秒。
-local function level1() -- 395
-	local earthOrbit = ____exports.EarthOrbitRadius -- 396
-	local earth = { -- 397
-		gm = EarthGm, -- 398
-		radius = EarthRadius, -- 399
-		orbitCenter = {x = 0, y = 0}, -- 400
-		orbitRadius = earthOrbit, -- 401
-		orbitPeriod = period(earthOrbit, SunGm), -- 402
-		phase0 = deg(90), -- 403
-		orbitDirection = 1 -- 404
-	} -- 404
-	local moon = satellite("moon", earth, MoonOrbitRadius, PH.moon) -- 406
-	local parking = 0.1 -- 407
-	local earthPos = bodyPositionAt(earth, 0) -- 410
-	local earthVel = ____exports.bodyVelocityAt(earth, 0) -- 411
-	local vCirc = circularSpeed(EarthGm, parking) -- 412
-	return { -- 413
-		id = 1, -- 414
-		title = "月球", -- 415
-		probeVariant = "solar", -- 416
-		brief = "月球任务 · 地球轨道：你已经在绕地球飞了 —— 月球也在走。别对着它现在的位置点火，要打提前量。", -- 417
-		probeStart = {x = earthPos.x, y = earthPos.y + parking}, -- 418
-		probeVel0 = {x = earthVel.x - vCirc, y = earthVel.y}, -- 419
-		planets = { -- 420
-			sun(), -- 420
-			earth, -- 420
-			moon -- 420
-		}, -- 420
-		visuals = { -- 421
-			sunVisual(), -- 422
-			planetVisual( -- 423
-				"earth", -- 423
-				earth, -- 423
-				0.42, -- 423
-				0.62, -- 423
-				0.85, -- 423
-				"Planet_Earth", -- 423
-				false -- 423
-			), -- 423
-			planetVisual( -- 424
-				"moon", -- 424
-				moon, -- 424
-				0.56, -- 424
-				0.56, -- 424
-				0.6, -- 424
-				"Moon", -- 424
-				false -- 424
-			) -- 424
-		}, -- 424
-		goal = {kind = "planet", planetIndex = 2, tolerance = 0.02}, -- 427
-		dvBudget = 0.35, -- 428
-		escapeRadius = 400, -- 432
-		maxSteps = 2400, -- 435
-		planCenter = 1 -- 436
-	} -- 436
-end -- 395
+local function level1() -- 398
+	local earthOrbit = ____exports.EarthOrbitRadius -- 399
+	local earth = { -- 400
+		gm = EarthGm, -- 401
+		radius = EarthRadius, -- 402
+		orbitCenter = {x = 0, y = 0}, -- 403
+		orbitRadius = earthOrbit, -- 404
+		orbitPeriod = period(earthOrbit, SunGm), -- 405
+		phase0 = deg(90), -- 406
+		orbitDirection = 1 -- 407
+	} -- 407
+	local moon = satellite("moon", earth, MoonOrbitRadius, PH.moon) -- 409
+	local parking = 0.1 -- 410
+	local earthPos = bodyPositionAt(earth, 0) -- 413
+	local earthVel = ____exports.bodyVelocityAt(earth, 0) -- 414
+	local vCirc = circularSpeed(EarthGm, parking) -- 415
+	return { -- 416
+		id = 1, -- 417
+		title = "月球", -- 418
+		probeVariant = "solar", -- 419
+		brief = "月球任务 · 地球轨道：你已经在绕地球飞了 —— 月球也在走。别对着它现在的位置点火，要打提前量。", -- 420
+		probeStart = {x = earthPos.x, y = earthPos.y + parking}, -- 421
+		probeVel0 = {x = earthVel.x - vCirc, y = earthVel.y}, -- 422
+		planets = { -- 423
+			sun(), -- 423
+			earth, -- 423
+			moon -- 423
+		}, -- 423
+		visuals = { -- 427
+			sunVisual(0), -- 428
+			planetVisual( -- 429
+				"earth", -- 429
+				earth, -- 429
+				0.42, -- 429
+				0.62, -- 429
+				0.85, -- 429
+				"Planet_Earth", -- 429
+				false, -- 429
+				0 -- 429
+			), -- 429
+			planetVisual( -- 430
+				"moon", -- 430
+				moon, -- 430
+				0.56, -- 430
+				0.56, -- 430
+				0.6, -- 430
+				"Moon", -- 430
+				false, -- 430
+				0 -- 430
+			) -- 430
+		}, -- 430
+		goal = {kind = "planet", planetIndex = 2, tolerance = 0.02}, -- 433
+		dvBudget = 0.35, -- 434
+		escapeRadius = 400, -- 438
+		maxSteps = 2400, -- 441
+		planCenter = 1 -- 442
+	} -- 442
+end -- 398
 --- L2–L6 共用的出发状态：1 AU 圆轨道上的一点，顺行（-x），速度 = 该点圆轨速度。
-local function departure() -- 443
-	return {pos = {x = 0, y = ____exports.EarthOrbitRadius}, vel = {x = -____exports.EarthOrbitSpeed, y = 0}} -- 444
-end -- 443
+local function departure() -- 449
+	return {pos = {x = 0, y = ____exports.EarthOrbitRadius}, vel = {x = -____exports.EarthOrbitSpeed, y = 0}} -- 450
+end -- 449
 --- L2 金星：唯一一次**向内**飞（太阳一路加速你，难点是"收"）。
-local function level2() -- 451
-	local venus = orbiter("venus", PH.venus) -- 452
-	local d = departure() -- 453
-	return { -- 454
-		id = 2, -- 455
-		title = "金星", -- 456
-		probeVariant = "solar", -- 457
-		brief = "金星任务 · 1 AU 出发：向内飞，太阳会一路把你拽快。金星在 0.72 AU 的内圈上等着 —— 挑对它经过你航线的那一天。", -- 458
-		probeStart = d.pos, -- 459
-		probeVel0 = d.vel, -- 460
-		planets = { -- 461
-			sun(), -- 461
-			venus -- 461
-		}, -- 461
-		visuals = { -- 462
-			sunVisual(), -- 462
-			planetVisual( -- 462
-				"venus", -- 462
-				venus, -- 462
-				0.9, -- 462
-				0.78, -- 462
-				0.55, -- 462
-				"Planet_Venus", -- 462
-				false -- 462
-			) -- 462
-		}, -- 462
-		goal = {kind = "planet", planetIndex = 1, tolerance = 3}, -- 463
-		dvBudget = 4, -- 464
-		escapeRadius = 3600, -- 465
-		maxSteps = 4000, -- 466
-		timeWindow = {span = 27} -- 467
-	} -- 467
-end -- 451
+local function level2() -- 457
+	local venus = orbiter("venus", PH.venus) -- 458
+	local d = departure() -- 459
+	return { -- 460
+		id = 2, -- 461
+		title = "金星", -- 462
+		probeVariant = "solar", -- 463
+		brief = "金星任务 · 1 AU 出发：向内飞，太阳会一路把你拽快。金星在 0.72 AU 的内圈上等着 —— 挑对它经过你航线的那一天。", -- 464
+		probeStart = d.pos, -- 465
+		probeVel0 = d.vel, -- 466
+		planets = { -- 467
+			sun(), -- 467
+			venus -- 467
+		}, -- 467
+		visuals = { -- 468
+			sunVisual(), -- 468
+			planetVisual( -- 468
+				"venus", -- 468
+				venus, -- 468
+				0.9, -- 468
+				0.78, -- 468
+				0.55, -- 468
+				"Planet_Venus", -- 468
+				false -- 468
+			) -- 468
+		}, -- 468
+		goal = {kind = "planet", planetIndex = 1, tolerance = 3}, -- 469
+		dvBudget = 4, -- 470
+		escapeRadius = 3600, -- 471
+		maxSteps = 4000, -- 472
+		timeWindow = {span = 27} -- 473
+	} -- 473
+end -- 457
 --- L3 木星：第一次真正的行星际飞行，也是本作的"核心瞬间"（被木星掰弯）。
-local function level3() -- 472
-	local jupiter = orbiter("jupiter", PH.jupiter3) -- 473
-	local d = departure() -- 474
-	return { -- 475
-		id = 3, -- 476
-		title = "木星", -- 477
-		probeVariant = "solar", -- 478
-		brief = "木星任务 · 1 AU 出发：5.2 AU 之外，真正的行星际飞行。出发角度要压在木星到达航线的那一天上。", -- 479
-		probeStart = d.pos, -- 480
-		probeVel0 = d.vel, -- 481
-		planets = { -- 482
-			sun(), -- 482
-			jupiter -- 482
-		}, -- 482
-		visuals = { -- 483
-			sunVisual(), -- 483
-			planetVisual( -- 483
-				"jupiter", -- 483
-				jupiter, -- 483
-				0.85, -- 483
-				0.72, -- 483
-				0.5, -- 483
-				"Planet_Jupiter", -- 483
-				false -- 483
-			) -- 483
-		}, -- 483
-		goal = {kind = "planet", planetIndex = 1, tolerance = 25}, -- 484
-		dvBudget = 12, -- 485
-		escapeRadius = 3600, -- 486
-		maxSteps = 20000, -- 487
-		timeWindow = {span = 19} -- 488
-	} -- 488
-end -- 472
+local function level3() -- 478
+	local jupiter = orbiter("jupiter", PH.jupiter3) -- 479
+	local d = departure() -- 480
+	return { -- 481
+		id = 3, -- 482
+		title = "木星", -- 483
+		probeVariant = "solar", -- 484
+		brief = "木星任务 · 1 AU 出发：5.2 AU 之外，真正的行星际飞行。出发角度要压在木星到达航线的那一天上。", -- 485
+		probeStart = d.pos, -- 486
+		probeVel0 = d.vel, -- 487
+		planets = { -- 488
+			sun(), -- 488
+			jupiter -- 488
+		}, -- 488
+		visuals = { -- 489
+			sunVisual(), -- 489
+			planetVisual( -- 489
+				"jupiter", -- 489
+				jupiter, -- 489
+				0.85, -- 489
+				0.72, -- 489
+				0.5, -- 489
+				"Planet_Jupiter", -- 489
+				false -- 489
+			) -- 489
+		}, -- 489
+		goal = {kind = "planet", planetIndex = 1, tolerance = 25}, -- 490
+		dvBudget = 12, -- 491
+		escapeRadius = 3600, -- 492
+		maxSteps = 20000, -- 493
+		timeWindow = {span = 19} -- 494
+	} -- 494
+end -- 478
 --- L4 土星：先掠过木星，再被土星接住（一次点火，两个环都要穿对）。
-local function level4() -- 493
-	local jupiter = orbiter("jupiter", PH.jupiter4) -- 494
-	local saturn = orbiter("saturn", PH.saturn4) -- 495
-	local d = departure() -- 496
-	return { -- 497
-		id = 4, -- 498
-		title = "土星", -- 499
-		probeVariant = "rtg", -- 500
-		brief = "土星任务 · 1 AU 出发：9.5 AU，先穿过木星轨道，再到土星。一次点火，两个环都要穿对。", -- 501
-		probeStart = d.pos, -- 502
-		probeVel0 = d.vel, -- 503
-		planets = { -- 504
-			sun(), -- 504
-			jupiter, -- 504
-			saturn -- 504
-		}, -- 504
-		visuals = { -- 505
-			sunVisual(), -- 506
-			planetVisual( -- 507
-				"jupiter", -- 507
-				jupiter, -- 507
-				0.85, -- 507
-				0.72, -- 507
-				0.5, -- 507
-				"Planet_Jupiter", -- 507
-				false -- 507
-			), -- 507
-			planetVisual( -- 508
-				"saturn", -- 508
-				saturn, -- 508
-				0.75, -- 508
-				0.7, -- 508
-				0.6, -- 508
-				"Planet_Saturn", -- 508
-				true -- 508
-			) -- 508
-		}, -- 508
-		goal = {kind = "planet", planetIndex = 2, tolerance = 45, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 45, label = "土星"}}}, -- 510
-		dvBudget = 14, -- 517
-		escapeRadius = 3600, -- 518
-		maxSteps = 30000, -- 519
-		timeWindow = {span = 18} -- 520
-	} -- 520
-end -- 493
+local function level4() -- 499
+	local jupiter = orbiter("jupiter", PH.jupiter4) -- 500
+	local saturn = orbiter("saturn", PH.saturn4) -- 501
+	local d = departure() -- 502
+	return { -- 503
+		id = 4, -- 504
+		title = "土星", -- 505
+		probeVariant = "rtg", -- 506
+		brief = "土星任务 · 1 AU 出发：9.5 AU，先穿过木星轨道，再到土星。一次点火，两个环都要穿对。", -- 507
+		probeStart = d.pos, -- 508
+		probeVel0 = d.vel, -- 509
+		planets = { -- 510
+			sun(), -- 510
+			jupiter, -- 510
+			saturn -- 510
+		}, -- 510
+		visuals = { -- 511
+			sunVisual(), -- 512
+			planetVisual( -- 513
+				"jupiter", -- 513
+				jupiter, -- 513
+				0.85, -- 513
+				0.72, -- 513
+				0.5, -- 513
+				"Planet_Jupiter", -- 513
+				false -- 513
+			), -- 513
+			planetVisual( -- 514
+				"saturn", -- 514
+				saturn, -- 514
+				0.75, -- 514
+				0.7, -- 514
+				0.6, -- 514
+				"Planet_Saturn", -- 514
+				true -- 514
+			) -- 514
+		}, -- 514
+		goal = {kind = "planet", planetIndex = 2, tolerance = 45, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 45, label = "土星"}}}, -- 516
+		dvBudget = 14, -- 523
+		escapeRadius = 3600, -- 524
+		maxSteps = 30000, -- 525
+		timeWindow = {span = 18} -- 526
+	} -- 526
+end -- 499
 --- L5 天王星：木星、土星两次借力，越飞越远。
-local function level5() -- 525
-	local jupiter = orbiter("jupiter", PH.jupiter5) -- 526
-	local saturn = orbiter("saturn", PH.saturn5) -- 527
-	local uranus = orbiter("uranus", PH.uranus5) -- 528
-	local d = departure() -- 529
-	return { -- 530
-		id = 5, -- 531
-		title = "天王星", -- 532
-		probeVariant = "rtg", -- 533
-		brief = "天王星任务 · 1 AU 出发：19 AU。木星、土星，一路向外 —— 一次点火要串起三个节点。", -- 534
-		probeStart = d.pos, -- 535
-		probeVel0 = d.vel, -- 536
-		planets = { -- 537
-			sun(), -- 537
-			jupiter, -- 537
-			saturn, -- 537
-			uranus -- 537
-		}, -- 537
-		visuals = { -- 538
-			sunVisual(), -- 539
-			planetVisual( -- 540
-				"jupiter", -- 540
-				jupiter, -- 540
-				0.85, -- 540
-				0.72, -- 540
-				0.5, -- 540
-				"Planet_Jupiter", -- 540
-				false -- 540
-			), -- 540
-			planetVisual( -- 541
-				"saturn", -- 541
-				saturn, -- 541
-				0.75, -- 541
-				0.7, -- 541
-				0.6, -- 541
-				"Planet_Saturn", -- 541
-				true -- 541
-			), -- 541
-			planetVisual( -- 542
-				"uranus", -- 542
-				uranus, -- 542
-				0.62, -- 542
-				0.82, -- 542
-				0.86, -- 542
-				"Planet_Uranus", -- 542
-				false -- 542
-			) -- 542
-		}, -- 542
-		goal = {kind = "planet", planetIndex = 3, tolerance = 70, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 55, label = "土星"}, {planetIndex = 3, tolerance = 70, label = "天王星"}}}, -- 544
-		dvBudget = 15, -- 552
-		escapeRadius = 3600, -- 553
-		maxSteps = 40000, -- 554
-		timeWindow = {span = 17.5} -- 555
-	} -- 555
-end -- 525
+local function level5() -- 531
+	local jupiter = orbiter("jupiter", PH.jupiter5) -- 532
+	local saturn = orbiter("saturn", PH.saturn5) -- 533
+	local uranus = orbiter("uranus", PH.uranus5) -- 534
+	local d = departure() -- 535
+	return { -- 536
+		id = 5, -- 537
+		title = "天王星", -- 538
+		probeVariant = "rtg", -- 539
+		brief = "天王星任务 · 1 AU 出发：19 AU。木星、土星，一路向外 —— 一次点火要串起三个节点。", -- 540
+		probeStart = d.pos, -- 541
+		probeVel0 = d.vel, -- 542
+		planets = { -- 543
+			sun(), -- 543
+			jupiter, -- 543
+			saturn, -- 543
+			uranus -- 543
+		}, -- 543
+		visuals = { -- 544
+			sunVisual(), -- 545
+			planetVisual( -- 546
+				"jupiter", -- 546
+				jupiter, -- 546
+				0.85, -- 546
+				0.72, -- 546
+				0.5, -- 546
+				"Planet_Jupiter", -- 546
+				false -- 546
+			), -- 546
+			planetVisual( -- 547
+				"saturn", -- 547
+				saturn, -- 547
+				0.75, -- 547
+				0.7, -- 547
+				0.6, -- 547
+				"Planet_Saturn", -- 547
+				true -- 547
+			), -- 547
+			planetVisual( -- 548
+				"uranus", -- 548
+				uranus, -- 548
+				0.62, -- 548
+				0.82, -- 548
+				0.86, -- 548
+				"Planet_Uranus", -- 548
+				false -- 548
+			) -- 548
+		}, -- 548
+		goal = {kind = "planet", planetIndex = 3, tolerance = 70, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 55, label = "土星"}, {planetIndex = 3, tolerance = 70, label = "天王星"}}}, -- 550
+		dvBudget = 15, -- 558
+		escapeRadius = 3600, -- 559
+		maxSteps = 40000, -- 560
+		timeWindow = {span = 17.5} -- 561
+	} -- 561
+end -- 531
 --- L6 海王星：四颗巨行星连成一条线的那一天，一次点火串到底。
-local function level6() -- 560
-	local jupiter = orbiter("jupiter", PH.jupiter6) -- 561
-	local saturn = orbiter("saturn", PH.saturn6) -- 562
-	local uranus = orbiter("uranus", PH.uranus6) -- 563
-	local neptune = orbiter("neptune", PH.neptune6) -- 564
-	local d = departure() -- 565
-	return { -- 566
-		id = 6, -- 567
-		title = "海王星", -- 568
-		probeVariant = "rtg", -- 569
-		brief = "海王星任务 · 1 AU 出发：30 AU。四颗巨行星排到一条线上的那一天 —— 一次点火串到底。", -- 570
-		probeStart = d.pos, -- 571
-		probeVel0 = d.vel, -- 572
-		planets = { -- 573
-			sun(), -- 573
-			jupiter, -- 573
-			saturn, -- 573
-			uranus, -- 573
-			neptune -- 573
-		}, -- 573
-		visuals = { -- 574
-			sunVisual(), -- 575
-			planetVisual( -- 576
-				"jupiter", -- 576
-				jupiter, -- 576
-				0.85, -- 576
-				0.72, -- 576
-				0.5, -- 576
-				"Planet_Jupiter", -- 576
-				false -- 576
-			), -- 576
-			planetVisual( -- 577
-				"saturn", -- 577
-				saturn, -- 577
-				0.75, -- 577
-				0.7, -- 577
-				0.6, -- 577
-				"Planet_Saturn", -- 577
-				true -- 577
-			), -- 577
-			planetVisual( -- 578
-				"uranus", -- 578
-				uranus, -- 578
-				0.62, -- 578
-				0.82, -- 578
-				0.86, -- 578
-				"Planet_Uranus", -- 578
-				false -- 578
-			), -- 578
-			planetVisual( -- 579
-				"neptune", -- 579
-				neptune, -- 579
-				0.34, -- 579
-				0.5, -- 579
-				0.86, -- 579
-				"Planet_Neptune", -- 579
-				false -- 579
-			) -- 579
+local function level6() -- 566
+	local jupiter = orbiter("jupiter", PH.jupiter6) -- 567
+	local saturn = orbiter("saturn", PH.saturn6) -- 568
+	local uranus = orbiter("uranus", PH.uranus6) -- 569
+	local neptune = orbiter("neptune", PH.neptune6) -- 570
+	local d = departure() -- 571
+	return { -- 572
+		id = 6, -- 573
+		title = "海王星", -- 574
+		probeVariant = "rtg", -- 575
+		brief = "海王星任务 · 1 AU 出发：30 AU。四颗巨行星排到一条线上的那一天 —— 一次点火串到底。", -- 576
+		probeStart = d.pos, -- 577
+		probeVel0 = d.vel, -- 578
+		planets = { -- 579
+			sun(), -- 579
+			jupiter, -- 579
+			saturn, -- 579
+			uranus, -- 579
+			neptune -- 579
 		}, -- 579
-		goal = {kind = "planet", planetIndex = 4, tolerance = 120, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 60, label = "土星"}, {planetIndex = 3, tolerance = 90, label = "天王星"}, {planetIndex = 4, tolerance = 120, label = "海王星"}}}, -- 581
-		dvBudget = 16, -- 590
-		escapeRadius = 3600, -- 591
-		maxSteps = 70000, -- 592
-		timeWindow = {span = 17.5} -- 593
-	} -- 593
-end -- 560
-local LEVELS = { -- 597
-	level1(), -- 597
-	level2(), -- 597
-	level3(), -- 597
-	level4(), -- 597
-	level5(), -- 597
-	level6() -- 597
-} -- 597
+		visuals = { -- 580
+			sunVisual(), -- 581
+			planetVisual( -- 582
+				"jupiter", -- 582
+				jupiter, -- 582
+				0.85, -- 582
+				0.72, -- 582
+				0.5, -- 582
+				"Planet_Jupiter", -- 582
+				false -- 582
+			), -- 582
+			planetVisual( -- 583
+				"saturn", -- 583
+				saturn, -- 583
+				0.75, -- 583
+				0.7, -- 583
+				0.6, -- 583
+				"Planet_Saturn", -- 583
+				true -- 583
+			), -- 583
+			planetVisual( -- 584
+				"uranus", -- 584
+				uranus, -- 584
+				0.62, -- 584
+				0.82, -- 584
+				0.86, -- 584
+				"Planet_Uranus", -- 584
+				false -- 584
+			), -- 584
+			planetVisual( -- 585
+				"neptune", -- 585
+				neptune, -- 585
+				0.34, -- 585
+				0.5, -- 585
+				0.86, -- 585
+				"Planet_Neptune", -- 585
+				false -- 585
+			) -- 585
+		}, -- 585
+		goal = {kind = "planet", planetIndex = 4, tolerance = 120, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 60, label = "土星"}, {planetIndex = 3, tolerance = 90, label = "天王星"}, {planetIndex = 4, tolerance = 120, label = "海王星"}}}, -- 587
+		dvBudget = 16, -- 596
+		escapeRadius = 3600, -- 597
+		maxSteps = 70000, -- 598
+		timeWindow = {span = 17.5} -- 599
+	} -- 599
+end -- 566
+local LEVELS = { -- 603
+	level1(), -- 603
+	level2(), -- 603
+	level3(), -- 603
+	level4(), -- 603
+	level5(), -- 603
+	level6() -- 603
+} -- 603
 --- 关卡总数。
-function ____exports.levelCount() -- 600
-	return #LEVELS -- 601
-end -- 600
+function ____exports.levelCount() -- 606
+	return #LEVELS -- 607
+end -- 606
 --- 取第 index 关（0 起）。越界返回 undefined。
-function ____exports.getLevel(index) -- 605
-	return LEVELS[index + 1] -- 606
-end -- 605
+function ____exports.getLevel(index) -- 611
+	return LEVELS[index + 1] -- 612
+end -- 611
 --- 应用全局倍率，返回可直接喂给 createGame 的行星数组。不修改关卡原始数据。
-function ____exports.scaledPlanets(level) -- 610
-	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 611
-end -- 610
-return ____exports -- 610
+function ____exports.scaledPlanets(level) -- 616
+	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 617
+end -- 616
+return ____exports -- 616

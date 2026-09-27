@@ -780,7 +780,12 @@ export function createAimInput(
 		},
 		isDragging: (): boolean => dragging,
 		setBurnInfo: (burn: number, budget: number): void => {
-			setLabelText(dvLabel, 'Δv ' + burn.toFixed(1) + ' / ' + budget.toFixed(0));
+			// ⚠️ 预算 < 1 时必须用 2 位小数：L1 的 Δv 预算是 0.35，
+			//    toFixed(0) 会把它打成 0，和 burn 的 0 撞在一起，看起来像"这一关没给预算"
+			//    （用户 2026-09-27 实测：「2D 状态下，德塔 V 怎么给的是 0」）。
+			const b = budget < 1 ? budget.toFixed(2) : budget.toFixed(0);
+			const v = burn < 1 ? burn.toFixed(2) : burn.toFixed(1);
+			setLabelText(dvLabel, 'Δv ' + v + ' / ' + b);
 		},
 		current: (): AimResult => aim,
 		setProbeOffset: (offset: ScreenOffset): void => {

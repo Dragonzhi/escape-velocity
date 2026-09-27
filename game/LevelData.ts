@@ -323,14 +323,17 @@ function satellite(key: string, host: Body, orbitRadius: number, phaseDeg: numbe
 }
 
 /** 视觉：`key` 只用来查 Tuning 里的视觉半径，`body.radius` 是查不到时的兜底。 */
-function planetVisual(key: string, body: Body, r: number, g: number, b: number, model: string, ring: boolean): PlanetVisualDef {
-	return { r, g, b, displayRadius: visualRadius(key, body.radius), ring, model };
+/**
+ * 视觉描述。`levelIndex` 决定用哪张视觉半径表：0 = L1 用地月系专用表（见 Tuning）。
+ */
+function planetVisual(key: string, body: Body, r: number, g: number, b: number, model: string, ring: boolean, levelIndex?: number): PlanetVisualDef {
+	return { r, g, b, displayRadius: visualRadius(key, body.radius, levelIndex), ring, model };
 }
 
 /** 太阳的视觉（自发光 + 光晕）。 */
-function sunVisual(): PlanetVisualDef {
+function sunVisual(levelIndex?: number): PlanetVisualDef {
 	// ⚠️ S3.12：太阳自己照不到自己（光在它内部、表面法线朝外）⇒ 必须靠 emissive 把自己点亮。
-	return { r: 1.0, g: 0.97, b: 0.88, displayRadius: visualRadius('sun', SunRadius), ring: false, model: 'Sun', emissive: { r: 1.0, g: 0.95, b: 0.82 } };
+	return { r: 1.0, g: 0.97, b: 0.88, displayRadius: visualRadius('sun', SunRadius, levelIndex), ring: false, model: 'Sun', emissive: { r: 1.0, g: 0.95, b: 0.82 } };
 }
 
 // ---------------------------------------------------------------------------
@@ -418,10 +421,13 @@ function level1(): LevelDef {
 		probeStart: { x: earthPos.x, y: earthPos.y + parking },
 		probeVel0: { x: earthVel.x - vCirc, y: earthVel.y },
 		planets: [sun(), earth, moon],
+		// ⚠️ 第三参 0 = 用地月系专用视觉半径表（地球 0.06 / 月球 0.02 / 太阳 0.8）。
+		//    别关传 undefined 用日心系表 —— L1 的世界只有 0.6 单位宽，
+		//    日心系的 0.025 在这里只占 4%，3D 里就是看不见（用户实测）。
 		visuals: [
-			sunVisual(),
-			planetVisual('earth', earth, 0.42, 0.62, 0.85, 'Planet_Earth', false),
-			planetVisual('moon', moon, 0.56, 0.56, 0.60, 'Moon', false),
+			sunVisual(0),
+			planetVisual('earth', earth, 0.42, 0.62, 0.85, 'Planet_Earth', false, 0),
+			planetVisual('moon', moon, 0.56, 0.56, 0.60, 'Moon', false, 0),
 		],
 		// 到达容差 0.02 = 月球物理半径的 21 倍，也是 2D 到达圈的半径（唯一判据）。
 		goal: { kind: 'planet', planetIndex: 2, tolerance: 0.02 },

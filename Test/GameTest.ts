@@ -377,7 +377,20 @@ function testSlowMotion(): void {
 		{ gm: 0, radius: 4.63, orbitCenter: { x: 0, y: 0 }, orbitRadius: 60, orbitPeriod: 600, phase0: 0, orbitDirection: 1 },
 	];
 	const anchor = anchorBodyIndex(bodies);
-	check('slowmo-anchor-sun', anchor === 0, 'anchor=' + anchor + '（应是不绕别人转的太阳）');
+	check('slowmo-anchor-sun', anchor === 0, 'anchor=' + anchor + '（没有 host 链 ⇒ 不绕转且 gm 最大的太阳）');
+	// S5 口径：有 host 链时，**宿主**才是锚点（L1 的地球）。归正前只认 orbitRadius=0，
+	// 结果 L1 的锚点被挑成太阳（gm 72000、不绕转），取景被拉到 80 单位宽，地球看不见。
+	const hostChain: Body[] = [
+		bodies[0],   // 太阳：orbitRadius 0、gm 72000（旧口径会挑中它）
+		{ gm: 2162, radius: 0.0034, orbitCenter: { x: 0, y: 0 }, orbitRadius: 80, orbitPeriod: 16.755, phase0: Math.PI / 2, orbitDirection: 1 },
+		{ gm: 2.66, radius: 0.00093, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0.2056, orbitPeriod: 1.2593, phase0: 0, orbitDirection: 1, host: undefined },
+	];
+	// 手搭 host 链：让第 2 个（月球）指向第 1 个（地球）
+	(hostChain[2] as { host?: Body }).host = hostChain[1];
+	check('anchor-prefers-host', anchorBodyIndex(hostChain) === 1,
+		'anchor=' + anchorBodyIndex(hostChain) + '（L1：月球 host = 地球 ⇒ 锚点必须是地球，不能是太阳）');
+	check('anchor-host-beats-sun', anchorBodyIndex(hostChain) !== 0,
+		'锚点不能是太阳（太阳 gm 更大但不在宿主链上）');
 
 	// 阈值 = max(4.63 × 5, 8) = 23.15
 	const threshold = Math.max(4.63 * SlowMoRadiusFactor, SlowMoFloorDist);
