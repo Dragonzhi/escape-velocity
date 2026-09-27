@@ -856,8 +856,14 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// ⚠️ 0 = **冻结**（不是"回退成 1"）：L1 是教学关，开局状态必须完全确定，
 			//    否则"进关那几十帧"就足以让探测器自己转掉十几度（实测 0.017 秒 = 14°），
 			//    而且玩家没有任何读数可以据此瞄准。
-			clock += dt * (level.aimClockRate !== undefined && level.aimClockRate >= 0 ? level.aimClockRate : 1);
-			orbitClock += dt;
+			// ⚠️ **两个时钟必须用同一个速率**（S5 踩过）：`clock` 管日期与行星，
+			//    `orbitClock` 管**待机动画**（探测器沿自己的轨道飞）。只冻住前者的话，
+			//    探测器会在你瞄准的这几帧里照样飞走 —— 实测冻结后发射点仍是 (−18.93, 77.63)
+			//    （= 探测器日心轨道上 0.64 秒后的位置），而 probeStart 是 (0, 80.10)，
+			//    于是"Node 侧算得出解、引擎里却 missed"。
+			const aimRate = level.aimClockRate !== undefined && level.aimClockRate >= 0 ? level.aimClockRate : 1;
+			clock += dt * aimRate;
+			orbitClock += dt * aimRate;
 		}
 		const idx = idleIndex();
 		probePos = idlePath !== undefined ? idlePath.points[idx] : level.probeStart;
