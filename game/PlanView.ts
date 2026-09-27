@@ -3,7 +3,9 @@
  *
  * 设计稿（docs/关卡舞台表.md 第二节第 3 条）：**2D 线稿示意图 = 规划；3D = 观赏与回报**。
  * 本模块只负责 2D 那一半，而且是**简化版**（第 10 条押注口径）：轨道圈 + 图钉 + 预测线 + 到达圈。
- * 流动光点、标注文字、时间轴提示都是砍线项，不在本模块里。
+ * **沿轨道流动的光点**（S3.16，设计稿第二节第 5 条）也画在这里：方向 = orbitDirection、
+ * 快慢 ∝ 角速度 ω = 2π/orbitPeriod，位置由 tWorld 解析求出（数学在 game/OrbitFlow.ts，
+ * 3D 那一半在 game/Scene.ts）。标注文字与时间轴提示仍是砍线项，不在本模块里。
  *
  * ===== 三条硬约束（照做，别自作主张）=====
  *
@@ -25,6 +27,7 @@
  */
 import { Color, DrawNode, Node, Vec2 } from 'Dora';
 import { Body, P2, bodyPositionAt } from 'game/Gravity';
+import { FlowDotsPerOrbit, flowDotPosition } from 'game/OrbitFlow';
 import { GoalRing, decimate } from 'game/Trajectory';
 import { PlanetVisualDef } from 'game/LevelData';
 import { colorFromHex } from 'game/Ui';
@@ -139,6 +142,10 @@ export interface PlanOptions {
 	/** 尾迹颜色（255,236,170）。 */
 	trailHex: number;
 	trailWidth: number;
+	/** 沿轨道流动的光点（S3.16）半径（**固定像素**：不随地图缩放，与图钉同一口径）。 */
+	flowDotRadius: number;
+	/** 光点颜色（0xRRGGBB）：暖白，和行星图钉/尾迹区分开 —— 一眼认出"这是光不是天体"。 */
+	flowDotHex: number;
 	/** 探测器图钉的颜色（近白）。 */
 	probeHex: number;
 }
@@ -162,6 +169,8 @@ export function defaultPlanOptions(): PlanOptions {
 		polylineMaxPoints: 240,
 		trailHex: 0xffecaa,
 		trailWidth: 3.5,
+		flowDotRadius: 3.5,
+		flowDotHex: 0xfff0cf,
 		probeHex: 0xeaf4ff,
 	};
 }
@@ -213,13 +222,15 @@ export interface PlanView {
 export function createPlanView(layer: Node.Type, viewW: number, viewH: number, opts?: PlanOptions): PlanView {
 	const options = opts !== undefined ? opts : defaultPlanOptions();
 
-	// 四层 DrawNode，自下而上：轨道 → 到达圈 → 轨迹 → 图钉
+	// 五层 DrawNode，自下而上：轨道 → 光点 → 到达圈 → 轨迹 → 图钉
 	const root = Node();
 	const orbitDraw = DrawNode();
+	const dotDraw = DrawNode();
 	const ringDraw = DrawNode();
 	const pathDraw = DrawNode();
 	const pinDraw = DrawNode();
 	root.addChild(orbitDraw);
+	root.addChild(dotDraw);
 	root.addChild(ringDraw);
 	root.addChild(pathDraw);
 	root.addChild(pinDraw);
@@ -230,6 +241,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	const predictColor = colorFromHex(options.predictHex, 1);
 	const trailColor = colorFromHex(options.trailHex, 1);
 	const probeColor = colorFromHex(options.probeHex, 1);
+	const flowDotColor = colorFromHex(options.flowDotHex, 1);
 	/** 只描边不填充：`drawPolygon` 的填充用全透明色（与 Ui.createPanel 的手法一致）。 */
 	const noFill = colorFromHex(0x000000, 0);
 
@@ -249,6 +261,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 
 	const clearAll = (): void => {
 		orbitDraw.clear();
+		dotDraw.clear();
 		ringDraw.clear();
 		pathDraw.clear();
 		pinDraw.clear();
@@ -290,6 +303,20 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			const rPx = b.orbitRadius * map.scale;
 			if (rPx < 1) continue;
 			orbitDraw.drawPolygon(circleVerts(s.x, s.y, rPx, options.orbitSegments), noFill, options.orbitWidth, orbitColor);
+		}
+
+		// ①b 沿轨道流动的光点（S3.16）：第 k 个光点的角 = 行星此刻的角 + k·2π/N
+		// ⇒ 整条链以角速度 ω 公转：方向 = orbitDirection（字段，不写死），快慢 ∝ 2π/orbitPeriod
+		// （内圈快、外圈慢 = 开普勒的视觉效果）。位置只由 tWorld 解析求出（ OrbitFlow.ts ），
+		// 所以拨发射日期时行星与光点一起动；静止天体（orbitPeriod = 0）没有可流动的轨道。
+		for (const b of bodies) {
+			if (b.orbitRadius <= 0 || b.orbitPeriod === 0) continue;
+			const rPx = b.orbitRadius * map.scale;
+			if (rPx < 1) continue;
+			for (let k = 0; k < FlowDotsPerOrbit; k++) {
+				const s = planeToScreen(flowDotPosition(b, tWorld, k, FlowDotsPerOrbit), map);
+				dotDraw.drawDot(Vec2(s.x, s.y), options.flowDotRadius, flowDotColor);
+			}
 		}
 
 		// ② 到达圈：半径 = 该航点的容差 **按平面单位换算**（圈的像素大小就是"够不够得着"的信息）

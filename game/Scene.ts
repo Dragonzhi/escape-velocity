@@ -19,6 +19,8 @@
  * - 探测器：**分体**（会话 25）—— Probe_Body.glb（身体）+ Probe_Antenna.glb（天线，转轴在文件
  *   原点），天线可绕转轴独立旋转（"回头指向地球"）；单体 Probe_Voyager_v1.glb 作为回退。
  *   ⚠️ 为什么拆文件：引擎的 Node3D 不把 glTF 子节点暴露成可寻址节点（Test/AntennaProbe 实测）。
+ * - 沿轨道流动的光点（S3.16）：每条会公转的轨道一串 StarQuad 自发光面片，方向 = orbitDirection、
+ *   快慢 ∝ ω = 2π/orbitPeriod，每帧只改位置（数学与 2D 共用 game/OrbitFlow.ts）。
  * - 地球：家园锚点（纯视觉，不进物理），大天线的指向目标。
  * - 星空：一张程序化星图贴在贴着相机的四边形背板上（方案 B，2026-09-25 用户拍板；
  *   每帧由 syncBackdrop 钉到视线前方），见 buildScene 内注释。
@@ -31,6 +33,7 @@ import {
 	SunGlowScale, SunLightIntensity, SunLightRange, SunMinGmForLight,
 } from 'game/Config';
 import { Body, P2, bodyPositionAt } from 'game/Gravity';
+import { FlowDotsPerOrbit, flowDotAngle, orbitCenterAt } from 'game/OrbitFlow';
 
 /** 平面坐标 → 世界坐标（y 恒为 0，黄道面水平）。 */
 export function planeToWorld(p: P2, y: number): Vec3.Type {
@@ -545,6 +548,26 @@ export function createStarBackdrop(root: Node3D.Type): StarBackdrop | undefined 
 	};
 }
 
+/** ---- 沿轨道流动的光点（S3.16，用户原话："轨道圈看不出运动方向与快慢"）---- */
+/** 光点面片与贴图：与太阳光晕**同源**的仓库内资产（单位四边形 + 径向渐变），不引入新素材。 */
+const FlowDotModelPath = 'Assets/Model/StarQuad.gltf';
+const FlowDotTexturePath = 'Assets/Image/glow.png';
+/**
+ * 光点面片的缩放（StarQuad 顶点是 ±1 ⇒ scale = 直径的一半）。
+ * 随轨道半径放大（外圈离相机远，同样屏幕尺寸要更大的世界尺寸），夹在 [min, max]。
+ */
+const FlowDotMinScale = 0.8;
+const FlowDotMaxScale = 2.0;
+const FlowDotScalePerRadius = 0.012;
+/** 光点的自发光色（0xRRGGBB）：暖白，与 2D 规划视图的光点同色系（PlanView 的 flowDotHex）。 */
+const FlowDotEmissiveHex = 0xffd9a0;
+
+/** 一条轨道上的光点池：建场景时一次建好，之后每帧只改 position（不重建节点）。 */
+interface FlowOrbit {
+	def: Body;
+	dots: Node3D.Type[];
+}
+
 /**
  * 构建场景。
  *
@@ -678,6 +701,57 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 		root.addChild(orbitNode);
 	}
 
+	// ---- 沿轨道流动的光点（S3.16）----
+	// 处方（docs/关卡舞台表.md 第二节第 5 条）：每条轨道一串光点，**方向 = orbitDirection**（读字段，
+	// 不写死顺行）、**快慢 ∝ 角速度 ω = 2π/orbitPeriod**（内圈快外圈慢 = 开普勒的视觉效果），
+	// 位置由 tWorld 解析求出（game/OrbitFlow.ts，与 bodyPositionAt 同一个角公式）。
+	// ⚠️ 性能：节点池**建场景时一次建好**（≤ 6 轨道 × 6 点 = 36 个 Model3D，同路径共享底层网格），
+	//    之后每帧只改 position —— 不创建/销毁节点。
+	// ⚠️ 只给"真的在绕东西转"的天体：太阳（orbitRadius = 0）与静止天体（orbitPeriod = 0）
+	//    没有可流动的轨道。卫星（月球）的圆心是**会动的宿主**，由 orbitCenterAt 现场求。
+	// ⚠️ 面片绕 X 转 90° **一次性**躺进黄道面（y = 0，与轨道圈同一平面）⇒ 不必每帧朝相机转，
+	//    每帧只有一个 position 写入；俯视 20–60° 下它是略扁的软光斑（cos 0.5–0.94），观感即"光点"。
+	const flowOrbits: FlowOrbit[] = [];
+	const flowDotTex = Content.exist(FlowDotTexturePath) ? Texture2D(FlowDotTexturePath) : undefined;
+	if (Content.exist(FlowDotModelPath)) {
+		for (let i = 0; i < bodies.length; i++) {
+			const def = bodies[i];
+			if (def.orbitRadius <= 0 || def.orbitPeriod === 0) continue;
+			const dots: Node3D.Type[] = [];
+			for (let k = 0; k < FlowDotsPerOrbit; k++) {
+				const dot = Model3D(FlowDotModelPath);
+				if (dot === undefined) break;
+				// 配方与太阳光晕/星空背板同源：baseColor 留黑、只吃 emissive 贴图 ⇒ 不吃光照、
+				// 不挡后面的星点；alphaMode = Blend 让边缘融进背景。
+				// （引擎实测：Material3D.emissive 只有配了自发光贴图才看得出来。）
+				const dm = dot.getMaterial(0);
+				if (dm !== undefined) {
+					if (flowDotTex !== undefined) {
+						dm.setBaseColorTexture(flowDotTex);
+						dm.setEmissiveTexture(flowDotTex);
+					}
+					dm.baseColor = Color(0, 0, 0, 255);
+					dm.emissive = Color3(FlowDotEmissiveHex);
+					dm.roughness = 1.0;
+					dm.metallic = 0.0;
+					dm.alphaMode = MaterialAlphaMode3D.Blend;
+				}
+				let s = def.orbitRadius * FlowDotScalePerRadius;
+				if (s < FlowDotMinScale) s = FlowDotMinScale;
+				if (s > FlowDotMaxScale) s = FlowDotMaxScale;
+				dot.scale = Vec3(s, s, s);
+				dot.angleX = -90;
+				root.addChild(dot);
+				dots.push(dot);
+			}
+			if (dots.length === 0) continue;
+			flowOrbits.push({ def, dots });
+		}
+		if (flowOrbits.length > 0) {
+			print('[escape-velocity] flow dots: ' + flowOrbits.length.toFixed(0) + ' orbits x ' + FlowDotsPerOrbit.toFixed(0));
+		}
+	}
+
 	// ---- 地球（家园锚点，会话 25 用户需求“游戏里需要添加一个地球”）----
 	// 纯视觉：**不进 bodies**（无引力、不参与碰撞判定，L1–L6 的轨迹确定性不变）、
 	// 不进相机取景点（Game.ts 的 fit 点只来自探测器与行星）。
@@ -771,6 +845,23 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 			const wp = planeToWorld(bodyPositionAt(p.def, t), 0);
 			p.body.position = wp;
 			if (p.ring !== undefined) p.ring.position = wp;
+		}
+		// 沿轨道流动的光点（S3.16）：每帧只改 position。
+		// 第 k 个光点的角 = 行星此刻的角 + k·2π/N（OrbitFlow.flowDotAngle，与 bodyPositionAt
+		// 同一个式子）⇒ 方向 = orbitDirection、快慢 ∝ ω。t 就是 Game.ts 传下来的 tWorld
+		// （= core.t0 + core.flightTime）—— 没有第二时间源，拨日期时行星与光点一起动。
+		for (const fo of flowOrbits) {
+			const c = orbitCenterAt(fo.def, t);
+			const r = fo.def.orbitRadius;
+			const n = fo.dots.length;
+			for (let k = 0; k < n; k++) {
+				const a = flowDotAngle(fo.def, t, k, n);
+				fo.dots[k].position = Vec3(
+					(c.x + r * Math.cos(a)) * PlaneToWorldX,
+					0,
+					(c.y + r * Math.sin(a)) * PlaneToWorldZ,
+				);
+			}
 		}
 	};
 
