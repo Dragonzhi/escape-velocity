@@ -107,17 +107,56 @@ print("[gameshot] driver ready ok=" .. tostring(ok) .. " root=" .. tostring(root
 
 local last = ""
 local n = 0
+local pendingDelay = 0
+local pendingReq = ""
+
 threadLoop(function()
   if Content:exist(reqFile) then
     local want = Content:load(reqFile)
     if want ~= nil and want ~= "" and want ~= last then
       last = want
+      pendingReq = want
+      
+      -- 处理控制指令
+      local SolarHub = package.loaded["game.SolarHub"]
+      local hub = SolarHub ~= nil and SolarHub.getActiveSolarHub ~= nil and SolarHub.getActiveSolarHub() or nil
+
+      local focusIdx = string.match(want, "focus:(%d+)")
+      if focusIdx ~= nil then
+        local idx = tonumber(focusIdx)
+        if hub ~= nil and hub.focusMission ~= nil then
+          hub.focusMission(idx)
+          log("invoked focusMission(" .. tostring(idx) .. ")")
+        end
+        pendingDelay = 40 -- 40 帧延迟，保证镜头平滑推进到位
+      elseif want == "back" then
+        if hub ~= nil and hub.backToPanorama ~= nil then
+          hub.backToPanorama()
+          log("invoked backToPanorama()")
+        end
+        pendingDelay = 30
+      elseif want == "launch" then
+        if hub ~= nil and hub.launchCurrentMission ~= nil then
+          hub.launchCurrentMission()
+          log("invoked launchCurrentMission()")
+        end
+        pendingDelay = 40
+      else
+        pendingDelay = 2
+      end
+    end
+  end
+
+  if pendingDelay > 0 then
+    pendingDelay = pendingDelay - 1
+    if pendingDelay == 0 then
       n = n + 1
       local name = string.format("shot-%03d", n)
       App:saveScreenshot(Path(outDir, name))
-      Content:save(doneFile, name .. " req=" .. want .. " n=" .. tostring(n) .. "\n")
-      log("capture " .. name .. " <- " .. want)
+      Content:save(doneFile, name .. " req=" .. pendingReq .. " n=" .. tostring(n) .. "\n")
+      log("capture " .. name .. " <- " .. pendingReq)
     end
   end
+
   return false
 end)

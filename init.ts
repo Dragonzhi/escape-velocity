@@ -26,12 +26,13 @@ import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptio
 import { PlanView, arrivalRingRadius, createPlanView, defaultPlanOptions, planFitRadius } from 'game/PlanView';
 import { AimInput, AimResult, FinaleMainText, FinalePanel, LevelSelect, ResultPanel, createAimInput, createFinalePanel, createLevelSelect, createResultPanel, finaleSubtitle } from 'game/Hud';
 import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
-import { Progress, advanceUnlocked, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
+import { Progress, advanceUnlocked, getTotalRockets, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
 // 只为主循环推进 UI 时钟：按钮防抖不能依赖引擎那个冻结的 App.elapsedTime（见 game/Ui.ts）
 import { advanceUiClock } from 'game/Ui';
 // S5：每关的物理步长 / 播放倍速 / 相机夹紧 / 瞄准区间（"想调就调"的值都在那里）
 import { levelRuntime } from 'game/Tuning';
 import { Opening, createOpening, loadIntroSeen, saveIntroSeen } from 'game/Opening';
+import { SolarHub, createSolarHub } from 'game/SolarHub';
 
 /** 一关的运行时（惰性创建，切关只切 visible）。 */
 interface LevelRuntime {
@@ -100,6 +101,18 @@ if (levelTotal <= 0) {
 	Director.entry.addChild(openingRoot);
 	const openingCamera = Camera3D();
 
+	// 3D 微缩太阳系选关中心（S7）：独立的 3D 沙盘根与全息 2D 标牌层
+	const hubRoot = Node3D();
+	hubRoot.visible = false;
+	Director.entry.addChild(hubRoot);
+	const hubCamera = Camera3D();
+
+	const hubLayer = Node();
+	hubLayer.size = Size(viewW, viewH);
+	hubLayer.anchor = Vec2(0.5, 0.5);
+	hubLayer.position = Vec2(0, 0);
+	Director.ui.addChild(hubLayer);
+
 	// ---- UI 叠层（最后加 = 画在最上层）----
 	const uiLayer = Node();
 	uiLayer.size = Size(viewW, viewH);
@@ -127,6 +140,7 @@ if (levelTotal <= 0) {
 
 	let activeIndex = -1;
 	let select: LevelSelect | undefined = undefined;
+	let solarHub: SolarHub | undefined = undefined;
 	let resultPanel: ResultPanel | undefined = undefined;
 	// 终章「暗淡蓝点」（S3.18）：全局唯一，与结算面板同一套显隐规矩（状态驱动）
 	let finalePanel: FinalePanel | undefined = undefined;
@@ -383,6 +397,7 @@ if (levelTotal <= 0) {
 		// 开场那套 3D（全景）与关卡各有一套相机；进关卡就把它收掉，别让两套场景一起渲染
 		if (opening !== undefined) opening.hide();
 		if (select !== undefined) select.hide();
+		if (solarHub !== undefined) solarHub.hide();
 		activeIndex = index;
 		showOnlyLevel(index);
 		if (!wasActive) Director.pushCamera(runtime.camera);
@@ -407,6 +422,31 @@ if (levelTotal <= 0) {
 		if (rt !== undefined) rt.game.retry();
 	};
 
+	const ensureSolarHub = (): SolarHub => {
+		if (solarHub !== undefined) return solarHub;
+		solarHub = createSolarHub({
+			root: hubRoot,
+			camera: hubCamera,
+			layer: hubLayer,
+			viewW,
+			viewH,
+			fovYDeg: View.fieldOfView,
+			aspect: View.aspectRatio,
+			spherePath: 'Assets/Model/Sphere.gltf',
+			onLaunch: (levelIndex: number): void => {
+				print('[escape-velocity] solarHub launch: L' + (levelIndex + 1).toFixed(0));
+				if (solarHub !== undefined) solarHub.hide();
+				enterLevel(levelIndex);
+			},
+			onReplayIntro: (): void => {
+				if (solarHub !== undefined) solarHub.hide();
+				startOpening();
+				print('[escape-velocity] opening replay from solarHub');
+			},
+		});
+		return solarHub;
+	};
+
 	const onBackToSelectTap = (): void => {
 		const rt = resultRuntime();
 		print('[escape-velocity] tap: back-to-select (resultIndex=' + resultIndex.toFixed(0) + ' phase=' + (rt !== undefined ? rt.game.phase() : 'none') + ')');
@@ -419,10 +459,13 @@ if (levelTotal <= 0) {
 		if (resultPanel !== undefined) resultPanel.hide();
 		// 终章（S3.18）的「返回关卡选择」与结算面板那颗走同一条路 ⇒ 这里也要收
 		if (finalePanel !== undefined) finalePanel.hide();
+		if (select !== undefined) select.hide();
 		// 以存档为准刷新：成功那一局已经写过盘了
 		progress = loadProgress(levelTotal);
-		if (select !== undefined) select.show(progress.unlocked);
-		print('[escape-velocity] back to select: unlocked=' + progress.unlocked.toFixed(0));
+		const hub = ensureSolarHub();
+		Director.pushCamera(hubCamera);
+		hub.show(progress);
+		print('[escape-velocity] back to solarHub: total rockets=' + getTotalRockets(progress, levelTotal).toFixed(0));
 	};
 
 	/**
@@ -513,16 +556,22 @@ if (levelTotal <= 0) {
 		viewH = h;
 		uiLayer.size = Size(viewW, viewH);
 		openingLayer.size = Size(viewW, viewH);
+		hubLayer.size = Size(viewW, viewH);
 		for (let i = 0; i < levelTotal; i++) levelLayers[i].size = Size(viewW, viewH);
+		if (solarHub !== undefined) {
+			solarHub.relayout(viewW, viewH);
+		}
 
 		// 3) 重建面板并恢复当前状态
-		const panel = buildPanels();
+		buildPanels();
 		if (activeIndex >= 0) {
 			const keep = activeIndex;
 			activeIndex = -1;
 			enterLevel(keep);
 		} else {
-			panel.show(progress.unlocked);
+			const hub = ensureSolarHub();
+			Director.pushCamera(hubCamera);
+			hub.show(progress);
 		}
 		print('[escape-velocity] viewport rebuilt: ' + viewW.toFixed(0) + 'x' + viewH.toFixed(0));
 	};
@@ -562,9 +611,13 @@ if (levelTotal <= 0) {
 						introSeen = true;
 						print('[escape-velocity] intro seen -> saved');
 					}
-					// 播完/跳过 → 交还选关（panorama 留着当活背景，见 game/Opening.ts 的拉回段）
-					if (select !== undefined) select.show(progress.unlocked);
-					print('[escape-velocity] opening finished: frame=' + (opening !== undefined ? opening.frameIndex().toFixed(0) : '?'));
+					// 播完/跳过 → 隐藏开场，平滑切入 3D 太阳系沙盘主选关界面
+					if (opening !== undefined) opening.hide();
+					if (select !== undefined) select.hide();
+					const hub = ensureSolarHub();
+					Director.pushCamera(hubCamera);
+					hub.show(progress);
+					print('[escape-velocity] opening finished -> show solarHub: frame=' + (opening !== undefined ? opening.frameIndex().toFixed(0) : '?'));
 				},
 			});
 		}
@@ -671,24 +724,32 @@ if (levelTotal <= 0) {
 		}
 	}
 
-	// ---- 启动决策（S3.3）：首次启动完整播开场，之后直接进选关 ----
+	// ---- 启动决策（S3.3 / S7）：首次启动完整播开场，之后直接进太阳系沙盘选关 ----
 	// 开发钩子优先：自动进关时不播开场（否则开场相机会盖住关卡画面）。
 	if (autoEntered) {
 		print('[escape-velocity] opening skipped (auto enter)');
 	} else if (forceIntro || !introSeen) {
 		startOpening();
 	} else {
-		startupPanel.show(progress.unlocked);
-		print('[escape-velocity] opening skipped (already seen)');
+		const hub = ensureSolarHub();
+		Director.pushCamera(hubCamera);
+		hub.show(progress);
+		print('[escape-velocity] entered solarHub (already seen)');
 	}
 
-	// ---- 单一主循环（手册 §4.3）：只驱动当前激活的关（+ 开场）----
+	// ---- 单一主循环（手册 §4.3）：只驱动当前激活的关（+ 开场 + 太阳系沙盘）----
 	// ⚠️ threadLoop 回调没有参数，帧间隔用 App.deltaTime
 	threadLoop(() => {
 		// ⚠️ 第一件事：推进 UI 时钟。`Ui.createButton` 的 0.5 秒防抖靠它 ——
 		//    引擎的 `App.elapsedTime` 是坏的（冻结不涨），用它会让每个按钮只按得动一次
 		//    （2026-09-27 用户报「2D/3D 只能单向切一次」的根因）。必须在所有 UI 之前。
 		advanceUiClock(App.deltaTime);
+
+		// 太阳系沙盘主选关界面推进（天体公转/自转、相机平滑插值、全息图钉投影）
+		if (solarHub !== undefined && solarHub.visible()) {
+			solarHub.step(App.deltaTime);
+		}
+
 		// 开场先推进（它在场时没有激活的关；播完转 idle，继续当选关界面的背景）
 		if (opening !== undefined && opening.running()) {
 			// @hold:N —— 冻结在第 N 帧不动（抓分镜截图用）；轻触跳过时 onFinish 会解冻

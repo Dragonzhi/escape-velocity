@@ -27,9 +27,10 @@ L2–L6 按用户要求**暂停验收**（数据已重写、相位已解出，�
 
 | 项 | 值 | 怎么复现 |
 |---|---|---|
-| 构建 | **48 文件 48 成功 0 失败** | `node tools/dora-build/build.mjs --all` |
-| 单测 | **11 模块 424 断言全绿** | 先 `Stop-Process -Name Dora -Force`，再 `pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt` |
-| 单测分布 | Gravity 37 / Game 75 / LevelData 97 / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 36 / Opening 33 / PlanView 20 / OrbitFlow 25 / **Scale 53** | 同上 |
+| 构建 | **50 文件 50 成功 0 失败** | `node tools/dora-build/build.mjs --all` |
+| 单测 | **12 模块 529 断言全绿** | 先 `Stop-Process -Name Dora -Force`，再 `pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt` |
+| 单测分布 | Gravity 37 / Game 75 / LevelData 147 / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 48 / Opening 33 / PlanView 20 / OrbitFlow 25 / Scale 53 / **SolarHub 43** | 同上 |
+| 阶段二沙盘证据 | `shot-hub-v5-pano.png`（全景沙盘）、`shot-hub-v5-l1.png`（月球特写简报卡）、`shot-hub-v5-l4.png`（土星特写简报卡）、`shot-hub-v5-l1-launched.png`（入关瞄准） | `pwsh tools/shot-hub-interactive.ps1` |
 
 **断言数会随新模块增长，以引擎跑出来的合计为准，别照抄。**
 

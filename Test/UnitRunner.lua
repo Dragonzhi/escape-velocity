@@ -89,6 +89,7 @@ local modules = {
   "Test.PlanViewTest",
   "Test.OrbitFlowTest",
   "Test.ScaleTest",
+  "Test.SolarHubTest",
 }
 
 package.path = Path(root, "?.lua") .. ";" .. Path(root, "?", "init.lua") .. ";" .. package.path
