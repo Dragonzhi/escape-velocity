@@ -63,6 +63,10 @@ node tools/level-sweep.mjs --grid 24x6 --t0 24 --detail
 # ④ 行星相位设计器（改 orbiter 的第 4 个参数前**必须**用它，别再手填 —— S3.11 的教训）
 node tools/level-phases.mjs 5                       # 解 L5：最佳相位 + "有多少条路线"
 node tools/level-phases.mjs 4 --t0 180              # 解"第 180 秒才对齐"的相位（L4/L6 用）
+# ⑥ 时间窗设计器（S3.13）：相位与日期是**同一个自由度** —— 把每颗行星的 phase0 一起减 ω·δ
+#    等价于把整条可行日期带平移 δ 秒。六关都有时间轴，所以"哪一天最好"是设计出来的。
+node tools/level-window.mjs 4 --shifts -200,-100,0,100,200   # 平移候选 + 每档成功数 + 硬门判定
+node tools/level-window.mjs 4 --tol 20,30 --span 400          # 试算容差/跨度
 
 # ⑤ 合成鼠标"玩一关"（按住/连按/相态守卫/按钮命中这类**时序**行为，逐关截图证明不了）
 pwsh tools/level-play.ps1 -Level 4 -HoldWarpMs 2500
@@ -70,7 +74,8 @@ pwsh tools/level-play.ps1 -Level 4 -HoldWarpMs 2500
 pwsh tools/level-play.ps1 -Level 4 -AutoArmFrame 120 -HoldWarpMs 2500 -Taps 1 -ShotBeforeTaps
 ```
 
-单测基线：`SUMMARY passed=8 failed=0 total=8`（**253 条断言**）→ `.agent/test-results/unit-summary.txt`。
+单测基线：`SUMMARY passed=8 failed=0 total=8`（**273 条断言**：Gravity 37 / Game 50 / LevelData 73 / Hud 17 /
+Trajectory 11 / CameraRig 16 / Progress 36 / Opening 33）→ `.agent/test-results/unit-summary.txt`。
 引擎 API（8866）需要引擎设置里「访问验证 / Auth Required」为关闭；`/ts/build` 还要求 Web IDE 浏览器已连接
 （TS 编译实际发生在浏览器里 —— 本地构建用 `tools/dora-build/` 即可，不要依赖它）。
 截图是未压缩 TGA，转 PNG：`python -c "from PIL import Image; Image.open(r'x.tga').save(r'x.png')"`。
@@ -142,4 +147,4 @@ pwsh tools/level-play.ps1 -Level 4 -AutoArmFrame 120 -HoldWarpMs 2500 -Taps 1 -S
 - 提交前清理：不带入 `.agent/test-results/*`、临时日志、密钥或个人配置。
 - 许可 **AGPL-3.0-only**：`LICENSE` 是官方全文，**不要改动它**。
 - ⚠️ **提交前必须确认构建全绿**：`node tools/dora-build/build.mjs --all` 要 **0 失败**（当前 41 个文件，
-  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**253 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。
+  以工具输出的合计为准，别照抄旧数字）；单测基线 `SUMMARY passed=8 failed=0 total=8`（**273 条断言**）。曾提交过一个构建失败的状态（诊断代码残留导致 init.ts 编译失败、init.lua 没更新，见 e62c07d）—— 构建失败时产物不会更新，提交进去的就是「源码与产物不一致」。

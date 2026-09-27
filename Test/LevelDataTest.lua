@@ -442,25 +442,29 @@ local function testTimeWindow(stats) -- 285
 			i = i + 1 -- 288
 		end -- 288
 	end -- 288
-	check("time-window-exists", withWindow >= 1, "至少有一关带时间轴（L4 窗口）") -- 305
+	check( -- 306
+		"time-window-exists", -- 306
+		withWindow == n, -- 306
+		(("六关都必须有时间轴：withWindow=" .. tostring(withWindow)) .. "/") .. tostring(n) -- 306
+	) -- 306
 end -- 285
-function ____exports.runTests() -- 308
-	testValidity() -- 309
-	testFindGoalIndex() -- 310
-	local stats = testReachability() -- 311
-	testTimeWindow(stats) -- 312
-	testCapture() -- 313
-	local lines = {} -- 315
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 316
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 317
-	local limit = #failures < 12 and #failures or 12 -- 318
-	do -- 318
-		local i = 0 -- 319
-		while i < limit do -- 319
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 320
-			i = i + 1 -- 319
-		end -- 319
-	end -- 319
-	return table.concat(lines, "\n") -- 322
-end -- 308
-return ____exports -- 308
+function ____exports.runTests() -- 309
+	testValidity() -- 310
+	testFindGoalIndex() -- 311
+	local stats = testReachability() -- 312
+	testTimeWindow(stats) -- 313
+	testCapture() -- 314
+	local lines = {} -- 316
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 317
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 318
+	local limit = #failures < 12 and #failures or 12 -- 319
+	do -- 319
+		local i = 0 -- 320
+		while i < limit do -- 320
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 321
+			i = i + 1 -- 320
+		end -- 320
+	end -- 320
+	return table.concat(lines, "\n") -- 323
+end -- 309
+return ____exports -- 309

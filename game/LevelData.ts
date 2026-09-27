@@ -93,11 +93,6 @@ export interface LevelDef {
 	 * 玩家拖出来的那一下是 **Δv（点火）**，落在它上面：总速度 = probeVel0 + 点火。省略 = 静止出发。
 	 */
 	probeVel0?: P2;
-	/**
-	 * 是否还要那个纯视觉的"家园锚点"（地球）。
-	 * L1 的地球已经是真天体（有引力、会挡住 1 号候选）⇒ 那里必须置 false，否则叠两个地球。
-	 */
-	homeAnchor?: boolean;
 	planets: Body[];
 	visuals: PlanetVisualDef[];
 	goal: GoalSpec;
@@ -109,8 +104,6 @@ export interface LevelDef {
 	/** 越界半径（距原点 = 距太阳）。 */
 	escapeRadius: number;
 	maxSteps: number;
-	/** 家园锚点（地球）的显示半径：逐关变小 —— 越飞越远，回头看它越小。 */
-	homeRadius: number;
 	/**
 	 * 时间轴（S3.6.4）：「发射日期」滑杆的取值范围（秒）。省略 = 这一关没有时间轴。
 	 */
@@ -169,6 +162,16 @@ const ORBIT = { venus: 55, earth: 80, jupiter: 105, saturn: 135, uranus: 165, ne
 
 /** 掠过环的容差（flyby）：比本体大 13 左右 —— 远距离飞行要有"够得着"的手感。 */
 const FLYBY_PAD = 13;
+
+/**
+ * 引力强度表（S3.13 六站重排）。
+ *
+ * ⚠️ 这些是**玩法参数**，不是真实比值：真实木星是地球的 318 倍，这里只有 ~1 倍。
+ * 按真实比值，木星会在 40 单位外就把探测器抓住，「绕日弧线」这条主玩法就没了。
+ * 但**同一颗行星在六关里必须是同一个值** —— 否则玩家在 L3 学到的「木星能把我掰多少」，
+ * 到 L5 就不成立了，那正是「物理不统一」最容易被玩家看出来的地方。
+ */
+const GM = { venus: 2600, jupiter: 2500, saturn: 12000, uranus: 1200, neptune: 8000 };
 
 /**
  * 在飞行采样点中找第一个进入目标容差的索引。
@@ -285,24 +288,39 @@ export function findGoalIndex(points: P2[], bodies: Body[], goal: GoalSpec, dt: 
 	return st.passed >= wps.length ? st.lastIndex : -1;
 }
 
+
 // ---------------------------------------------------------------------------
-// 六关数据（S3.7：真实编年 —— 出发 / 修正 / 弹弓 / 窗口 / 大巡游 / 单程）
+// 六站数据（S3.13 重排）—— 「同一套物理，去不同的地方」（设计稿：docs/关卡舞台表.md）
+//
+// 六关共同的四条（改任何数值之前先读一遍）：
+//   1. **从地球轨道出发**：probeStart 固定在 (0,80)；太阳在场、行星都在绕日走，
+//      引力弹弓 / 碰撞 / 时间轴从第一关起**全部在场** —— 不再有「这一关才引入的机制」。
+//   2. **时间轴是全局的**：六关都带 timeWindow。日期一变行星排布就变，这条路通不通也跟着变
+//      —— 日期是玩家手里的一根真旋钮，不是装饰。
+//   3. **一站一个目的地**：月球 / 金星 / 木星 / 土星 / 天王星 / 海王星。
+//      难度 = 要穿几个中继节点 + 距离 + 允许的误差；不靠「新机制」叠难度。
+//   4. **预测线 = 真实轨迹**：两边都是 game/Gravity.ts 的同一个 simulate
+//      —— 「看得见的那条线」就是「会飞的那条路」。
+//
+// ⚠️ 相位的口径：orbiter() 的第 4 个参数（phase0，度）**必须**用
+//    node tools/level-phases.mjs <关号> --t0 <想让它对齐的发射日期>
+//    解出来，不要手填。S3.11 的教训：L3/L5 的相位曾经是「照一条设计航线排的」，而那条航线
+//    **撞进太阳**（peakR 只有 80）⇒ 任何日期都对不上，成功率被压到 0.2%~6%，玩家骂「关卡诡异」。
 // ---------------------------------------------------------------------------
 
-/** 太阳（除 L1 外每关的第 0 号天体）。 */
+/** 太阳（每关的第 0 号天体）。 */
 function sun(): Body {
 	return { gm: SunGm, radius: SunRadius, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 };
 }
 
 /** 太阳的视觉（亮黄，模型 Sun.glb）。 */
 function sunVisual(): PlanetVisualDef {
-	// ⚠️ S3.12：太阳现在是**点光源本体**，它自己的表面再也照不到了（光在它内部 ⇒ 表面法线朝外、
-	// 与光的来向相反）⇒ 必须靠 emissive 把自己点亮。原来是 (0.95,0.72,0.30) 的土黄，
-	// 配上光晕之后看起来像一颗**被啃掉一半的暗球**（截图实测），改成过曝的暖白。
+	// ⚠️ S3.12：太阳自己照不到自己（光在它内部、表面法线朝外）⇒ 必须靠 emissive 把自己点亮。
+	// 原来是 (0.95,0.72,0.30) 的土黄，配上光晕像一颗**被啃掉一半的暗球**（截图实测），改成过曝的暖白。
 	return { r: 1.0, g: 0.97, b: 0.88, displayRadius: SunRadius, ring: false, model: 'Sun', emissive: { r: 1.0, g: 0.95, b: 0.82 } };
 }
 
-/** 绕日公转的行星（S3.7：圆心 = 太阳 = 原点）。 */
+/** 绕日公转的行星（圆心 = 太阳 = 原点）。 */
 function orbiter(gm: number, radius: number, orbitRadius: number, phaseDeg: number): Body {
 	return {
 		gm, radius,
@@ -315,10 +333,9 @@ function orbiter(gm: number, radius: number, orbitRadius: number, phaseDeg: numb
 }
 
 /**
- * 绕**会动的行星**公转的卫星（S3.13，L1 的月球）：
- * 直接把宿主天体对象传进来，位置就随宿主一起走（见 Gravity.Body.host）。
- * `periodSec` 显式给：月球绕地球的周期不该用"绕日开普勒"算，而要与**全局时间压缩**一致
- * （本作 K = 1.0 = 真实周期 ÷ 42.7）。
+ * 绕**会动的行星**公转的卫星（S3.13）：直接把宿主天体对象传进来，位置就随宿主一起走
+ * （见 Gravity.Body.host）。periodSec 显式给 —— 月球绕地球的周期不该用「绕日开普勒」算，
+ * 而要与**全局时间压缩**一致（本作 K = 1.0 = 真实周期 ÷ 42.7）。
  */
 function satellite(gm: number, radius: number, host: Body, orbitRadius: number, phaseDeg: number, periodSec: number): Body {
 	return {
@@ -333,8 +350,65 @@ function satellite(gm: number, radius: number, host: Body, orbitRadius: number, 
 }
 
 /**
- * L1 的地球（S3.13）：它是**真天体**，而且**自己在绕日公转** —— 这是"物理统一"的试纸。
- * 月球用它当 host（见 satellite），于是"月球绕地球、地球绕日"两件事同时成立。
+ * 家园地球（L2–L6 的布景天体）：**沿自己的轨道走**，但不参与引力。
+ *
+ * 为什么 gm = 0：每关都从**地球轨道上的一点**出发（probeStart 固定在 (0,80)），
+ * 如果这颗地球带引力，出发点就在它 8 个单位以内 —— 那就等于「从地球引力井里起飞」
+ * （a ≈ 37 单位/秒²，一秒内就能把你甩飞），六关的几何 / 相位 / 容差全部要重解；
+ * 而太阳系其余部分是按 KeplerK = 1 压缩过的：地球近在咫尺、别处却那么慢，那不是统一物理。
+ * 所以它是「**看得见的家**」，不是「拉得动你的家」。真天体的地球在 L1（gm 2600）。
+ *
+ * ⚠️ 相位 100° 是**挑过的**：出发点在 90°，地球领先 10°（约 14 单位，视觉上「家就在前面」）。
+ * 为什么不能随便放：撞毁判定只看半径、**不看 gm**（Gravity.bodyHitIndex），所以地球一旦挪到
+ * 出发点上，那一天一进关探测器就直接生成在地球内部。它在时间轴里最多走 151°（span 300 秒），
+ * 所以只要让 [phase0, phase0+151°] 不跨过 90°±3° 就行 —— 100° 满足，而且对六关所有 span 都满足。
+ */
+function homeEarth(): Body {
+	return {
+		gm: 0, radius: R_EARTH,
+		orbitCenter: { x: 0, y: 0 },
+		orbitRadius: ORBIT.earth,
+		orbitPeriod: keplerPeriod(ORBIT.earth),
+		phase0: deg(100),
+		orbitDirection: 1,
+	};
+}
+
+// ---- 行星视觉（六关共用一份配色/模型：同一颗行星在别处也必须长一样）----
+// displayRadius 必须等于对应 Body 的 radius（尺寸公平性硬约束，Test/LevelDataTest 守着）
+
+/** 地球（家园）：蓝绿。 */
+function earthVisual(): PlanetVisualDef {
+	return { r: 0.42, g: 0.62, b: 0.85, displayRadius: R_EARTH, ring: false, model: 'Planet_Earth' };
+}
+/** 月球（L1）：灰。⚠️ 还没有 Moon.glb —— 回退到代码生成的 Sphere.gltf（在 Trae 的交付清单里）。 */
+function moonVisual(): PlanetVisualDef {
+	return { r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false };
+}
+/** 金星：暖黄的硫酸云。 */
+function venusVisual(): PlanetVisualDef {
+	return { r: 0.90, g: 0.78, b: 0.55, displayRadius: R_VENUS, ring: false, model: 'Planet_Venus' };
+}
+/** 木星：条纹橙褐。 */
+function jupiterVisual(): PlanetVisualDef {
+	return { r: 0.85, g: 0.72, b: 0.50, displayRadius: R_JUPITER, ring: false, model: 'Planet_Jupiter' };
+}
+/** 土星：淡金 + 环。 */
+function saturnVisual(): PlanetVisualDef {
+	return { r: 0.75, g: 0.70, b: 0.60, displayRadius: R_SATURN, ring: true, model: 'Planet_Saturn' };
+}
+/** 天王星：青蓝。 */
+function uranusVisual(): PlanetVisualDef {
+	return { r: 0.62, g: 0.82, b: 0.86, displayRadius: R_URANUS, ring: false, model: 'Planet_Uranus' };
+}
+/** 海王星：深蓝。 */
+function neptuneVisual(): PlanetVisualDef {
+	return { r: 0.34, g: 0.50, b: 0.86, displayRadius: R_NEPTUNE, ring: false, model: 'Planet_Neptune' };
+}
+
+/**
+ * L1 的地球（S3.13）：它是**真天体**，而且**自己在绕日公转** —— 这是「物理统一」的试纸。
+ * 月球用它当 host（见 satellite），于是「月球绕地球、地球绕日」两件事同时成立。
  */
 const L1_EARTH: Body = {
 	gm: 2600,
@@ -346,248 +420,172 @@ const L1_EARTH: Body = {
 	orbitDirection: 1,
 };
 
-/** L1 的月球：绕上面那颗**会动的**地球公转，周期 276 秒（见 satellite 的说明）。 */
+/**
+ * L1 的月球：绕上面那颗**会动的**地球公转。
+ *
+ * ⚠️ 周期是**玩法参数**，不是物理常数：15 单位的轨道如果按「与全局时间压缩一致」取 276 秒，
+ * 月球在 60 秒的时间轴里只走 78°，每个日期都打得到 —— 窗口就没有意义了（实测每个 t0 都有解）。
+ * 取 120 秒 ⇒ 60 秒跨度 = 它走过 **180°**，「挑时机」才真的成立；
+ * 飞行 2 秒里的漂移 = 6°，远小于容差，不会让瞄准变难。
+ */
 const L1_MOON_ORBIT_R = 15;
-// ⚠️ 周期是**玩法参数**，不是物理常数：15 单位的轨道如果按"与全局时间压缩一致"取 276 秒，
-// 月球在 60 秒的时间轴里只走 78°，每个日期都打得到 —— 窗口就没了意义（实测每个 t0 都有解）。
-// 取 120 秒 ⇒ 60 秒跨度 = 它走过 **180°**，方位整个换掉，"挑时机"才真的成立；
-// 飞行 2 秒里的漂移 = 6°，远小于容差，不会让瞄准变难。
 const L1_MOON_PERIOD = 120;
 
 const LEVELS: LevelDef[] = [
 	{
 		id: 1,
-		title: '出发',
-		// S3.12 用户："每一关其实都应该要符合逻辑的让星球动起来，包括第一关，我现在都不知道第一关是什么。"
-		// ⇒ L1 的定位写清楚：**地月转移**（一次点火、把探测器送上月球），月球**真的在绕地球走**。
-		// 这一关是本作里唯一的"近景"：地月的半径按同一套比例放大到肉眼可读（地球 6.0 / 月球 3.4，
-		// 比值 1.76 与其它关一致），否则在本尺度下地球只有 1.76 而轨道有 100+ 单位，
-		// 第一眼就是"一片星空里两个小点"（截图实测）。
-		brief: '航行日志 · 第 1 天：地球轨道。探测器在你手里 —— 月球正在绕地球走，别对着它现在的位置打。这一次点火决定后面的一切。',
+		title: '月球',
+		// 六站里唯一的一次「近景」：地月系。月球**真的在绕地球走**，所以不能对着它现在的位置打。
+		brief: '月球任务 · 地球轨道：月球正在绕地球走 —— 别对着它现在的位置点火。这一次点火决定后面的一切。',
+		// 探测器已经在绕地球飞（用户：「飞行器也是一开始在运动的，围绕地球」）。
+		// 圆轨道速度 = sqrt(gm / 距离) = sqrt(2600 / 10) ≈ 16.12，方向 +x（切向）
+		// ⇒ 预测线一上来就是一条弧线，玩家拖出来的那一下是「点火」。
+		// ⚠️ 必须是**正好**的圆轨道速度：早先 gm 是 4320、速度没跟着改，v/v_circ = 1.29，
+		//    轨迹变成一条**大椭圆**（远地点 147），第一眼就成了「一片星空里一个小点」（截图实测）。
 		probeStart: { x: 0, y: 90 },
-		// S3.9.3：出发时探测器**已经在绕地球飞**（用户："飞行器也是一开始在运动的，围绕地球"）。
-		// 地球在这一关是**真天体**（有引力）：圆轨道速度 = sqrt(gm / 距离) = sqrt(2600 / 30) ≈ **9.31**，
-		// 方向 +x（切向）⇒ 预测线一上来就是一条弧线，玩家拖出来的那一下是"点火"。
-		// ⚠️ 这里必须**正好是圆轨道速度**：早先 gm 是 4320（注释里那个 12 就是照它算的），
-		//    后来 gm 降到 2600 而速度没跟着改 ⇒ v/v_circ = 1.29，轨迹变成一条**大椭圆**
-		//    （远地点 147 = 地球半径的 84 倍），于是进关后探测器一路飞远、相机被迫拉到很大，
-		//    第一关的第一眼变成"一片星空里一个小点"（截图实测）。改成 9.31 之后是正圆，贴着地球转。
 		probeVel0: { x: 16.12, y: 0 },
-		homeAnchor: false, // 地球已经在 planets[0]，别再叠一个纯视觉锚点
 		planets: [
-			sun(), // ⚠️ S3.13：太阳**在场**（物理统一）—— 对地月之间它只表现为潮汐扰动
+			sun(), // 太阳在场（物理统一）—— 对地月之间它只表现为潮汐扰动
 			L1_EARTH,
-			// 月球：绕地球公转（host = L1_EARTH，所以地球动它就跟着动）；
-			// t=0 时它在 (0,80)+15·(cos180°,sin180°) = (-15, 80)，离探测器（0,90）约 18 单位。
-			satellite(0, R_MOON, L1_EARTH, L1_MOON_ORBIT_R, 180, L1_MOON_PERIOD),
+			// 月球：t=0 时在 (0,80)+15·(cos180°,sin180°) = (-15, 80)，离探测器（0,90）约 18 单位
+			satellite(0, R_MOON, L1_EARTH, L1_MOON_ORBIT_R, 0, L1_MOON_PERIOD),
 		],
-		visuals: [
-			sunVisual(),
-			{ r: 0.42, g: 0.62, b: 0.85, displayRadius: R_EARTH, ring: false, model: 'Planet_Earth' },
-			{ r: 0.56, g: 0.56, b: 0.60, displayRadius: R_MOON, ring: false },
-		],
-		// 教学关要宽容：环放宽到 30（月球半径只有 1.0 —— 等于是"飞到月球附近就算"）。
-		// 手写注释一度写着 18 而代码是 24（对不上），这里以代码为准并同步：24 → 30 使
-		// 首次上手的方向窗口从 ±12° 变成 ±17°（扫掠成功率 6.1% → 8.9%）。
-		// 月球在 planetIndex 2（0=太阳、1=地球、2=月球）
+		visuals: [sunVisual(), earthVisual(), moonVisual()],
+		// 教学关要宽容：容差 5（月球半径只有 1.0）—— 环的角窗口 ±19°，飞行只有 ~2 秒。
 		goal: { kind: 'planet', planetIndex: 2, tolerance: 5 },
 		dvBudget: 45,
 		escapeRadius: 700,
 		maxSteps: 1200,
-		homeRadius: 1.75,
-		// 时间轴：月球绕地球一圈只要 276 秒，所以 60 秒的跨度就是它走过 78° ——
-		// 日期一变，"月球在哪个方位"就整个换掉，窗口因此是有意义的（长跨度只会变成"随便哪天都行"）。
+		// 时间轴 60 秒 = 月球走 180°（见 L1_MOON_PERIOD 的说明）：日期一变方位整个换掉。
 		timeWindow: { span: 60 },
 	},
+
 	{
 		id: 2,
-		title: '修正',
-		brief: '航行日志 · 第 12 天：太阳开始拽你了。别直着飞 —— 向内会加速，航线也会被掰弯。目标是掠过金星。',
+		title: '金星',
+		brief: '金星任务 · 地球轨道：太阳会一路把你拽快 —— 向内飞，别飞过头。金星在 55 单位的内圈上等着。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
 			sun(),
-			// 金星：内圈（55），有引力 —— 它既是障碍也是"甩你一下"的手。
-			orbiter(2600, R_VENUS, ORBIT.venus, 180),
+			homeEarth(), // 家园地球：沿地球轨道走（gm = 0 的布景，理由见 homeEarth 的长注释）
+			// 金星（55）：内圈，有引力 —— 它既是目标，也是「甩你一下」的那只手。
+			// 六站里唯一一次**向内飞**：太阳会一路加速你，所以这一关的难点是「收」。
+			orbiter(GM.venus, R_VENUS, ORBIT.venus, 358.12),
 		],
-		visuals: [
-			sunVisual(),
-			{ r: 0.90, g: 0.78, b: 0.55, displayRadius: R_VENUS, ring: false, model: 'Planet_Venus' },
-		],
-		goal: { kind: 'planet', planetIndex: 1, tolerance: R_VENUS + FLYBY_PAD },
+		visuals: [sunVisual(), earthVisual(), venusVisual()],
+		// 容差 = 本体 + 13（≈ ±15° 的角窗口）：远距离飞行要「够得着」的手感。
+		goal: { kind: 'planet', planetIndex: 2, tolerance: R_VENUS + FLYBY_PAD },
 		dvBudget: 45,
 		escapeRadius: 700,
-		maxSteps: 1500,
-		homeRadius: 1.60,
+		maxSteps: 1500, // 12.5 秒：向内坠落最快只要 7 秒（径向直落约 1 秒）
+		timeWindow: { span: 240 },
 	},
 	{
 		id: 3,
-		title: '弹弓',
-		brief: '航行日志 · 第 2 年：木星在外圈。想省力就从它背后绕过去 —— 它的引力会把你甩向土星。',
+		title: '木星',
+		brief: '木星任务 · 地球轨道：第一次真正的行星际飞行。出发得够快，木星才会在你到达时出现在航线上。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
 			sun(),
-			// 木星：本关的"弹弓"（唯一的强引力源，站在地球到土星的路上）。
-			// ⚠️ 相位 89.4 / 89.0 是**相位求解器**（tools/level-phases.mjs）解出来的"设计航线穿越角"：
-			// 从 (0,80) 向外飞、能依次穿过 105/135 环的那一族弧线，穿越点几乎都在 89°~90°
-			// （因为最好的那族弧线接近**径向**：θ 沿径向不变 ⇒ 行星必须摆在那条射线上）。
-			// 旧值 195.5/198 是照着「240° 方向、Δv 35 的绕日弧线」排的 —— 实测那条弧线**撞进太阳**
-			// （peakR 只有 80），于是相位和任何可行航线都对不上，成功率被压到 6%（修完约 30%+）。
-			orbiter(4000, R_JUPITER, ORBIT.jupiter, 89.4),
-			// 土星：终点站，有引力（捕获要算相对速度）
-			orbiter(12000, R_SATURN, ORBIT.saturn, 89.0),
+			homeEarth(),
+			// 木星（105）：这一关唯一的目标，也是本作的「核心瞬间」——
+			// 掠过时会被它掰弯：掠过距离 ~17 单位、相对速度 ~24 ⇒ 偏折 20°~40°，肉眼看得出来。
+			// （从哪一侧掠过会改变偏折方向，这是玩家在这一关要做的判断。）
+			orbiter(GM.jupiter, R_JUPITER, ORBIT.jupiter, 34.68),
 		],
-		visuals: [
-			sunVisual(),
-			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: R_JUPITER, ring: false, model: 'Planet_Jupiter' },
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: R_SATURN, ring: true, model: 'Planet_Saturn' },
+		visuals: [sunVisual(), earthVisual(), jupiterVisual()],
+		goal: { kind: 'planet', planetIndex: 2, tolerance: R_JUPITER + FLYBY_PAD },
+		dvBudget: 55,
+		escapeRadius: 700,
+		maxSteps: 2400, // 20 秒：地球轨道 → 木星轨道的最省力弧线约 10 秒
+		timeWindow: { span: 300 },
+	},
+	{
+		id: 4,
+		title: '土星',
+		brief: '土星任务 · 地球轨道：先掠过木星，让它替你掰一下方向 —— 土星还在更外面。',
+		probeStart: { x: 0, y: ORBIT.earth },
+		planets: [
+			sun(),
+			homeEarth(),
+			orbiter(GM.jupiter, R_JUPITER, ORBIT.jupiter, 33.78),
+			orbiter(GM.saturn, R_SATURN, ORBIT.saturn, 66.7),
 		],
-		// 顺序航线（S3.7）：先**贴近**掠过木星（容差只有本体 +6 ⇒ "贴得越近甩得越狠"），再到土星。
+		visuals: [sunVisual(), earthVisual(), jupiterVisual(), saturnVisual()],
+		// 两个节点（S3.13）：先掠过木星，再到土星 —— 一次点火，两个环都要穿对。
 		goal: {
-			kind: 'planet', planetIndex: 1, tolerance: R_JUPITER + 22,
+			kind: 'planet', planetIndex: 3, tolerance: 45,
 			chain: [
-				{ planetIndex: 1, tolerance: R_JUPITER + 22, label: '木星' },
-				// ⚠️ 这一关**不做捕获**：L3 的决策是「方向性 / 加速」（从木星背后抄过去），再叠一个「减速入轨」就成两件事了。
-				// 捕获从 L4「窗口」开始 —— 而它正是「选对日期才慢得下来」的那一关（设计上配套）。
-				{ planetIndex: 2, tolerance: R_SATURN + 45, label: '土星' },
+				{ planetIndex: 2, tolerance: 30, label: '木星' },
+				{ planetIndex: 3, tolerance: 45, label: '土星' },
 			],
 		},
 		dvBudget: 55,
 		escapeRadius: 700,
 		maxSteps: 2400,
-		homeRadius: 1.45,
-	},
-	{
-		id: 4,
-		title: '窗口',
-		brief: '航行日志 · 第 3 年：木星一直在绕太阳走。挑一个它正好在你航线上的日期起飞 —— 拖动时间轴，看它挪位置。',
-		probeStart: { x: 0, y: ORBIT.earth },
-		planets: [
-			sun(),
-			// 设计航线（≈ 径向射出、依次穿过 105/135 环）要求两颗都在 **89.5°** 附近。
-			// 把它们摆成"**第 180 秒**才对齐"：t0=0 时木星在 29.3°、土星在 48.2°（明显错开 40°~60°），
-			// 玩家每按一次「加速▶」世界时间 +15 秒 ⇒ 木星挪 5.0°、土星挪 3.4°，按 12 次正好对上。
-			// 为什么是 180 而不是更小：**可行日期带本身有 ~180 秒宽**（方向窗口 ±30° ÷ 木星 0.335°/s），
-			// 所以只有把答案放得足够远，t0=0 才真的是"错开的"（实测 t0*=90 时前半段全是可行解，
-			// 玩家不用碰时间轴就能过 —— 这一关的教学就没了）。
-			// （旧值 315.5/288 同样是照一条不存在的弧线排的，任何日期都对不上。）
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3),
-			orbiter(12000, R_SATURN, ORBIT.saturn, 48.2),
-		],
-		visuals: [
-			sunVisual(),
-			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: R_JUPITER, ring: false, model: 'Planet_Jupiter' },
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: R_SATURN, ring: true, model: 'Planet_Saturn' },
-		],
-		// 顺序航线（S3.7）：木星 → 土星，两颗都在绕太阳走；日期决定它们相对你的航线在哪。
-		goal: {
-			kind: 'planet', planetIndex: 1, tolerance: R_JUPITER + FLYBY_PAD,
-			chain: [
-				{ planetIndex: 1, tolerance: R_JUPITER + 22, label: '木星' },
-				{ planetIndex: 2, tolerance: R_SATURN + 30, label: '土星', capture: true },
-			],
-		},
-		dvBudget: 50,
-		escapeRadius: 700,
-		maxSteps: 1800,
-		homeRadius: 1.35,
-		// 时间轴跨度：300 秒 = 木星走 100°。可行日期带（约 35–215 秒）整段都在里面，
-		// 而尾巴上 215–300 秒是"来晚了"—— 玩家能亲眼看到木星已经转过那条线，掉头按「◀回退」即可。
-		// ⚠️ 别把 span 设成一整个周期（1076 秒）：那样一大半行程是纯死区，玩家会以为自己算错了。
 		timeWindow: { span: 300 },
 	},
 	{
 		id: 5,
-		title: '大巡游',
-		brief: '航行日志 · 第 5 年：一次点火，四颗巨行星。木星改向、土星续航、天王星微调 —— 最后到海王星。',
+		title: '天王星',
+		brief: '天王星任务 · 地球轨道：木星、土星，两次借力，越飞越远。一次点火要串起三个节点。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
 			sun(),
-			// 四颗**连珠**：都在 89.5°（= 从地球向外那条射线的方位）。这正是真实 Grand Tour 能成立的原因
-			// —— 八十年代外侧四颗巨行星恰好挤在同一小段方位上。相位由 tools/level-phases.mjs 解出：
-			// 修掉旧值（195.5/203.1/209.7/216.4，照一条撞太阳的弧线排的）之后，
-			// 能走通的点火方向从 6° 宽变成 **60°+ 宽**，这才是"多条路线"（设计稿第五章的原话）。
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 89.5),
-			orbiter(2000, R_SATURN, ORBIT.saturn, 89.5),
-			orbiter(1200, R_URANUS, ORBIT.uranus, 89.5),
-			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 89.5),
+			homeEarth(),
+			orbiter(GM.jupiter, R_JUPITER, ORBIT.jupiter, 48.58),
+			orbiter(GM.saturn, R_SATURN, ORBIT.saturn, 80),
+			orbiter(GM.uranus, R_URANUS, ORBIT.uranus, 96.33),
 		],
-		visuals: [
-			sunVisual(),
-			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: R_JUPITER, ring: false, model: 'Planet_Jupiter' },
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: R_SATURN, ring: true, model: 'Planet_Saturn' },
-			{ r: 0.62, g: 0.82, b: 0.86, displayRadius: R_URANUS, ring: false, model: 'Planet_Uranus' },
-			{ r: 0.34, g: 0.50, b: 0.86, displayRadius: R_NEPTUNE, ring: false, model: 'Planet_Neptune' },
-		],
-		// 大巡游（S3.7）：一次点火，依次掠过木 → 土 → 天 → 海。
+		visuals: [sunVisual(), earthVisual(), jupiterVisual(), saturnVisual(), uranusVisual()],
+		// 三个节点：木星 → 土星 → 天王星（容差逐站放大 —— 越远，弧线越长、越难对准）。
 		goal: {
-			kind: 'planet', planetIndex: 1, tolerance: R_JUPITER + FLYBY_PAD,
-			// 容差 40/50/60/70（≈ 20° 的角窗口）：这是**四站串联**，每一站都要在正确的时刻
-			// 被够到，容差给足才谈得上"多条路线"。扫掠实测 26.6/30.3/33/37 → 7.2%，
-			// 40/50/60/70 → 17.5%（环本身就是画在容差半径上的，玩家看得见这个"圈"）。
+			kind: 'planet', planetIndex: 4, tolerance: 60,
 			chain: [
-				{ planetIndex: 1, tolerance: 40, label: '木星' },
-				{ planetIndex: 2, tolerance: 50, label: '土星' },
-				{ planetIndex: 3, tolerance: 60, label: '天王星' },
-				// ⚠️ 这里**不设**捕获（L3 一样）：L5 的决策是"路线规划"（怎么摆这条弧线），
-				// 再叠一个"到海王星还得慢下来"就变成两件事，而实测那会把可行路线砍掉 4/5（280 → 60 量级）。
-				// 捕获留在 L4 的土星 —— 那一关本来就是"选对日期才慢得下来"。
-				{ planetIndex: 4, tolerance: 70, label: '海王星' },
+				{ planetIndex: 2, tolerance: 40, label: '木星' },
+				{ planetIndex: 3, tolerance: 50, label: '土星' },
+				{ planetIndex: 4, tolerance: 60, label: '天王星' },
 			],
 		},
 		dvBudget: 55,
 		escapeRadius: 700,
 		maxSteps: 2400,
-		homeRadius: 1.25,
+		timeWindow: { span: 300 },
 	},
 	{
 		id: 6,
-		title: '单程',
-		brief: '航行日志 · 第 12 年：没有回程了。四颗巨行星还会连成一条线 —— 等到那一天（拖动时间轴），沿着这条线依次穿过去，再越过 260 单位，就是星际空间。',
+		title: '海王星',
+		brief: '海王星任务 · 地球轨道：四颗巨行星连成一条线的那个日期。一次点火串到底，飞向 195 单位外的海王星。',
 		probeStart: { x: 0, y: ORBIT.earth },
 		planets: [
 			sun(),
-			// 四颗与 L5 一样**连珠**（都在 89.5°）：终章的"穿过四颗巨行星"必须是真目标，
-			// 而不是一句文案 —— 见下面 goal.chain。
-			// phase0 是"第 **180 秒**才连珠"的解（tools/level-phases.mjs 的 t0* 口径）：
-			// t0=0 时木星在 29.3°（差 60°），玩家必须先把日期拨到 180 秒附近，四颗才排到出射线上。
-			// ⇒ 终章 = **综合**：空间（对准连珠）+ 能量（逃逸）+ 时间（等窗口）+ 多节点（四站）。
-			orbiter(2500, R_JUPITER, ORBIT.jupiter, 29.3),
-			orbiter(2000, R_SATURN, ORBIT.saturn, 48.2),
-			orbiter(1200, R_URANUS, ORBIT.uranus, 58.9),
-			orbiter(8000, R_NEPTUNE, ORBIT.neptune, 65.7),
+			homeEarth(),
+			// 四颗**连珠**：都在 89.5° 附近（= 从地球向外那条射线的方位）—— 这正是真实 Grand Tour
+			// 能成立的原因：八十年代外侧四颗巨行星恰好挤在同一小段方位上。
+			// 这里的相位是「第 175 秒才连珠」的解（node tools/level-phases.mjs 6 --t0 175）：
+			// t0=0 时它们明显错开，玩家必须先把日期拨过去，四颗才排到出射线上。
+			orbiter(GM.jupiter, R_JUPITER, ORBIT.jupiter, 29.3),
+			orbiter(GM.saturn, R_SATURN, ORBIT.saturn, 48.2),
+			orbiter(GM.uranus, R_URANUS, ORBIT.uranus, 58.9),
+			orbiter(GM.neptune, R_NEPTUNE, ORBIT.neptune, 65.7),
 		],
-		visuals: [
-			sunVisual(),
-			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: R_JUPITER, ring: false, model: 'Planet_Jupiter' },
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: R_SATURN, ring: true, model: 'Planet_Saturn' },
-			{ r: 0.62, g: 0.82, b: 0.86, displayRadius: R_URANUS, ring: false, model: 'Planet_Uranus' },
-			{ r: 0.34, g: 0.50, b: 0.86, displayRadius: R_NEPTUNE, ring: false, model: 'Planet_Neptune' },
-		],
-		// 逃逸半径 260 = 海王星轨道（195）之外：不是"飞远一点"，是真的离开这几颗行星的地盘。
-		// 单程（S3.11）：终章 = **综合** —— 先沿连珠**依次穿过四颗巨行星**，再飞出 260。
-		//   ⚠️ 这一关是"两个条件都要"：resolveResult 对 kind='escape' **且带 chain** 的判定是
-		//   「航线走完 **并且** 真的越界」，只走完航线 / 只飞出去都不算（S3.11 新增的规则）。
-		//   （改之前这里只有 kind:'escape'：朝任何方向猛推一下就能过 —— 32% 的样本可行、
-		//     270° 的方向都算赢，"穿过四颗巨行星"纯粹是文案。）
+		visuals: [sunVisual(), earthVisual(), jupiterVisual(), saturnVisual(), uranusVisual(), neptuneVisual()],
+		// 四个节点：一次点火依次穿过木 → 土 → 天 → 海。
+		// ⚠️ 这一关**不再**要求逃逸（S3.13）：逃逸归终章「暗淡蓝点」，第 6 关就是一个目的地任务。
+		//    旧的 kind:'escape' 版本要求「航线走完 **且** 越过 260」—— 那会让「穿过四颗巨行星」
+		//    从任务变成附加条件，也让最后 65 单位的空程变成纯粹的等待。
 		goal: {
-			kind: 'escape', planetIndex: -1, tolerance: 0,
-			// 容差与 L5 同一套（40/50/60/70）：同一批巨行星、同一个"圈"的读法。
+			kind: 'planet', planetIndex: 5, tolerance: 70,
 			chain: [
-				{ planetIndex: 1, tolerance: 40, label: '木星' },
-				{ planetIndex: 2, tolerance: 50, label: '土星' },
-				{ planetIndex: 3, tolerance: 60, label: '天王星' },
-				{ planetIndex: 4, tolerance: 70, label: '海王星' },
+				{ planetIndex: 2, tolerance: 40, label: '木星' },
+				{ planetIndex: 3, tolerance: 50, label: '土星' },
+				{ planetIndex: 4, tolerance: 60, label: '天王星' },
+				{ planetIndex: 5, tolerance: 70, label: '海王星' },
 			],
 		},
-		// Δv 预算 50：逃逸（r=80 处需 ~37，飞过 260 需 ~37.1）意味着"至少花掉 3/4 的点火量"，
-		// 这正是"单程"的另一半意思 —— 没有回程的燃料。
-		dvBudget: 50,
-		escapeRadius: 260,
-		maxSteps: 2400,
-		homeRadius: 1.00,
-		// 时间轴（与 L4 同一套读数）：四颗巨行星的连珠窗口在第 90~240 秒之间，
-		// 之前是"还没连上来"、之后是"已经转过去了"——扫掠逐档成功数：
-		// ..111.568999999999999544（每档 12.5 秒）= 窗口真的会关。
+		dvBudget: 55,
+		escapeRadius: 700,
+		maxSteps: 2400, // 20 秒：地球轨道 → 海王星轨道约 19 秒（顺带卡住「绕远路」的样本）
 		timeWindow: { span: 300 },
 	},
 ];

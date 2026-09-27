@@ -302,7 +302,8 @@ function testTimeWindow(stats: SweepStat[]): void {
 		check(`lv${lv.id}-window-open`, st.solutions >= 3,
 			`时间轴必须有能落进去的窗口：solutions=${st.solutions}`);
 	}
-	check('time-window-exists', withWindow >= 1, '至少有一关带时间轴（L4 窗口）');
+	// S3.13：时间轴从「只有 L4/L6 有」变成**六关都有**（设计稿第十条：不再有特例）—— 这条断言守的正是那个决定。
+	check('time-window-exists', withWindow === n, '六关都必须有时间轴：withWindow=' + withWindow + '/' + n);
 }
 
 export function runTests(): string {

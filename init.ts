@@ -190,11 +190,10 @@ if (levelTotal <= 0) {
 			spherePath: 'Assets/Model/Sphere.gltf',
 			ringPath: 'Assets/Model/Ring.gltf',
 			probePath: 'Assets/Model/Probe_Voyager_v1.glb',
-			// 地球锚点（纯视觉）：出发点正下方 ≈4 格——大天线"回头指向"的目标。
-			// homeRadius 逐关变小（S3.6.1 尺寸层次）：越飞越远，回头时它越小。
-			// ⚠️ L1 的地球已经是**真天体**（S3.9.3）⇒ 那里 homeAnchor = false，否则会叠两个地球。
-			home: def.homeAnchor === false ? undefined : { x: level.probeStart.x, y: level.probeStart.y + 4.2 },
-			homeRadius: def.homeRadius,
+			// ⚠️ S3.13：家园地球不再是**纯视觉锚点**，而是每关 planets 里的一个**布景天体**
+			// （homeEarth()：沿地球轨道运行、gm = 0、半径 = R_EARTH）⇒ 这里不再传 home。
+			// Scene 的 home/homeRadius 因此暂时闲置："大天线回头指向地球"要改成指向那颗布景地球，
+			// 等 3D 镜头那一轮再接（见 .agent/plan/PROGRESS.md）。
 			// [二分测试 C：临时禁用分体]
 			probeBodyPath: 'Assets/Model/Probe_Body.glb',
 			probeAntennaPath: 'Assets/Model/Probe_Antenna.glb',

@@ -639,3 +639,20 @@ R1/R2/R3/R4 已关闭（见手册 §11）；当前唯一已知验收风险是 **
 | `Test/SizeProbe.lua` | 读 `View.size` / `windowSize` / `aspectRatio` 等（合成鼠标的坐标换算基准，**不要写死分辨率**） | 标记文件 `.agent/test-results/size-probe.txt` |
 
 > 另有：`Test/Vision.ts`（TGA → ASCII/亮度/连通域的文本化视觉验证）与 `python -c "from PIL import Image; Image.open('x.tga').save('x.png')"`（DSH 原生看图）。
+
+#### S3.13 · 六站重排：L2–L6 全部换成新设计（2026-09-27 落地）
+
+> 依据 [`docs/关卡舞台表.md`](../../docs/关卡舞台表.md)。L1 在 S3.12 末尾已改成地月任务，这一节把**其余五关**重排。
+
+- [x] S3.13.1 引力强度统一成一张表（同一颗行星在六关里同一个 gm），巨行星档位 1200~12000
+- [x] S3.13.2 家园地球变成**真天体（布景）**：L2–L6 各加一颗 `homeEarth()`（沿地球轨道走、gm = 0、相位 100°）；
+      删掉 `LevelDef.homeAnchor/homeRadius` 与 init.ts 的接线（Scene 的 home 选项暂时闲置，"大天线回头指向地球"待接）
+- [x] S3.13.3 六站目的地：月球 / 金星 55 / 木星 105 / 土星 135（1 中继）/ 天王星 165（2 中继）/
+      海王星 195（3 中继）；**六关都有时间轴**（60 / 240 / 300×4）
+- [x] S3.13.4 相位重解（`level-phases.mjs`）+ **整带平移**（新工具 `level-window.mjs`：把每颗行星的 phase0
+      一起减 ω·δ 等价于把可行日期带平移 δ 秒）⇒ 六关的窗口都挪到"第 0 天明显不行"的位置
+- [x] S3.13.5 单测：`time-window-exists` 从"≥1 关"收紧成"**六关都有**"
+- [x] S3.13.6 验证：构建 41/41；`level-window.mjs` 六关 `window-matters` 全 PASS；
+      引擎内 `Test/UnitRunner` 8/8（LevelDataTest 73 条，含 `lvN-reachable`/`lvN-window-matters`/`lvN-window-open`）
+- [ ] S3.13.7 引擎内**画面**验收：新相位下的行星位置、金星向内坠落、地球布景的大小与位置
+- [ ] S3.13.8 探测器两版（太阳能板 / RTG，`probeVariant`）—— 等 Trae 的模型
