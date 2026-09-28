@@ -35,9 +35,9 @@ L1 关掉轨道流动光点（那颗 1.92 单位宽的面片就是"3D 全屏米�
 
 | 项 | 值 | 怎么复现 |
 |---|---|---|
-| 构建 | **50 文件 50 成功 0 失败** | `node tools/dora-build/build.mjs --all` |
+| 构建 | **51 文件 51 成功 0 失败**（2026-09-28 20:20 实测；新增 `Test/ClipPlaneProbe.ts`） | `node tools/dora-build/build.mjs --all` |
 | 单测 | **12 模块全绿（GameTest 82 检查点全绿，含飞行中实时逆喷制动、偏心率闭合判定、防重复触发守卫）** | 先 `Stop-Process -Name Dora -Force`，再 `pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt` |
-| 单测分布 | Gravity 37 / **Game 82** / LevelData 145 / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 48 / Opening 33 / PlanView 20 / OrbitFlow 25 / Scale 53 / SolarHub 42 | 同上 |
+| 单测分布 | Gravity 37 / **Game 82** / LevelData 116 / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 48 / Opening 33 / PlanView 19 / OrbitFlow 25 / Scale 53 / SolarHub 27 ⇒ **合计 488 断言** | 同上 |
 | 六大任务沙盘证据 | `shot-hub-pano.png`（全景沙盘）、`shot-hub-l1-moon.png`（阿波罗探月）、`shot-hub-l2-mercury.png`（水手10号·水星特写卡）、`shot-hub-l3-sun.png`（帕克号·太阳日冕特写卡）、`shot-hub-l4-jupiter.png`（伽利略号·木星轨道器特写卡）、`shot-hub-l6-neptune.png`（旅行者2号·海王星特写卡） | `pwsh tools/shot-hub-interactive.ps1` |
 | 三枚火箭挑战与结算卡片实机证据 | `shot-result-l1-moon.png`（月球启蒙·三星评级+燃油耗尽/近月点清单）、`shot-result-l2-mercury.png`（水手10号潜行·金星减速降幅清单）、`shot-result-l4-galileo.png`（伽利略号泊入·开普勒入轨偏心率清单） | `pwsh tools/shot-hub-interactive.ps1` |
 | L4 伽利略号实时制动与慢动作透镜实机证据 | `shot-l4-brake-window.png`（木星引力井慢动作0.25x透镜下激活琥珀金色 `BRAKE 逆喷` 按钮与醒目通知横幅）、`shot-l4-braked-orbit.png`（实时逆喷减速完成闭合入轨，按钮变更为青绿色 `已捕获入轨` 状态） | `pwsh tools/shot-hub-interactive.ps1` |
@@ -68,6 +68,19 @@ L1 关掉轨道流动光点（那颗 1.92 单位宽的面片就是"3D 全屏米�
 | 单测 | **12 模块 533 断言全绿**（含引擎内 L1 可达性硬门 `lv1-reachable`） |
 | 工具修正 | `tools/level-sweep.mjs` 一直用**全局** PhysicsStep（1/120）扫掠，而游戏从 S5 起按关卡给步长 ⇒ 已改为读 `Tuning.LEVEL_RUNTIME`（不然报告的数字是假的） |
 | 地基修复 | ① `Gravity.simulate` 内层滚动缓存天体位置（每步 6 次 → 3 次，**结果逐位不变**）；② 待机轨改成**相对宿主的解析圆轨**（旧实现每绕一圈瞬移一次：地球一个周期走 0.0844 单位 = 24 倍停泊轨半径）；③ 预测线按关卡给步数（`predictSteps`，L1 = 8000）+ 0.08 秒节流 |
+| **3D 近裁剪面**（真凶①） | 引擎默认 `View.nearPlaneDistance = 0.1`，而 L1 贴地球机位的相机到目标只有 **0.0126** ⇒ 地月系被整个裁掉。落地 `Tuning.cameraNear = 2e-4` + `init.ts applyClipPlanes()`（切相机时同步，带 float32 容差）。证据：`l1-3d-before.png`（只有星点）→ `l1-3d-fixed.png`（地球 + 探测器 + 星空） |
+| **3D 全屏灰带**（真凶②） | 相机**站在地球的日心轨道圈上**（地球轨 80.000009 vs 相机离原点 80.0117），那张 `OrbitRing_80.gltf` 环网面横贯全屏，实测色 **(55,60,63)** = `OrbitRingTintHex` 0x36404d 被暖光照亮的结果。落地 `Tuning.orbitRings = false`（L1）→ `SceneOptions.orbitRings` |
+| 诊断工具 | `Test/ClipPlaneProbe.ts` + 手写引导 `Test/ClipProbe.lua`（TSTL 产物在文件头就 require，单文件入口的搜索根是 `<proj>/Test` ⇒ 必须先把项目根塞进 `Content.searchPaths`）：按发布配置重建 L1 场景、摆到贴地球机位、逐档报背景均值。**`RESULT=PASS`**（baseBg 28.1 < 45） |
+| 2D 读数 | `PlanView` 加 `Label` 层：`月球 · 38.4 万 km` / `地球 · 1.50 亿 km` / `探测器 · 高度 200 km`（`formatKm`）；画外天体不给读数。证据 `l1-2d-labels-only.png`；60× 放大 `l1-2d-zoom60.png`（月球出画 ⇒ 只剩左上信标三角） |
+| **发射自动提档漏了按钮那条路**（B 修复④） | `Game.launch`（开发钩子）有提档、`Game.launchArmed`（HUD「发射」→ 玩家真正走的）没有 ⇒ **玩家永远停在 1×**。抽出 `applyFlightSpeed()` 两条路共用。证据（合成鼠标）：`launch button fire (press)` → **`speed auto -> 1e4x (launch)`** → `view -> 3D` → `phase -> Flying` |
+| 探测器图钉尺度错配（B 修复⑤） | 2D 图钉的真实大小那一路读的是**全局** `PROBE_VISUAL_RADIUS`（0.0015），L1 现在是 0.00015 ⇒ 60× 下图钉被吹到上限（26px）。改为 `PlanOptions.probeVisualRadius` 按关卡给 |
+| B4 运镜（**由并行会话落地，本轮只复验**） | L1 `mission.introTour` = 6.0 秒三幕（2.0 月球特写 / 2.4 航线走廊 / 1.6 归巢，各带横幅）；轻触跳过证据：`tap to skip tour (L1)` → `intro tour completed -> enter 2D` |
+
+> ⚠️ **本轮提交范围**（2026-09-28）：这次提交只带 `game/Scene.ts` / `game/PlanView.ts` / `tools/level-play.ps1` /
+> `Test/ClipPlaneProbe.*` / `Test/ClipProbe.lua` / 这两份文档。**近裁剪面与轨道圈的落地在 `init.ts` + `game/Tuning.ts`，
+> 发射自动提档的修复在 `game/Game.ts`** —— 那三个文件此刻同时被**另一个并行会话**改动（六关 → 三关的重构，
+> 见未跟踪的 `docs/L3重构设计案.md`），为避免把对方的半成品一起提交，暂不随本次提交。
+> 改动**都在工作区**，且当前构建 51/51、单测 12/12 全绿（含双方改动）。
 
 > ⚠️ **B 剖面的飞行不是霍曼转移**：可行解的 Δv 在 3.56–4.6（霍曼只要 3.1556），所以都是**快转移 ≈ 0.9 天**
 > —— 瞄准档 1,000×（停泊轨 5.3 秒一圈）与飞行档 10,000×（8.6 秒打完）**只差一档**，比 A 剖面的 1 : 82 好得多。

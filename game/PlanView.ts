@@ -25,13 +25,14 @@
  * 该层的子空间是**左下原点绝对像素 [0,W]×[0,H]、+Y 向上**（与 Trajectory 的 layerOrigin 同一套约定，
  * 见开发手册 §5.5 第 7 条）。所以这里直接用像素坐标，不加任何居中偏移。
  */
-import { Color, DrawNode, Node, Vec2 } from 'Dora';
+import { Color, DrawNode, Label, Node, Vec2 } from 'Dora';
 import { Body, P2, bodyPositionAt, distance } from 'game/Gravity';
 import { FlowDotsPerOrbit, flowDotPosition } from 'game/OrbitFlow';
 import { GoalRing, decimate } from 'game/Trajectory';
 import { PlanetVisualDef } from 'game/LevelData';
-import { PROBE_VISUAL_RADIUS } from 'game/Tuning';
-import { colorFromHex } from 'game/Ui';
+import { KmPerUnit } from 'game/Scale';
+import { PROBE_VISUAL_RADIUS, bodyLabel } from 'game/Tuning';
+import { colorFromHex, createLabel, setLabelCenter, setLabelText, setLabelVisible } from 'game/Ui';
 
 /** 视图模式：`'2D'` = 规划（线稿示意图），`'3D'` = 观赏（发光太阳、真实比例、掠过被掰弯）。 */
 export type PlanViewMode = '2D' | '3D';
@@ -222,6 +223,23 @@ export interface PlanOptions {
 	probeHex: number;
 	/** 探测器停泊轨的颜色（比行星轨更暗更冷：它是"我在哪条轨道上"的参考线）。 */
 	probeOrbitHex: number;
+	// ---- 读数标签（B 修复③，2026-09-28）----
+	/** 标签字号（像素）。 */
+	labelFontSize: number;
+	/** 标签颜色（比轨道亮、比图钉暗：它是"说明书"，不该抢图钉的视线）。 */
+	labelHex: number;
+	/** 标签离图钉中心的垂直距离（像素）；正数 = 画在**上方**。 */
+	labelGapY: number;
+	/**
+	 * 探测器的**视觉半径**（世界单位，B 修复⑤）。
+	 *
+	 * 省略 = 全局的 `PROBE_VISUAL_RADIUS`。为什么要按关卡给：它决定
+	 * `图钉半径 = max(固定像素, 视觉半径 × scale)` 的上限到不到 —— 60× 放大下
+	 * `scale ≈ 8.2e4 像素/单位`，用全局的 0.0015 会算出 122px（被 maxPinRadius 压到 26），
+	 * 而 L1 现在真实的探测器视觉半径是 **0.00015**（12px）—— 图钉会**吹大 2 倍**，
+	 * 在"贴地球"那一帧里看起来像一颗小行星。这就是 AGENTS 说的"写死世界单位的常量要按关卡问一遍"。
+	 */
+	probeVisualRadius?: number;
 }
 
 export function defaultPlanOptions(): PlanOptions {
@@ -248,7 +266,36 @@ export function defaultPlanOptions(): PlanOptions {
 		flowDotHex: 0xfff0cf,
 		probeHex: 0xeaf4ff,
 		probeOrbitHex: 0x5d7fa6,
+		labelFontSize: 20,
+		labelHex: 0xc3d6e8,
+		labelGapY: 18,
+		probeVisualRadius: PROBE_VISUAL_RADIUS,
 	};
+}
+
+/**
+ * 公里数 → 中文读数（航天模拟器那种）。
+ *
+ * 口径：< 1 万 km 给整数带千分位（「6,571 km」）、< 1 亿给「万」（「38.4 万 km」）、
+ * 再往上给「亿」（「1.50 亿 km」）。**不做科学计数法**：tstl 没有 toExponential（AGENTS 第 21 条），
+ * 而且玩家读数要的是"38.4 万"这种人话，不是 3.844e5。
+ */
+export function formatKm(km: number): string {
+	if (!(km > 0)) return '0 km';
+	if (km < 1e4) {
+		// 千分位：从右往左每三位插一个逗号
+		let s = Math.round(km).toFixed(0);
+		let out = '';
+		let count = 0;
+		for (let i = s.length - 1; i >= 0; i--) {
+			out = s.charAt(i) + out;
+			count += 1;
+			if (count % 3 === 0 && i > 0) out = ',' + out;
+		}
+		return out + ' km';
+	}
+	if (km < 1e8) return (km / 1e4).toFixed(1) + ' 万 km';
+	return (km / 1e8).toFixed(2) + ' 亿 km';
 }
 
 /** 2D 规划视图句柄（属性式方法，见 Trajectory 的同款约定）。 */
@@ -321,6 +368,20 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	root.addChild(pathDraw);
 	root.addChild(pinDraw);
 	root.addChild(beaconDraw);
+	// 读数层（B 修复③，2026-09-28）：**DrawNode 画不出字**，所以单开一层 Label 节点，
+	// 放在 root 的最后 = 压在图钉与信标之上（它就是"地图上那种贴在天体旁边的说明"）。
+	// 坐标与 DrawNode 同一套（左下原点绝对像素，见文件头"坐标系"）。
+	const labelRoot = Node();
+	root.addChild(labelRoot);
+	/** 探测器读数标签（惰性建一次）。 */
+	let probeLabel: Label.Type | undefined = undefined;
+	/** 天体读数标签（与 bodies 一一对应，惰性建）。 */
+	let bodyLabels: (Label.Type | undefined)[] = [];
+	/** 探测器的读数文字（在 syncProbe 里按"此刻离哪个天体最近"算出来）。 */
+	let probeReadout = '探测器';
+	/** 上次写进 Label 的文字（**没变就别碰 Label**：文字布局每帧重算是纯浪费，Hud 同款纪律）。 */
+	let lastProbeReadout = '';
+	const lastBodyReadout: string[] = [];
 	layer.addChild(root);
 
 	const orbitColor = colorFromHex(options.orbitHex, 1);
@@ -362,6 +423,25 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	let pred: P2[] = [];
 	let trail: P2[] = [];
 	let rings: GoalRing[] = [];
+
+	/**
+	 * 标签贴边时别被切掉。
+	 *
+	 * Label 是**居中锚点**（anchor 0.5/0.5），所以左右各留 1/6 屏宽 —— 够放 7–11 个字
+	 * （「月球 · 38.4 万 km」在 20px 下约 150px，竖屏 840 宽 ⇒ 140 的余量正好）。
+	 */
+	const clampLabelX = (x: number): number => {
+		const pad = viewW / 6;
+		if (x < pad) return pad;
+		if (x > viewW - pad) return viewW - pad;
+		return x;
+	};
+	/** 上下留 26px（字号 20 的半高 + 一点余地）。 */
+	const clampLabelY = (y: number): number => {
+		if (y < 26) return 26;
+		if (y > viewH - 26) return viewH - 26;
+		return y;
+	};
 
 	const clearAll = (): void => {
 		orbitDraw.clear();
@@ -465,12 +545,32 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 				col = Color(Math.floor(v.r * 255), Math.floor(v.g * 255), Math.floor(v.b * 255), 255);
 			}
 			pinDraw.drawDot(Vec2(s.x, s.y), r, col);
+
+			// ④b 读数（B 修复③）：名字 + 它离**宿主**多远（「月球 · 38.4 万 km」）。
+			// 根天体（太阳 / L1 的地球）没有宿主 ⇒ 只写名字，不编一个数字。
+			if (i < bodyLabels.length) {
+				const lb = bodyLabels[i];
+				// ⚠️ 画外天体**不给读数**：贴边夹紧会让"太阳"这种远在天边的天体把标签糊在屏幕角上
+				// （实测：L1 的太阳在平面 (0,0)，离这张图十万八千里，标签却被夹到了标题栏上）。
+				// 只保留"刚好出画"的（±60px）—— 那种情况玩家确实需要知道"它就在那边"。
+				const near = s.x > -60 && s.x < viewW + 60 && s.y > -60 && s.y < viewH + 60;
+				setLabelVisible(lb, near);
+				if (!near) continue;
+				const name = i < visuals.length ? bodyLabel(visuals[i].model) : '天体';
+				const text = b.orbitRadius > 0 ? name + ' · ' + formatKm(b.orbitRadius * KmPerUnit) : name;
+				if (i >= lastBodyReadout.length || lastBodyReadout[i] !== text) {
+					lastBodyReadout[i] = text;
+					setLabelText(lb, text);
+				}
+				setLabelCenter(lb, clampLabelX(s.x), clampLabelY(s.y + r + options.labelGapY));
+			}
 		}
 
 		// ⑤ 探测器：亮点 + 一圈细环（一眼分清"我"与行星）+ 速度方向短线
 		const ps = planeToScreen(probe, map);
 		let pr = options.probePinRadius;
-		if (PROBE_VISUAL_RADIUS > 0 && PROBE_VISUAL_RADIUS * map.scale > pr) pr = PROBE_VISUAL_RADIUS * map.scale;
+		const pvr = options.probeVisualRadius !== undefined ? options.probeVisualRadius : PROBE_VISUAL_RADIUS;
+		if (pvr > 0 && pvr * map.scale > pr) pr = pvr * map.scale;
 		if (pr > options.maxPinRadius) pr = options.maxPinRadius;
 		pinDraw.drawDot(Vec2(ps.x, ps.y), pr, probeColor);
 		pinDraw.drawPolygon(circleVerts(ps.x, ps.y, pr + 5, 24), noFill, 1.5, probeColor);
@@ -485,6 +585,17 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 				probeColor,
 			);
 		}
+
+		// ⑤b 探测器读数（B 修复③）：贴在图钉**下方**（它在 L1 里与地球几乎重叠，写在上方会打架）
+		if (probeLabel === undefined) {
+			probeLabel = createLabel(labelRoot, probeReadout, options.labelFontSize, options.labelHex);
+			lastProbeReadout = probeReadout;
+		} else if (lastProbeReadout !== probeReadout) {
+			lastProbeReadout = probeReadout;
+			setLabelText(probeLabel, probeReadout);
+		}
+		setLabelVisible(probeLabel, ps.x > -60 && ps.x < viewW + 60 && ps.y > -60 && ps.y < viewH + 60);
+		setLabelCenter(probeLabel, clampLabelX(ps.x), clampLabelY(ps.y - pr - options.labelGapY));
 
 		// ⑥ 屏幕外目标雷达指示指针（S8.4）
 		if (rings.length > 0) {
@@ -544,6 +655,13 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			bodies = bs;
 			visuals = vs;
 			tWorld = t;
+			// 读数标签按天体数量惰性建一次（数量在一关内是固定的，所以只会建一次）
+			if (bodyLabels.length !== bs.length) {
+				bodyLabels = [];
+				for (let i = 0; i < bs.length; i++) {
+					bodyLabels.push(createLabel(labelRoot, '', options.labelFontSize, options.labelHex));
+				}
+			}
 			// S5：以某颗天体为中心时，**中心跟着它走** —— L1 的地球在绕日公转，
 			// 中心固定在地球 t=0 的位置会让整张图随时间漂出屏幕。
 			if (centerBodyIndex !== undefined && centerBodyIndex >= 0 && centerBodyIndex < bs.length) {
@@ -559,6 +677,31 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			probe = p;
 			probeVel = v;
 			dirty = true;
+			// 探测器读数 = **高度**（离"此刻引力最强的那个天体"表面的距离）。
+			// 口径：谁的 gm/d² 最大就是谁 —— L1 是地球（gm 0.216 / d 0.0035，压过太阳的 72000/6400），
+			// 外圈五关是太阳（那时读数就是日心距，对那几关同样说得通）。
+			// ⚠️ 不写死"宿主索引"：L1 的地球与月球、外圈关的太阳，尺度差 5 个数量级，
+			//    写死一定会错一关。
+			let best = -1;
+			let bestPull = 0;
+			let bestDist = 0;
+			for (let i = 0; i < bodies.length; i++) {
+				const b = bodies[i];
+				const d = distance(p, bodyPositionAt(b, tWorld));
+				if (d < 1e-9) continue;
+				const pull = b.gm / (d * d);
+				if (pull > bestPull) {
+					bestPull = pull;
+					best = i;
+					bestDist = d;
+				}
+			}
+			if (best >= 0) {
+				const alt = (bestDist - bodies[best].radius) * KmPerUnit;
+				probeReadout = '探测器 · 高度 ' + formatKm(alt > 0 ? alt : 0);
+			} else {
+				probeReadout = '探测器';
+			}
 		},
 		setPrediction(points: P2[]): void {
 			pred = points;

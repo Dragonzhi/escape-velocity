@@ -233,6 +233,12 @@ export interface PlanetNode {
 export interface SceneOptions {
 	/** 是否画轨道流动光点（B2）；省略 = 画。见 Tuning.LevelRuntime.orbitFlowDots。 */
 	orbitFlowDots?: boolean;
+	/**
+	 * 是否画**行星轨道圈**（3D 环网面，默认画）；省略 = 画。
+	 * L1 设 false：相机站在地球的日心轨道圈上（半径 80），那张环面会横贯全屏。
+	 * 见 Tuning.LevelRuntime.orbitRings。
+	 */
+	orbitRings?: boolean;
 	/** 场景根节点（通常是 Director.entry）。 */
 	root: Node3D.Type;
 	/** 行星定义（已应用过倍率）。 */
@@ -685,7 +691,11 @@ export function buildScene(options: SceneOptions): GameScene | undefined {
 	// ⚠️ 必须用 3D 网格而不是 2D 画线：2D 永远盖在 3D 之上，行星挡不住线（会话 27 的用户反馈）。
 	// 半径 = 世界单位、**不缩放**（缩放会把线宽一起放大）；资产由 Test/gen_level_orbits.py
 	// 从 game/LevelData.ts 的 ORBIT 表生成，所以改轨道半径后要重跑那个脚本。
+	// B 修复②（2026-09-28）：L1 关掉——相机就站在地球的日心轨道圈上（半径 80.000009 vs 相机
+	// 离原点 80.0117），那张 80 单位的环网面在视野里横贯全屏（近平面 0.1 时只剩一条细缝，
+	// 2e-4 时铺满下半屏；实测颜色 (55,60,63) = OrbitRingTintHex 被暖光照亮的结果）。
 	for (let i = 0; i < bodies.length; i++) {
+		if (options.orbitRings === false) break;
 		const def = bodies[i];
 		if (def.orbitRadius <= 0) continue;
 		const ringPath = 'Assets/Model/OrbitRing_' + def.orbitRadius.toFixed(0) + '.gltf';
