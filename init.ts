@@ -19,7 +19,7 @@
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
 import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
-import { evaluateRocketsDetailed, getLevel, goalWaypoints, levelCount, scaledPlanets } from 'game/LevelData';
+import { GameSecondsPerRealSecond, evaluateRocketsDetailed, getLevel, goalWaypoints, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
@@ -208,8 +208,12 @@ if (levelTotal <= 0) {
 			goal: def.goal,
 			escapeRadius: def.escapeRadius,
 			physicsStep: levelRuntime(index).physicsStep,
-			playback: levelRuntime(index).playback,
-			aimClockRate: levelRuntime(index).aimClockRate,
+			// B3：playback / aimClockRate 两个字段退役 —— 速率由**档位**决定（pow 0 = 1× = 现实 1 秒）
+			speedUnit: GameSecondsPerRealSecond,
+			speedDefaultPow: levelRuntime(index).speedDefaultPow,
+			speedMaxPow: levelRuntime(index).speedMaxPow,
+			flightSpeedPow: levelRuntime(index).flightSpeedPow,
+			aimFraming: levelRuntime(index).aimFraming,
 			slowMoFloor: levelRuntime(index).slowMoFloor,
 			aimMin: levelRuntime(index).aimMin,
 			maxSteps: def.maxSteps,
@@ -247,6 +251,7 @@ if (levelTotal <= 0) {
 			probeBodyRadius: rtg ? 0.871 : 1.084,
 			// 两版共用同一张细节图集（UV 已按分区排好，材质色与它相乘）
 			probeAtlasPath: 'Assets/Image/probe_atlas.jpg',
+			orbitFlowDots: levelRuntime(index).orbitFlowDots,
 		});
 		if (scene === undefined) {
 			print('[escape-velocity] FATAL: scene build failed for L' + (index + 1).toFixed(0));
@@ -257,11 +262,15 @@ if (levelTotal <= 0) {
 		const camera = Camera3D();
 		// 取景要按真实投影求解，所以必须把当前的视野角与宽高比一起传进去
 		// （竖屏 aspect 0.56 ⇒ 横向可用空间只有纵向一半，这两个值直接决定相机拉多远）
-		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio, rt.cameraMin, rt.cameraMax));
+		// B2：俯仰角按关卡给（L1 = 22° 近平面，"卫星环绕地球"的观感）
+		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio, rt.cameraMin, rt.cameraMax, rt.tiltDeg));
 		const trajectory = createTrajectoryView(levelLayers[index], trajectoryOptions());
 		// 2D 规划视图（S3.15）：与 trajectory 同一个 2D 层。视野 = 「最外圈轨道 + 目标容差」，
 		// 于是整条最外圈与它那个到达圈都装得下（设计稿第 6 条"够不够得着"要能一眼看出来）。
-		const plan = createPlanView(levelLayers[index], viewW, viewH, defaultPlanOptions(), def.planCenter);
+		// B2：L1 关掉流动光点（见 Tuning.orbitFlowDots）—— 2D 与 3D 一起关
+		const planOpts = defaultPlanOptions();
+		if (levelRuntime(index).orbitFlowDots === false) planOpts.flowDotRadius = 0;
+		const plan = createPlanView(levelLayers[index], viewW, viewH, planOpts, def.planCenter);
 		const planTolerance = arrivalRingRadius(def.goal);
 		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter));
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
@@ -437,6 +446,16 @@ if (levelTotal <= 0) {
 		aim.setBrake(game.brakeMode());
 		// 播放倍速 1×/2×/4×（S3.17）：按钮只表达意图，状态在 GameCore.playback 里；
 		// 掠过天体的自动慢动作叠在玩家选的档位上（× 1/4），不经过按钮。
+		// B3 时间控制组：按钮只表达意图，状态在 Game 里（AGENTS 硬约束 5）
+		aim.onSpeedUp((): void => {
+			game.speedUp();
+		});
+		aim.onSpeedDown((): void => {
+			game.speedDown();
+		});
+		aim.onTogglePause((): void => {
+			game.togglePause();
+		});
 		aim.onPlayback((speed: number): void => {
 			game.setPlaybackSpeed(speed);
 			print('[escape-velocity] playback speed -> ' + speed.toFixed(0) + 'x (L' + (index + 1).toFixed(0) + ')');
@@ -868,9 +887,14 @@ if (levelTotal <= 0) {
 			const curBurn = runtime.game.burnNow();
 			const fuelLimit = (runtime.dvBudget * 0.75);
 			runtime.aim.setLiveFuelChallengeStatus(curBurn <= fuelLimit && curBurn >= 0.001);
-			// 倍速兜底按钮（S3.17）：只在飞行态出现（隐藏 + 断触摸），高亮跟着 core.playback 走
-			runtime.aim.setPlaybackVisible(phaseNow === 'Flying');
-			runtime.aim.setPlayback(runtime.game.playbackSpeed());
+			// B3 时间控制组：常驻（瞄准/飞行都在）；档位读数 + 任务时钟每帧刷新。
+			// 旧的 1×/2×/4× 倍速按钮退役（不再显示），它的状态由档位接管。
+			runtime.aim.setTimeControl(
+				runtime.game.speedPow(),
+				runtime.game.speedMaxPow(),
+				runtime.game.isPaused(),
+				runtime.game.missionSeconds(),
+			);
 			// 实时逆喷制动按钮（L4 伽利略号等轨道器关卡）：只在飞行态且进入捕获窗口时出现
 			const brakeActive = (phaseNow === 'Flying' && runtime.game.isBrakeWindowActive()) || debugForceBrakeWindow;
 			const isBraked = runtime.game.hasBraked() || debugForceBraked;

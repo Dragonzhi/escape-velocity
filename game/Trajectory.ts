@@ -80,6 +80,15 @@ export interface TrajectoryView {
 	 * 每帧调用（环跟着行星一起动）；passed = true 的环画得更暗（已经掠过的航点）。
 	 */
 	setGoalRings(rings: GoalRing[], basis: CameraBasis): void;
+	/**
+	 * 探测器停泊轨（B2）：平面上的圆，逐点投影成细线；远侧压暗。
+	 *
+	 * 为什么不用 3D 网格资产：L1 的停泊轨半径只有 3.514e-3 世界单位，而仓库的 OrbitRing_*.gltf
+	 * 是按 55~2405 的整数半径生成的（`Test/gen_level_orbits.py`）—— 为 0.0035 生成一个模型
+	 * 既别扭又会因为管径随半径缩放而消失。投影折线在任意尺度下都是 1.5 px 的细线。
+	 */
+	setOrbitRing(center: P2, radius: number, basis: CameraBasis): void;
+	clearOrbitRing(): void;
 	/** 清空到达环（离开关卡/重试时调用）。 */
 	clearGoalRings(): void;
 	/** 底层节点，调用方自行 addChild 到想要的层级。 */
@@ -143,6 +152,19 @@ export interface TrajectoryOptions {
 	ringGlowAlpha: number;
 	/** 到达环的圆周分段数（越大越圆）。 */
 	ringSegments: number;
+	// ---- 探测器停泊轨（B2，2026-09-28）----
+	/** 停泊轨 RGB（0–255）：偏冷的钢蓝，与青色到达环、蓝色预测线都区分得开。 */
+	orbitRingR: number;
+	orbitRingG: number;
+	orbitRingB: number;
+	/** 停泊轨细线半径（像素）。 */
+	orbitRingRadius: number;
+	/** 停泊轨（近侧）alpha。 */
+	orbitRingAlpha: number;
+	/** 停泊轨**远侧**（相机对面那半圈，近似"被地球挡住"）的 alpha。 */
+	orbitRingFarAlpha: number;
+	/** 停泊轨圆周分段数。 */
+	orbitRingSegments: number;
 }
 
 export function defaultOptions(): TrajectoryOptions {
@@ -172,6 +194,15 @@ export function defaultOptions(): TrajectoryOptions {
 		ringRadius: 1.6,
 		ringGlowAlpha: 0.20,
 		ringSegments: 56,
+		// 停泊轨（B2）：细、冷、克制 —— 它是"我在哪条轨道上"的参考线，不是 UI。
+		// 远侧 alpha 0.16 ≈ 近侧的三分之一：一眼能看出哪半圈在相机这侧（被地球挡住的感觉）。
+		orbitRingR: 138,
+		orbitRingG: 176,
+		orbitRingB: 205,
+		orbitRingRadius: 1.5,
+		orbitRingAlpha: 0.5,
+		orbitRingFarAlpha: 0.16,
+		orbitRingSegments: 72,
 		trailR: 255,
 		trailG: 236,
 		trailB: 170,
@@ -330,7 +361,11 @@ export function createTrajectoryView(
 	// 用一个不设定尺寸的 Node 作为根，保持"中心原点"坐标系。
 	const root = Node();
 
-	// 三个独立的 DrawNode：到达环在最底层，尾迹居中，预测线在最上层。
+	// 四个独立的 DrawNode：停泊轨 → 到达环 → 尾迹 → 预测线（自下而上）。
+	const orbitDraw = DrawNode();
+	orbitDraw.blendFunc = BlendFunc(BlendOp.One, BlendOp.One);
+	root.addChild(orbitDraw);
+
 	const ringDraw = DrawNode();
 	ringDraw.blendFunc = BlendFunc(BlendOp.One, BlendOp.One);
 	root.addChild(ringDraw);
@@ -412,6 +447,36 @@ export function createTrajectoryView(
 		},
 		clearGoalRings(): void {
 			ringDraw.clear();
+		},
+		setOrbitRing(center: P2, radius: number, basis: CameraBasis): void {
+			orbitDraw.clear();
+			if (radius <= 0) return;
+			const n = options.orbitRingSegments;
+			const circle: P2[] = [];
+			for (let i = 0; i <= n; i++) {
+				const a = (i / n) * 2 * Math.PI;
+				circle.push({ x: center.x + radius * Math.cos(a), y: center.y + radius * Math.sin(a) });
+			}
+			const verts = projectPolyline(circle, options.y, basis, options.layerOriginX, options.layerOriginY);
+			if (verts.length < 2) return;
+			// 平面内的视线方向（世界 XZ → 平面 XY）：用它把圆分成近侧/远侧
+			let vx = basis.forward.x;
+			let vy = basis.forward.z;
+			const vl = Math.sqrt(vx * vx + vy * vy);
+			if (vl > 1e-9) {
+				vx /= vl;
+				vy /= vl;
+			}
+			const rgb: RGB = { r: options.orbitRingR, g: options.orbitRingG, b: options.orbitRingB };
+			const nearCol = segColor(rgb, options.orbitRingAlpha);
+			const farCol = segColor(rgb, options.orbitRingFarAlpha);
+			for (let i = 1; i < verts.length && i < circle.length; i++) {
+				const far = (circle[i].x - center.x) * vx + (circle[i].y - center.y) * vy > 0;
+				orbitDraw.drawSegment(verts[i - 1], verts[i], options.orbitRingRadius, far ? farCol : nearCol);
+			}
+		},
+		clearOrbitRing(): void {
+			orbitDraw.clear();
 		},
 		root,
 	};

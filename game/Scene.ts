@@ -34,6 +34,7 @@ import {
 } from 'game/Config';
 import { Body, P2, bodyPositionAt } from 'game/Gravity';
 import { FlowDotsPerOrbit, flowDotAngle, orbitCenterAt } from 'game/OrbitFlow';
+import { SPIN_GAME_SEC } from 'game/Tuning';
 
 /** 平面坐标 → 世界坐标（y 恒为 0，黄道面水平）。 */
 export function planeToWorld(p: P2, y: number): Vec3.Type {
@@ -228,6 +229,8 @@ export interface PlanetNode {
 }
 
 export interface SceneOptions {
+	/** 是否画轨道流动光点（B2）；省略 = 画。见 Tuning.LevelRuntime.orbitFlowDots。 */
+	orbitFlowDots?: boolean;
 	/** 场景根节点（通常是 Director.entry）。 */
 	root: Node3D.Type;
 	/** 行星定义（已应用过倍率）。 */
@@ -713,7 +716,8 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 	//    每帧只有一个 position 写入；俯视 20–60° 下它是略扁的软光斑（cos 0.5–0.94），观感即"光点"。
 	const flowOrbits: FlowOrbit[] = [];
 	const flowDotTex = Content.exist(FlowDotTexturePath) ? Texture2D(FlowDotTexturePath) : undefined;
-	if (Content.exist(FlowDotModelPath)) {
+	// B2：按关卡开关（L1 = false，理由见 Tuning.orbitFlowDots —— 那颗 1.92 单位宽的面片会罩住整个屏幕）
+	if (options.orbitFlowDots !== false && Content.exist(FlowDotModelPath)) {
 		for (let i = 0; i < bodies.length; i++) {
 			const def = bodies[i];
 			// 卫星微观轨道（如月球 orbitRadius=0.2056）公转极快（1.25s），不加 3D 大面片，避免特写穿模贴脸遮挡
@@ -842,10 +846,20 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 
 	// ---- 同步函数 ----
 	const syncBodies = (t: number): void => {
-		for (const p of planets) {
+		for (let i = 0; i < planets.length; i++) {
+			const p = planets[i];
 			const wp = planeToWorld(bodyPositionAt(p.def, t), 0);
 			p.body.position = wp;
 			if (p.ring !== undefined) p.ring.position = wp;
+			// 自转（B2，见 Tuning.SPIN_GAME_SEC）：地球按真实 24 小时/圈，月球潮汐锁定。
+			// ⚠️ 角度必须**对 360 取模**：高倍速下 tWorld 会很大（1e7× 时一分钟就是 500+ 游戏秒），
+			//    直接乘会把浮点角度的有效位耗光，画面开始抖。
+			const vis = visuals[i];
+			const spin = vis !== undefined && vis.model !== undefined ? SPIN_GAME_SEC[vis.model] : undefined;
+			if (spin !== undefined && spin > 0) {
+				const turns = t / spin;
+				p.body.angleY = (turns - Math.floor(turns)) * 360;
+			}
 		}
 		// 沿轨道流动的光点（S3.16）：每帧只改 position。
 		// 第 k 个光点的角 = 行星此刻的角 + k·2π/N（OrbitFlow.flowDotAngle，与 bodyPositionAt

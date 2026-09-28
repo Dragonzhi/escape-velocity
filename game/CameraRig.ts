@@ -21,7 +21,7 @@
  */
 import { Camera3D, Vec3 } from 'Dora';
 import { CameraView, HANDEDNESS, FLIP_Y, prepareCamera, projectPrepared } from 'game/Projection';
-import { CameraLerp, CameraMaxDistance, CameraMinDistance, CameraTiltDefault } from 'game/Config';
+import { CameraLerp, CameraMaxDistance, CameraMinDistance, CameraTiltDefault, CameraTiltMax, CameraTiltMin } from 'game/Config';
 import { P2 } from 'game/Gravity';
 import { planeToWorld } from 'game/Scene';
 
@@ -48,9 +48,12 @@ export interface RigOptions {
  * @param fovYDeg 垂直视野角，来自 `View.fieldOfView`；省略按 45（引擎默认）算。
  * @param aspect 宽高比，来自 `View.aspectRatio`；省略按 1（正方形）算。
  */
-export function defaultRigOptions(fovYDeg?: number, aspect?: number, minDistance?: number, maxDistance?: number): RigOptions {
+export function defaultRigOptions(fovYDeg?: number, aspect?: number, minDistance?: number, maxDistance?: number, tiltDeg?: number): RigOptions {
 	return {
-		tiltDeg: CameraTiltDefault,
+		// B2（2026-09-28）：俯仰角可以按关卡给 —— L1 要接近轨道平面的 **22°**，
+		// "卫星环绕地球"才有近平面观感（45° 俯视会把轨道看成圆，失去"贴着地球飞"的感觉）。
+		// 仍夹在 [CameraTiltMin, CameraTiltMax] 里，别的关沿用 CameraTiltDefault。
+		tiltDeg: tiltDeg !== undefined && tiltDeg >= CameraTiltMin && tiltDeg <= CameraTiltMax ? tiltDeg : CameraTiltDefault,
 		// S5：夹紧区间按关卡给 —— 六关的世界尺度跨 5 个数量级（L1 的 0.6 单位 vs L6 的 5000）。
 		// 全局常量在 L1 会把相机顶在 60 上（比整个世界还大 100 倍），画面里只剩一个点。
 		minDistance: minDistance !== undefined && minDistance > 0 ? minDistance : CameraMinDistance,

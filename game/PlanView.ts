@@ -220,6 +220,8 @@ export interface PlanOptions {
 	flowDotHex: number;
 	/** 探测器图钉的颜色（近白）。 */
 	probeHex: number;
+	/** 探测器停泊轨的颜色（比行星轨更暗更冷：它是"我在哪条轨道上"的参考线）。 */
+	probeOrbitHex: number;
 }
 
 export function defaultPlanOptions(): PlanOptions {
@@ -245,6 +247,7 @@ export function defaultPlanOptions(): PlanOptions {
 		flowDotRadius: 3.5,
 		flowDotHex: 0xfff0cf,
 		probeHex: 0xeaf4ff,
+		probeOrbitHex: 0x5d7fa6,
 	};
 }
 
@@ -273,6 +276,9 @@ export interface PlanView {
 	/** 到达圈（下一个航点）：与 3D 共用同一批 GoalRing（唯一的"下一站"判定）。 */
 	setGoalRings(rings: GoalRing[]): void;
 	clearGoalRings(): void;
+	/** 探测器停泊轨（B2）：以宿主天体为圆心的细环（半径 = 相对宿主的轨道半径）。 */
+	setProbeOrbit(center: P2, radius: number): void;
+	clearProbeOrbit(): void;
 	/** 把本帧的改动一次性画出来（每帧由 Game 在所有 set* 之后调用一次）。 */
 	flush(): void;
 	/** 清空全部绘制（隐藏 / 视口重建 / 离开关卡时调用）。 */
@@ -322,6 +328,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	const predictColor = colorFromHex(options.predictHex, 1);
 	const trailColor = colorFromHex(options.trailHex, 1);
 	const probeColor = colorFromHex(options.probeHex, 1);
+	const probeOrbitColor = colorFromHex(options.probeOrbitHex, 1);
 	const flowDotColor = colorFromHex(options.flowDotHex, 1);
 	/** 只描边不填充：`drawPolygon` 的填充用全透明色（与 Ui.createPanel 的手法一致）。 */
 	const noFill = colorFromHex(0x000000, 0);
@@ -346,6 +353,9 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	// 状态：隐藏时也照常存着 ⇒ 切回 2D 的下一帧立刻能画（不用等下一次 sync）
 	let bodies: Body[] = [];
 	let visuals: PlanetVisualDef[] = [];
+	// 探测器停泊轨（B2）：宿主中心 + 相对半径（0 = 不画）
+	let probeOrbitCenter: P2 = { x: 0, y: 0 };
+	let probeOrbitRadius = 0;
 	let tWorld = 0;
 	let probe: P2 = { x: 0, y: 0 };
 	let probeVel: P2 = { x: 0, y: 0 };
@@ -400,11 +410,18 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			orbitDraw.drawPolygon(circleVerts(s.x, s.y, rPx, options.orbitSegments), noFill, options.orbitWidth, orbitColor);
 		}
 
+		// ①c 探测器停泊轨（B2）：细、暗。它是"我在哪条轨道上"，与月球轨同款但更弱。
+		if (probeOrbitRadius > 0) {
+			const ps = planeToScreen(probeOrbitCenter, map);
+			const pr = probeOrbitRadius * map.scale;
+			if (pr >= 1) orbitDraw.drawPolygon(circleVerts(ps.x, ps.y, pr, options.orbitSegments), noFill, options.orbitWidth, probeOrbitColor);
+		}
+
 		// ①b 沿轨道流动的光点（S3.16）：第 k 个光点的角 = 行星此刻的角 + k·2π/N
 		// ⇒ 整条链以角速度 ω 公转：方向 = orbitDirection（字段，不写死），快慢 ∝ 2π/orbitPeriod
 		// （内圈快、外圈慢 = 开普勒的视觉效果）。位置只由 tWorld 解析求出（ OrbitFlow.ts ），
 		// 所以拨发射日期时行星与光点一起动；静止天体（orbitPeriod = 0）没有可流动的轨道。
-		for (const b of bodies) {
+		if (options.flowDotRadius > 0) for (const b of bodies) {
 			if (b.orbitRadius <= 0 || b.orbitPeriod === 0) continue;
 			const rPx = b.orbitRadius * map.scale;
 			if (rPx < 1) continue;
@@ -559,6 +576,15 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			trail = [];
 			dirty = true;
 		},
+		setProbeOrbit(center: P2, radius: number): void {
+			probeOrbitCenter = center;
+			probeOrbitRadius = radius;
+			dirty = true;
+		},
+		clearProbeOrbit(): void {
+			probeOrbitRadius = 0;
+			dirty = true;
+		},
 		setGoalRings(rs: GoalRing[]): void {
 			rings = rs;
 			dirty = true;
@@ -584,11 +610,13 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			return map;
 		},
 		zoomIn(): void {
-			currentZoom = Math.min(6.0, currentZoom * 1.35);
+			// B2：上限 6 → **60**。真实阿波罗剖面下停泊轨（3.514e-3）只有月球轨（0.2056）的 1.7%，
+			// 6× 根本看不到"地球 + 探测器轨"；步进 1.35 → 1.5（60× 约 10 次点击到位）。
+			currentZoom = Math.min(60.0, currentZoom * 1.5);
 			recomputeMap();
 		},
 		zoomOut(): void {
-			currentZoom = Math.max(0.25, currentZoom / 1.35);
+			currentZoom = Math.max(0.25, currentZoom / 1.5);
 			recomputeMap();
 		},
 		resetView(): void {

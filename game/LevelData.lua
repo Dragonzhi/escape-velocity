@@ -13,6 +13,7 @@ local EarthRadius = ____Scale.EarthRadius -- 51
 local KmPerUnit = ____Scale.KmPerUnit -- 51
 local MoonOrbitRadius = ____Scale.MoonOrbitRadius -- 51
 local REAL = ____Scale.REAL -- 51
+local SecPerGameSec = ____Scale.SecPerGameSec -- 51
 local SunGm = ____Scale.SunGm -- 51
 local SunRadius = ____Scale.SunRadius -- 51
 local circularSpeed = ____Scale.circularSpeed -- 52
@@ -22,22 +23,22 @@ local trueOrbit = ____Scale.trueOrbit -- 52
 local trueRadius = ____Scale.trueRadius -- 52
 local ____Tuning = require("game.Tuning") -- 54
 local visualRadius = ____Tuning.visualRadius -- 54
-function applyScalesLocal(bodies, gravityScale, orbitScale) -- 849
-	local out = {} -- 850
-	for ____, b in ipairs(bodies) do -- 851
-		out[#out + 1] = { -- 852
-			gm = b.gm * gravityScale, -- 853
-			radius = b.radius, -- 854
-			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 855
-			orbitRadius = b.orbitRadius, -- 856
-			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 857
-			phase0 = b.phase0, -- 858
-			orbitDirection = b.orbitDirection, -- 859
-			host = b.host ~= nil and applyScalesLocal({b.host}, gravityScale, orbitScale)[1] or nil -- 861
-		} -- 861
-	end -- 861
-	return out -- 864
-end -- 864
+function applyScalesLocal(bodies, gravityScale, orbitScale) -- 858
+	local out = {} -- 859
+	for ____, b in ipairs(bodies) do -- 860
+		out[#out + 1] = { -- 861
+			gm = b.gm * gravityScale, -- 862
+			radius = b.radius, -- 863
+			orbitCenter = {x = b.orbitCenter.x, y = b.orbitCenter.y}, -- 864
+			orbitRadius = b.orbitRadius, -- 865
+			orbitPeriod = (b.orbitPeriod == 0 or orbitScale <= 0) and b.orbitPeriod or b.orbitPeriod / orbitScale, -- 866
+			phase0 = b.phase0, -- 867
+			orbitDirection = b.orbitDirection, -- 868
+			host = b.host ~= nil and applyScalesLocal({b.host}, gravityScale, orbitScale)[1] or nil -- 870
+		} -- 870
+	end -- 870
+	return out -- 873
+end -- 873
 --- 评价一局飞行的火箭星级及逐条达成详情（纯函数）。
 function ____exports.evaluateRocketsDetailed(level, result, burnDv, extra) -- 202
 	local achieved = {false, false, false} -- 212
@@ -291,29 +292,35 @@ local function sunVisual(levelIndex) -- 460
 end -- 460
 --- 出发轨道半径 = 1 AU（地球轨道）。六关共用 —— L1 的地球就在这里，L2–L6 从这里出发。
 ____exports.EarthOrbitRadius = trueOrbit(REAL.earth.au) -- 472
+--- **1 真实秒 = 多少游戏秒**（B3，2026-09-28）。
+-- 
+-- 全项目只有这里读 Scale，别处（Game / Hud / init）都从这里拿 —— 于是"倍速档位"
+-- 的单位可以老实写成「×现实时间」：档位 pow ⇒ 速率 = 10^pow × 本常数。
+-- pow = 0 就是 1×（现实 1 秒）。
+____exports.GameSecondsPerRealSecond = 1 / SecPerGameSec -- 481
 --- 该点的日心圆轨速度（30.00 平面单位/秒 —— 全套尺度的速度锚点）。
-____exports.EarthOrbitSpeed = circularSpeed(SunGm, ____exports.EarthOrbitRadius) -- 475
+____exports.EarthOrbitSpeed = circularSpeed(SunGm, ____exports.EarthOrbitRadius) -- 484
 --- 相位表 —— **全部由 `node tools/level-phases.mjs <关号> --dirs 240 --dvs 31 --tmax N` 解出**，不许手填。
 -- 
 -- ⚠️ 同一颗行星在**不同关的相位不同**，这是对的：相位代表"哪一天的太阳系"，
 --    每一关的可行发射窗口本来就不一样。物理量（gm / 半径 / 轨道 / 周期）才是六关共用、不许变的。
 -- 
 -- 每一行后面的注释就是它的出处（工具输出），改数值必须重跑工具。
-local PH = { -- 485
-	mercury = 45, -- 486
-	venus = 79.6, -- 488
-	jupiter3 = 186.1, -- 493
-	jupiter4 = 184.4, -- 494
-	jupiter5 = 175.6, -- 495
-	jupiter6 = 175.2, -- 496
-	saturn4 = 199.6, -- 498
-	saturn5 = 190.8, -- 499
-	saturn6 = 190.3, -- 500
-	uranus5 = 202.8, -- 502
-	uranus6 = 201.8, -- 503
-	neptune6 = 207.6, -- 505
-	moon = 202 -- 518
-} -- 518
+local PH = { -- 494
+	mercury = 45, -- 495
+	venus = 79.6, -- 497
+	jupiter3 = 186.1, -- 502
+	jupiter4 = 184.4, -- 503
+	jupiter5 = 175.6, -- 504
+	jupiter6 = 175.2, -- 505
+	saturn4 = 199.6, -- 507
+	saturn5 = 190.8, -- 508
+	saturn6 = 190.3, -- 509
+	uranus5 = 202.8, -- 511
+	uranus6 = 201.8, -- 512
+	neptune6 = 207.6, -- 514
+	moon = 202 -- 527
+} -- 527
 --- L1：地月系。
 -- 
 -- - 地球是**真天体**：真 gm、真半径，自己在绕日公转（这是"物理统一"的试纸）；
@@ -324,348 +331,348 @@ local PH = { -- 485
 --   转移到月球 **4.978 天**（一圈 : 转移 = 1 : 81，这一关的时间跨度就是它）。
 -- 
 -- 数值出处与实测见 [`docs/L1重构设计案.md`](../docs/L1重构设计案.md) 第二节。
-local function level1() -- 533
-	local earthOrbit = ____exports.EarthOrbitRadius -- 534
-	local earth = { -- 535
-		gm = EarthGm, -- 536
-		radius = EarthRadius, -- 537
-		orbitCenter = {x = 0, y = 0}, -- 538
-		orbitRadius = earthOrbit, -- 539
-		orbitPeriod = period(earthOrbit, SunGm), -- 540
-		phase0 = deg(90), -- 541
-		orbitDirection = 1 -- 542
-	} -- 542
-	local moon = satellite("moon", earth, MoonOrbitRadius, PH.moon) -- 544
-	local parking = (REAL.earth.radiusKm + 200) / KmPerUnit -- 547
-	local earthPos = bodyPositionAt(earth, 0) -- 550
-	local earthVel = ____exports.bodyVelocityAt(earth, 0) -- 551
-	local vCirc = circularSpeed(EarthGm, parking) -- 552
-	return { -- 553
-		id = 1, -- 554
-		title = "月球", -- 555
-		probeVariant = "solar", -- 556
-		brief = "月球任务 · 近地停泊轨 200 km：你正在绕地球飞，月球在 38 万 km 外。点火把它推向月球 —— 这一程要飞 5 天，别对着月球现在的位置点火。", -- 557
-		probeStart = {x = earthPos.x, y = earthPos.y + parking}, -- 558
-		probeVel0 = {x = earthVel.x - vCirc, y = earthVel.y}, -- 559
-		planets = { -- 560
-			sun(), -- 560
-			earth, -- 560
-			moon -- 560
-		}, -- 560
-		visuals = { -- 564
-			sunVisual(0), -- 565
-			planetVisual( -- 566
-				"earth", -- 566
-				earth, -- 566
-				0.42, -- 566
-				0.62, -- 566
-				0.85, -- 566
-				"Planet_Earth", -- 566
-				false, -- 566
-				0 -- 566
-			), -- 566
-			planetVisual( -- 567
-				"moon", -- 567
-				moon, -- 567
-				0.56, -- 567
-				0.56, -- 567
-				0.6, -- 567
-				"Moon", -- 567
-				false, -- 567
-				0 -- 567
-			) -- 567
-		}, -- 567
-		goal = {kind = "planet", planetIndex = 2, tolerance = 0.02}, -- 570
-		dvBudget = 4.6, -- 572
-		escapeRadius = 400, -- 576
-		maxSteps = 8000, -- 580
-		planCenter = 1, -- 581
-		mission = { -- 582
-			id = "L1", -- 583
-			codeName = "Moon", -- 584
-			historicalRef = "阿波罗 / 嫦娥探月", -- 585
-			subtitle = "启蒙", -- 586
-			vehicle = "flyby", -- 587
-			challenges = {{desc = "成功抵达月球轨道或飞掠月球", type = "success"}, {desc = "发射点火消耗 Δv ≤ 3.68（预算的 80%）", type = "fuel", threshold = 0.8}, {desc = "近月点距离 r_peri ≤ 0.003（≈ 5,600 km）", type = "distance", threshold = 0.003}} -- 588
-		} -- 588
-	} -- 588
-end -- 533
+local function level1() -- 542
+	local earthOrbit = ____exports.EarthOrbitRadius -- 543
+	local earth = { -- 544
+		gm = EarthGm, -- 545
+		radius = EarthRadius, -- 546
+		orbitCenter = {x = 0, y = 0}, -- 547
+		orbitRadius = earthOrbit, -- 548
+		orbitPeriod = period(earthOrbit, SunGm), -- 549
+		phase0 = deg(90), -- 550
+		orbitDirection = 1 -- 551
+	} -- 551
+	local moon = satellite("moon", earth, MoonOrbitRadius, PH.moon) -- 553
+	local parking = (REAL.earth.radiusKm + 200) / KmPerUnit -- 556
+	local earthPos = bodyPositionAt(earth, 0) -- 559
+	local earthVel = ____exports.bodyVelocityAt(earth, 0) -- 560
+	local vCirc = circularSpeed(EarthGm, parking) -- 561
+	return { -- 562
+		id = 1, -- 563
+		title = "月球", -- 564
+		probeVariant = "solar", -- 565
+		brief = "月球任务 · 近地停泊轨 200 km：你正在绕地球飞，月球在 38 万 km 外。点火把它推向月球 —— 这一程要飞 5 天，别对着月球现在的位置点火。", -- 566
+		probeStart = {x = earthPos.x, y = earthPos.y + parking}, -- 567
+		probeVel0 = {x = earthVel.x - vCirc, y = earthVel.y}, -- 568
+		planets = { -- 569
+			sun(), -- 569
+			earth, -- 569
+			moon -- 569
+		}, -- 569
+		visuals = { -- 573
+			sunVisual(0), -- 574
+			planetVisual( -- 575
+				"earth", -- 575
+				earth, -- 575
+				0.42, -- 575
+				0.62, -- 575
+				0.85, -- 575
+				"Planet_Earth", -- 575
+				false, -- 575
+				0 -- 575
+			), -- 575
+			planetVisual( -- 576
+				"moon", -- 576
+				moon, -- 576
+				0.56, -- 576
+				0.56, -- 576
+				0.6, -- 576
+				"Moon", -- 576
+				false, -- 576
+				0 -- 576
+			) -- 576
+		}, -- 576
+		goal = {kind = "planet", planetIndex = 2, tolerance = 0.02}, -- 579
+		dvBudget = 4.6, -- 581
+		escapeRadius = 400, -- 585
+		maxSteps = 8000, -- 589
+		planCenter = 1, -- 590
+		mission = { -- 591
+			id = "L1", -- 592
+			codeName = "Moon", -- 593
+			historicalRef = "阿波罗 / 嫦娥探月", -- 594
+			subtitle = "启蒙", -- 595
+			vehicle = "flyby", -- 596
+			challenges = {{desc = "成功抵达月球轨道或飞掠月球", type = "success"}, {desc = "发射点火消耗 Δv ≤ 3.68（预算的 80%）", type = "fuel", threshold = 0.8}, {desc = "近月点距离 r_peri ≤ 0.003（≈ 5,600 km）", type = "distance", threshold = 0.003}} -- 597
+		} -- 597
+	} -- 597
+end -- 542
 --- L2–L6 共用的出发状态：1 AU 圆轨道上的一点，顺行（-x），速度 = 该点圆轨速度。
-local function departure() -- 600
-	return {pos = {x = 0, y = ____exports.EarthOrbitRadius}, vel = {x = -____exports.EarthOrbitSpeed, y = 0}} -- 601
-end -- 600
+local function departure() -- 609
+	return {pos = {x = 0, y = ____exports.EarthOrbitRadius}, vel = {x = -____exports.EarthOrbitSpeed, y = 0}} -- 610
+end -- 609
 --- L2 水手10号：地球 ➔ 金星 ➔ 水星（人类首次行星引力借力）。
-local function level2() -- 608
-	local venus = orbiter("venus", PH.venus) -- 609
-	local mercury = orbiter("mercury", PH.mercury) -- 610
-	local d = departure() -- 611
-	return { -- 612
-		id = 2, -- 613
-		title = "水手10号", -- 614
-		probeVariant = "solar", -- 615
-		brief = "水手10号 · 1 AU 出发：人类首次行星引力辅助。向内俯冲，利用金星前向借力大幅削减轨道动能，深潜入水星轨道！", -- 616
-		probeStart = d.pos, -- 617
-		probeVel0 = d.vel, -- 618
-		planets = { -- 619
-			sun(), -- 619
-			venus, -- 619
-			mercury -- 619
-		}, -- 619
-		visuals = { -- 620
-			sunVisual(), -- 621
-			planetVisual( -- 622
-				"venus", -- 622
-				venus, -- 622
-				0.9, -- 622
-				0.78, -- 622
-				0.55, -- 622
-				"Planet_Venus", -- 622
-				false -- 622
-			), -- 622
-			planetVisual( -- 623
-				"mercury", -- 623
-				mercury, -- 623
-				0.65, -- 623
-				0.65, -- 623
-				0.65, -- 623
-				"Sphere", -- 623
-				false -- 623
-			) -- 623
-		}, -- 623
-		goal = {kind = "planet", planetIndex = 2, tolerance = 6, chain = {{planetIndex = 1, tolerance = 15, label = "金星"}, {planetIndex = 2, tolerance = 6, label = "水星"}}}, -- 625
-		dvBudget = 4, -- 634
-		escapeRadius = 3600, -- 635
-		maxSteps = 4000, -- 636
-		timeWindow = {span = 27}, -- 637
-		mission = { -- 638
-			id = "L2", -- 639
-			codeName = "Mariner 10", -- 640
-			historicalRef = "水手10号 (1973)", -- 641
-			subtitle = "潜行", -- 642
-			vehicle = "flyby", -- 643
-			challenges = {{desc = "借力金星并成功抵达水星", type = "success"}, {desc = "初始点火消耗 Δv ≤ 75% 预算", type = "fuel", threshold = 0.75}, {desc = "金星交会时相对速度降幅 ≥ 12 单位", type = "speed", threshold = 12}} -- 644
-		} -- 644
-	} -- 644
-end -- 608
+local function level2() -- 617
+	local venus = orbiter("venus", PH.venus) -- 618
+	local mercury = orbiter("mercury", PH.mercury) -- 619
+	local d = departure() -- 620
+	return { -- 621
+		id = 2, -- 622
+		title = "水手10号", -- 623
+		probeVariant = "solar", -- 624
+		brief = "水手10号 · 1 AU 出发：人类首次行星引力辅助。向内俯冲，利用金星前向借力大幅削减轨道动能，深潜入水星轨道！", -- 625
+		probeStart = d.pos, -- 626
+		probeVel0 = d.vel, -- 627
+		planets = { -- 628
+			sun(), -- 628
+			venus, -- 628
+			mercury -- 628
+		}, -- 628
+		visuals = { -- 629
+			sunVisual(), -- 630
+			planetVisual( -- 631
+				"venus", -- 631
+				venus, -- 631
+				0.9, -- 631
+				0.78, -- 631
+				0.55, -- 631
+				"Planet_Venus", -- 631
+				false -- 631
+			), -- 631
+			planetVisual( -- 632
+				"mercury", -- 632
+				mercury, -- 632
+				0.65, -- 632
+				0.65, -- 632
+				0.65, -- 632
+				"Sphere", -- 632
+				false -- 632
+			) -- 632
+		}, -- 632
+		goal = {kind = "planet", planetIndex = 2, tolerance = 6, chain = {{planetIndex = 1, tolerance = 15, label = "金星"}, {planetIndex = 2, tolerance = 6, label = "水星"}}}, -- 634
+		dvBudget = 4, -- 643
+		escapeRadius = 3600, -- 644
+		maxSteps = 4000, -- 645
+		timeWindow = {span = 27}, -- 646
+		mission = { -- 647
+			id = "L2", -- 648
+			codeName = "Mariner 10", -- 649
+			historicalRef = "水手10号 (1973)", -- 650
+			subtitle = "潜行", -- 651
+			vehicle = "flyby", -- 652
+			challenges = {{desc = "借力金星并成功抵达水星", type = "success"}, {desc = "初始点火消耗 Δv ≤ 75% 预算", type = "fuel", threshold = 0.75}, {desc = "金星交会时相对速度降幅 ≥ 12 单位", type = "speed", threshold = 12}} -- 653
+		} -- 653
+	} -- 653
+end -- 617
 --- L3 帕克号：地球 ➔ 金星 ➔ 太阳日冕区（触碰太阳极热地狱）。
-local function level3() -- 654
-	local venus = orbiter("venus", PH.venus) -- 655
-	local d = departure() -- 656
-	return { -- 657
-		id = 3, -- 658
-		title = "帕克号", -- 659
-		probeVariant = "solar", -- 660
-		brief = "帕克号 · 1 AU 出发：人类制造的最狂暴“触日者”。利用金星大幅削减日心角动量，近距离俯冲入太阳日冕危险带且未撞毁！", -- 661
-		probeStart = d.pos, -- 662
-		probeVel0 = d.vel, -- 663
-		planets = { -- 664
-			sun(), -- 664
-			venus -- 664
-		}, -- 664
-		visuals = { -- 665
-			sunVisual(), -- 666
-			planetVisual( -- 667
-				"venus", -- 667
-				venus, -- 667
-				0.9, -- 667
-				0.78, -- 667
-				0.55, -- 667
-				"Planet_Venus", -- 667
-				false -- 667
-			) -- 667
-		}, -- 667
-		goal = {kind = "planet", planetIndex = 0, tolerance = 15}, -- 669
-		dvBudget = 6, -- 674
-		escapeRadius = 3600, -- 675
-		maxSteps = 6000, -- 676
-		timeWindow = {span = 27}, -- 677
-		mission = { -- 678
-			id = "L3", -- 679
-			codeName = "Parker", -- 680
-			historicalRef = "帕克太阳探测器 (2018)", -- 681
-			subtitle = "烈日", -- 682
-			vehicle = "flyby", -- 683
-			challenges = {{desc = "近日点深入太阳日冕观测带 (r_peri ≤ 15) 且未撞毁", type = "success"}, {desc = "初始点火消耗 Δv ≤ 80% 预算", type = "fuel", threshold = 0.8}, {desc = "近日点最高日心速度突破 vmax ≥ 60 单位", type = "speed", threshold = 60}} -- 684
-		} -- 684
-	} -- 684
-end -- 654
+local function level3() -- 663
+	local venus = orbiter("venus", PH.venus) -- 664
+	local d = departure() -- 665
+	return { -- 666
+		id = 3, -- 667
+		title = "帕克号", -- 668
+		probeVariant = "solar", -- 669
+		brief = "帕克号 · 1 AU 出发：人类制造的最狂暴“触日者”。利用金星大幅削减日心角动量，近距离俯冲入太阳日冕危险带且未撞毁！", -- 670
+		probeStart = d.pos, -- 671
+		probeVel0 = d.vel, -- 672
+		planets = { -- 673
+			sun(), -- 673
+			venus -- 673
+		}, -- 673
+		visuals = { -- 674
+			sunVisual(), -- 675
+			planetVisual( -- 676
+				"venus", -- 676
+				venus, -- 676
+				0.9, -- 676
+				0.78, -- 676
+				0.55, -- 676
+				"Planet_Venus", -- 676
+				false -- 676
+			) -- 676
+		}, -- 676
+		goal = {kind = "planet", planetIndex = 0, tolerance = 15}, -- 678
+		dvBudget = 6, -- 683
+		escapeRadius = 3600, -- 684
+		maxSteps = 6000, -- 685
+		timeWindow = {span = 27}, -- 686
+		mission = { -- 687
+			id = "L3", -- 688
+			codeName = "Parker", -- 689
+			historicalRef = "帕克太阳探测器 (2018)", -- 690
+			subtitle = "烈日", -- 691
+			vehicle = "flyby", -- 692
+			challenges = {{desc = "近日点深入太阳日冕观测带 (r_peri ≤ 15) 且未撞毁", type = "success"}, {desc = "初始点火消耗 Δv ≤ 80% 预算", type = "fuel", threshold = 0.8}, {desc = "近日点最高日心速度突破 vmax ≥ 60 单位", type = "speed", threshold = 60}} -- 693
+		} -- 693
+	} -- 693
+end -- 663
 --- L4 伽利略号：地球 ➔ 木星泊入（轨道器模式正式登场）。
-local function level4() -- 694
-	local jupiter = orbiter("jupiter", PH.jupiter4) -- 695
-	local d = departure() -- 696
-	return { -- 697
-		id = 4, -- 698
-		title = "伽利略号", -- 699
-		probeVariant = "rtg", -- 700
-		brief = "伽利略号 · 1 AU 出发：人类第一艘长期驻留环绕木星的轨道器。抵达木星巨型引力井，在慢动作特写中捕捉制动窗口，按下 [ BRAKE ] 优雅泊入闭合环绕轨！", -- 701
-		probeStart = d.pos, -- 702
-		probeVel0 = d.vel, -- 703
-		planets = { -- 704
-			sun(), -- 704
-			jupiter -- 704
-		}, -- 704
-		visuals = { -- 705
-			sunVisual(), -- 706
-			planetVisual( -- 707
-				"jupiter", -- 707
-				jupiter, -- 707
-				0.85, -- 707
-				0.72, -- 707
-				0.5, -- 707
-				"Planet_Jupiter", -- 707
-				false -- 707
-			) -- 707
-		}, -- 707
-		goal = {kind = "planet", planetIndex = 1, tolerance = 40, chain = {{planetIndex = 1, tolerance = 40, label = "木星", capture = true}}}, -- 709
-		dvBudget = 14, -- 717
-		escapeRadius = 3600, -- 718
-		maxSteps = 25000, -- 719
-		timeWindow = {span = 18}, -- 720
-		mission = { -- 721
-			id = "L4", -- 722
-			codeName = "Galileo", -- 723
-			historicalRef = "伽利略号 (1989)", -- 724
-			subtitle = "泊入", -- 725
-			vehicle = "orbiter", -- 726
-			challenges = {{desc = "在制动窗口内成功按下刹车闭合入轨", type = "success"}, {desc = "地面发射点火 Δv ≤ 70% 预算", type = "fuel", threshold = 0.7}, {desc = "入轨偏心率 e ≤ 0.25", type = "eccentricity", threshold = 0.25}} -- 727
-		} -- 727
-	} -- 727
-end -- 694
+local function level4() -- 703
+	local jupiter = orbiter("jupiter", PH.jupiter4) -- 704
+	local d = departure() -- 705
+	return { -- 706
+		id = 4, -- 707
+		title = "伽利略号", -- 708
+		probeVariant = "rtg", -- 709
+		brief = "伽利略号 · 1 AU 出发：人类第一艘长期驻留环绕木星的轨道器。抵达木星巨型引力井，在慢动作特写中捕捉制动窗口，按下 [ BRAKE ] 优雅泊入闭合环绕轨！", -- 710
+		probeStart = d.pos, -- 711
+		probeVel0 = d.vel, -- 712
+		planets = { -- 713
+			sun(), -- 713
+			jupiter -- 713
+		}, -- 713
+		visuals = { -- 714
+			sunVisual(), -- 715
+			planetVisual( -- 716
+				"jupiter", -- 716
+				jupiter, -- 716
+				0.85, -- 716
+				0.72, -- 716
+				0.5, -- 716
+				"Planet_Jupiter", -- 716
+				false -- 716
+			) -- 716
+		}, -- 716
+		goal = {kind = "planet", planetIndex = 1, tolerance = 40, chain = {{planetIndex = 1, tolerance = 40, label = "木星", capture = true}}}, -- 718
+		dvBudget = 14, -- 726
+		escapeRadius = 3600, -- 727
+		maxSteps = 25000, -- 728
+		timeWindow = {span = 18}, -- 729
+		mission = { -- 730
+			id = "L4", -- 731
+			codeName = "Galileo", -- 732
+			historicalRef = "伽利略号 (1989)", -- 733
+			subtitle = "泊入", -- 734
+			vehicle = "orbiter", -- 735
+			challenges = {{desc = "在制动窗口内成功按下刹车闭合入轨", type = "success"}, {desc = "地面发射点火 Δv ≤ 70% 预算", type = "fuel", threshold = 0.7}, {desc = "入轨偏心率 e ≤ 0.25", type = "eccentricity", threshold = 0.25}} -- 736
+		} -- 736
+	} -- 736
+end -- 703
 --- L5 新视野号：地球 ➔ 木星狂暴加速 ➔ 柯伊伯带深空。
-local function level5() -- 737
-	local jupiter = orbiter("jupiter", PH.jupiter5) -- 738
-	local d = departure() -- 739
-	return { -- 740
-		id = 5, -- 741
-		title = "新视野号", -- 742
-		probeVariant = "rtg", -- 743
-		brief = "新视野号 · 1 AU 出发：人类有史以来最狂暴的深空信使。寻找木星后向加速最佳切角，利用太阳系最强引力弹弓把探测器甩向柯伊伯带深空外边界！", -- 744
-		probeStart = d.pos, -- 745
-		probeVel0 = d.vel, -- 746
-		planets = { -- 747
-			sun(), -- 747
-			jupiter -- 747
-		}, -- 747
-		visuals = { -- 748
-			sunVisual(), -- 749
-			planetVisual( -- 750
-				"jupiter", -- 750
-				jupiter, -- 750
-				0.85, -- 750
-				0.72, -- 750
-				0.5, -- 750
-				"Planet_Jupiter", -- 750
-				false -- 750
-			) -- 750
-		}, -- 750
-		goal = {kind = "escape", planetIndex = 1, tolerance = 40, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}}}, -- 752
-		dvBudget = 15, -- 760
-		escapeRadius = 3600, -- 761
-		maxSteps = 35000, -- 762
-		timeWindow = {span = 17.5}, -- 763
-		mission = { -- 764
-			id = "L5", -- 765
-			codeName = "New Horizons", -- 766
-			historicalRef = "新视野号 (2006)", -- 767
-			subtitle = "狂飙", -- 768
-			vehicle = "flyby", -- 769
-			challenges = {{desc = "借力木星获得逃逸能量抵达外边界", type = "success"}, {desc = "地面发射初速消耗 Δv ≤ 75% 预算", type = "fuel", threshold = 0.75}, {desc = "速度增幅 ≥ 15 且逃逸末速度 vend ≥ 40", type = "speed", threshold = 40}} -- 770
-		} -- 770
-	} -- 770
-end -- 737
+local function level5() -- 746
+	local jupiter = orbiter("jupiter", PH.jupiter5) -- 747
+	local d = departure() -- 748
+	return { -- 749
+		id = 5, -- 750
+		title = "新视野号", -- 751
+		probeVariant = "rtg", -- 752
+		brief = "新视野号 · 1 AU 出发：人类有史以来最狂暴的深空信使。寻找木星后向加速最佳切角，利用太阳系最强引力弹弓把探测器甩向柯伊伯带深空外边界！", -- 753
+		probeStart = d.pos, -- 754
+		probeVel0 = d.vel, -- 755
+		planets = { -- 756
+			sun(), -- 756
+			jupiter -- 756
+		}, -- 756
+		visuals = { -- 757
+			sunVisual(), -- 758
+			planetVisual( -- 759
+				"jupiter", -- 759
+				jupiter, -- 759
+				0.85, -- 759
+				0.72, -- 759
+				0.5, -- 759
+				"Planet_Jupiter", -- 759
+				false -- 759
+			) -- 759
+		}, -- 759
+		goal = {kind = "escape", planetIndex = 1, tolerance = 40, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}}}, -- 761
+		dvBudget = 15, -- 769
+		escapeRadius = 3600, -- 770
+		maxSteps = 35000, -- 771
+		timeWindow = {span = 17.5}, -- 772
+		mission = { -- 773
+			id = "L5", -- 774
+			codeName = "New Horizons", -- 775
+			historicalRef = "新视野号 (2006)", -- 776
+			subtitle = "狂飙", -- 777
+			vehicle = "flyby", -- 778
+			challenges = {{desc = "借力木星获得逃逸能量抵达外边界", type = "success"}, {desc = "地面发射初速消耗 Δv ≤ 75% 预算", type = "fuel", threshold = 0.75}, {desc = "速度增幅 ≥ 15 且逃逸末速度 vend ≥ 40", type = "speed", threshold = 40}} -- 779
+		} -- 779
+	} -- 779
+end -- 746
 --- L6 旅行者2号：地球 ➔ 木星 ➔ 土星 ➔ 天王星 ➔ 海王星 ➔ 星际空间。
-local function level6() -- 780
-	local jupiter = orbiter("jupiter", PH.jupiter6) -- 781
-	local saturn = orbiter("saturn", PH.saturn6) -- 782
-	local uranus = orbiter("uranus", PH.uranus6) -- 783
-	local neptune = orbiter("neptune", PH.neptune6) -- 784
-	local d = departure() -- 785
-	return { -- 786
-		id = 6, -- 787
-		title = "旅行者2号", -- 788
-		probeVariant = "rtg", -- 789
-		brief = "旅行者2号 · 1 AU 出发：175 年一遇的行星连珠奇迹！对准发射窗口，连续四星接力借力飞出海王星轨道，冲入星际空间，触发暗淡蓝点终章！", -- 790
-		probeStart = d.pos, -- 791
-		probeVel0 = d.vel, -- 792
-		planets = { -- 793
-			sun(), -- 793
-			jupiter, -- 793
-			saturn, -- 793
-			uranus, -- 793
-			neptune -- 793
-		}, -- 793
-		visuals = { -- 794
-			sunVisual(), -- 795
-			planetVisual( -- 796
-				"jupiter", -- 796
-				jupiter, -- 796
-				0.85, -- 796
-				0.72, -- 796
-				0.5, -- 796
-				"Planet_Jupiter", -- 796
-				false -- 796
-			), -- 796
-			planetVisual( -- 797
-				"saturn", -- 797
-				saturn, -- 797
-				0.75, -- 797
-				0.7, -- 797
-				0.6, -- 797
-				"Planet_Saturn", -- 797
-				true -- 797
-			), -- 797
-			planetVisual( -- 798
-				"uranus", -- 798
-				uranus, -- 798
-				0.62, -- 798
-				0.82, -- 798
-				0.86, -- 798
-				"Planet_Uranus", -- 798
-				false -- 798
-			), -- 798
-			planetVisual( -- 799
-				"neptune", -- 799
-				neptune, -- 799
-				0.34, -- 799
-				0.5, -- 799
-				0.86, -- 799
-				"Planet_Neptune", -- 799
-				false -- 799
-			) -- 799
-		}, -- 799
-		goal = {kind = "planet", planetIndex = 4, tolerance = 120, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 60, label = "土星"}, {planetIndex = 3, tolerance = 90, label = "天王星"}, {planetIndex = 4, tolerance = 120, label = "海王星"}}}, -- 801
-		dvBudget = 16, -- 812
-		escapeRadius = 3600, -- 813
-		maxSteps = 70000, -- 814
-		timeWindow = {span = 17.5}, -- 815
-		mission = { -- 816
-			id = "L6", -- 817
-			codeName = "Voyager 2", -- 818
-			historicalRef = "旅行者2号 (1977)", -- 819
-			subtitle = "奇迹", -- 820
-			vehicle = "flyby", -- 821
-			challenges = {{desc = "成功四星连续借力并飞出海王星轨道", type = "success"}, {desc = "初始发射点火 Δv ≤ 80% 预算", type = "fuel", threshold = 0.8}, {desc = "四星交会无碰撞且近心点精度 ≤ 5%", type = "distance", threshold = 0.05}} -- 822
-		} -- 822
-	} -- 822
-end -- 780
-local LEVELS = { -- 831
-	level1(), -- 831
-	level2(), -- 831
-	level3(), -- 831
-	level4(), -- 831
-	level5(), -- 831
-	level6() -- 831
-} -- 831
+local function level6() -- 789
+	local jupiter = orbiter("jupiter", PH.jupiter6) -- 790
+	local saturn = orbiter("saturn", PH.saturn6) -- 791
+	local uranus = orbiter("uranus", PH.uranus6) -- 792
+	local neptune = orbiter("neptune", PH.neptune6) -- 793
+	local d = departure() -- 794
+	return { -- 795
+		id = 6, -- 796
+		title = "旅行者2号", -- 797
+		probeVariant = "rtg", -- 798
+		brief = "旅行者2号 · 1 AU 出发：175 年一遇的行星连珠奇迹！对准发射窗口，连续四星接力借力飞出海王星轨道，冲入星际空间，触发暗淡蓝点终章！", -- 799
+		probeStart = d.pos, -- 800
+		probeVel0 = d.vel, -- 801
+		planets = { -- 802
+			sun(), -- 802
+			jupiter, -- 802
+			saturn, -- 802
+			uranus, -- 802
+			neptune -- 802
+		}, -- 802
+		visuals = { -- 803
+			sunVisual(), -- 804
+			planetVisual( -- 805
+				"jupiter", -- 805
+				jupiter, -- 805
+				0.85, -- 805
+				0.72, -- 805
+				0.5, -- 805
+				"Planet_Jupiter", -- 805
+				false -- 805
+			), -- 805
+			planetVisual( -- 806
+				"saturn", -- 806
+				saturn, -- 806
+				0.75, -- 806
+				0.7, -- 806
+				0.6, -- 806
+				"Planet_Saturn", -- 806
+				true -- 806
+			), -- 806
+			planetVisual( -- 807
+				"uranus", -- 807
+				uranus, -- 807
+				0.62, -- 807
+				0.82, -- 807
+				0.86, -- 807
+				"Planet_Uranus", -- 807
+				false -- 807
+			), -- 807
+			planetVisual( -- 808
+				"neptune", -- 808
+				neptune, -- 808
+				0.34, -- 808
+				0.5, -- 808
+				0.86, -- 808
+				"Planet_Neptune", -- 808
+				false -- 808
+			) -- 808
+		}, -- 808
+		goal = {kind = "planet", planetIndex = 4, tolerance = 120, chain = {{planetIndex = 1, tolerance = 40, label = "木星"}, {planetIndex = 2, tolerance = 60, label = "土星"}, {planetIndex = 3, tolerance = 90, label = "天王星"}, {planetIndex = 4, tolerance = 120, label = "海王星"}}}, -- 810
+		dvBudget = 16, -- 821
+		escapeRadius = 3600, -- 822
+		maxSteps = 70000, -- 823
+		timeWindow = {span = 17.5}, -- 824
+		mission = { -- 825
+			id = "L6", -- 826
+			codeName = "Voyager 2", -- 827
+			historicalRef = "旅行者2号 (1977)", -- 828
+			subtitle = "奇迹", -- 829
+			vehicle = "flyby", -- 830
+			challenges = {{desc = "成功四星连续借力并飞出海王星轨道", type = "success"}, {desc = "初始发射点火 Δv ≤ 80% 预算", type = "fuel", threshold = 0.8}, {desc = "四星交会无碰撞且近心点精度 ≤ 5%", type = "distance", threshold = 0.05}} -- 831
+		} -- 831
+	} -- 831
+end -- 789
+local LEVELS = { -- 840
+	level1(), -- 840
+	level2(), -- 840
+	level3(), -- 840
+	level4(), -- 840
+	level5(), -- 840
+	level6() -- 840
+} -- 840
 --- 关卡总数。
-function ____exports.levelCount() -- 834
-	return #LEVELS -- 835
-end -- 834
+function ____exports.levelCount() -- 843
+	return #LEVELS -- 844
+end -- 843
 --- 取第 index 关（0 起）。越界返回 undefined。
-function ____exports.getLevel(index) -- 839
-	return LEVELS[index + 1] -- 840
-end -- 839
+function ____exports.getLevel(index) -- 848
+	return LEVELS[index + 1] -- 849
+end -- 848
 --- 应用全局倍率，返回可直接喂给 createGame 的行星数组。不修改关卡原始数据。
-function ____exports.scaledPlanets(level) -- 844
-	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 845
-end -- 844
-return ____exports -- 844
+function ____exports.scaledPlanets(level) -- 853
+	return applyScalesLocal(level.planets, GravityScale, OrbitSpeedScale) -- 854
+end -- 853
+return ____exports -- 853

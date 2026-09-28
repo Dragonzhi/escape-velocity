@@ -23,34 +23,36 @@ local ____OrbitFlow = require("game.OrbitFlow") -- 36
 local FlowDotsPerOrbit = ____OrbitFlow.FlowDotsPerOrbit -- 36
 local flowDotAngle = ____OrbitFlow.flowDotAngle -- 36
 local orbitCenterAt = ____OrbitFlow.orbitCenterAt -- 36
+local ____Tuning = require("game.Tuning") -- 37
+local SPIN_GAME_SEC = ____Tuning.SPIN_GAME_SEC -- 37
 --- 平面坐标 → 世界坐标（y 恒为 0，黄道面水平）。
-function ____exports.planeToWorld(p, y) -- 39
-	return Vec3(p.x * PlaneToWorldX, y, p.y * PlaneToWorldZ) -- 40
-end -- 39
-local MODEL_RADIUS = { -- 58
-	{name = "Sun", k = 1}, -- 61
-	{name = "Moon", k = 1}, -- 62
-	{name = "Planet_Earth", k = 1}, -- 63
-	{name = "Planet_Venus", k = 1}, -- 64
-	{name = "Planet_Mars", k = 1}, -- 65
-	{name = "Planet_Jupiter", k = 1}, -- 66
-	{name = "Planet_Neptune", k = 1}, -- 67
-	{name = "Planet_Saturn", k = 1}, -- 71
-	{name = "Planet_Uranus", k = 1} -- 72
-} -- 72
+function ____exports.planeToWorld(p, y) -- 40
+	return Vec3(p.x * PlaneToWorldX, y, p.y * PlaneToWorldZ) -- 41
+end -- 40
+local MODEL_RADIUS = { -- 59
+	{name = "Sun", k = 1}, -- 62
+	{name = "Moon", k = 1}, -- 63
+	{name = "Planet_Earth", k = 1}, -- 64
+	{name = "Planet_Venus", k = 1}, -- 65
+	{name = "Planet_Mars", k = 1}, -- 66
+	{name = "Planet_Jupiter", k = 1}, -- 67
+	{name = "Planet_Neptune", k = 1}, -- 68
+	{name = "Planet_Saturn", k = 1}, -- 72
+	{name = "Planet_Uranus", k = 1} -- 73
+} -- 73
 --- 取模型半径系数；表里没有的名字按 1.0 处理（等价于旧行为）。
-function ____exports.modelRadius(name) -- 76
-	do -- 76
-		local i = 0 -- 77
-		while i < #MODEL_RADIUS do -- 77
-			if MODEL_RADIUS[i + 1].name == name then -- 77
-				return MODEL_RADIUS[i + 1].k -- 78
-			end -- 78
-			i = i + 1 -- 77
-		end -- 77
-	end -- 77
-	return 1 -- 80
-end -- 76
+function ____exports.modelRadius(name) -- 77
+	do -- 77
+		local i = 0 -- 78
+		while i < #MODEL_RADIUS do -- 78
+			if MODEL_RADIUS[i + 1].name == name then -- 78
+				return MODEL_RADIUS[i + 1].k -- 79
+			end -- 79
+			i = i + 1 -- 78
+		end -- 78
+	end -- 78
+	return 1 -- 81
+end -- 77
 --- 贴图表（S3.14 建模交付）。
 -- 
 -- ⚠️ 交付的 .glb **不含内嵌贴图**（tools/glb-check.mjs 核对：images = 0），贴图一律走外部文件、
@@ -58,94 +60,94 @@ end -- 76
 -- ⚠️ 环的贴图要给**环材质**，而引擎拿不到 glTF 材质名（Material3D 没有 name 字段）——
 --    所以用建模约定的 **alphaMode = Blend** 认它（实测 Saturn_Ring_Mat / Uranus_Ring_Mat 都是 BLEND，
 --    本体材质是 OPAQUE）。环的 UV 是径向的：U = 0 内环 → U = 1 外环。
-local PLANET_TEX = { -- 106
-	{name = "Sun", base = "sun.jpg", emissive = "sun.jpg", emisMul = 16777215}, -- 107
-	{name = "Moon", base = "moon.jpg"}, -- 108
-	{name = "Planet_Earth", base = "planet_earth.jpg", emissive = "planet_earth_emissive.png", emisMul = 2763306}, -- 109
-	{name = "Planet_Venus", base = "planet_venus.jpg"}, -- 110
-	{name = "Planet_Mars", base = "planet_mars.jpg"}, -- 111
-	{name = "Planet_Jupiter", base = "planet_jupiter.jpg"}, -- 112
-	{name = "Planet_Saturn", base = "planet_saturn.jpg", ring = "planet_saturn_ring.png"}, -- 113
-	{name = "Planet_Uranus", base = "planet_uranus.jpg", ring = "planet_uranus_ring.png"}, -- 114
-	{name = "Planet_Neptune", base = "planet_neptune.jpg"} -- 115
-} -- 115
+local PLANET_TEX = { -- 107
+	{name = "Sun", base = "sun.jpg", emissive = "sun.jpg", emisMul = 16777215}, -- 108
+	{name = "Moon", base = "moon.jpg"}, -- 109
+	{name = "Planet_Earth", base = "planet_earth.jpg", emissive = "planet_earth_emissive.png", emisMul = 2763306}, -- 110
+	{name = "Planet_Venus", base = "planet_venus.jpg"}, -- 111
+	{name = "Planet_Mars", base = "planet_mars.jpg"}, -- 112
+	{name = "Planet_Jupiter", base = "planet_jupiter.jpg"}, -- 113
+	{name = "Planet_Saturn", base = "planet_saturn.jpg", ring = "planet_saturn_ring.png"}, -- 114
+	{name = "Planet_Uranus", base = "planet_uranus.jpg", ring = "planet_uranus_ring.png"}, -- 115
+	{name = "Planet_Neptune", base = "planet_neptune.jpg"} -- 116
+} -- 116
 --- 0xRRGGBB → 通道（不用位运算：tstl 对算术右移会编译失败，见手册 §7.1）。
-local function redOf(hex) -- 119
-	return math.floor(hex / 65536) % 256 -- 119
-end -- 119
-local function greenOf(hex) -- 120
-	return math.floor(hex / 256) % 256 -- 120
+local function redOf(hex) -- 120
+	return math.floor(hex / 65536) % 256 -- 120
 end -- 120
-local function blueOf(hex) -- 121
-	return math.floor(hex) % 256 -- 121
+local function greenOf(hex) -- 121
+	return math.floor(hex / 256) % 256 -- 121
 end -- 121
+local function blueOf(hex) -- 122
+	return math.floor(hex) % 256 -- 122
+end -- 122
 --- 0–1 的视觉色 → 0xRRGGBB（给「没有贴图时」的回退染色用）。
-function ____exports.packColor(r, g, b) -- 124
-	return math.floor(r * 255 + 0.5) * 65536 + math.floor(g * 255 + 0.5) * 256 + math.floor(b * 255 + 0.5) -- 125
-end -- 124
+function ____exports.packColor(r, g, b) -- 125
+	return math.floor(r * 255 + 0.5) * 65536 + math.floor(g * 255 + 0.5) * 256 + math.floor(b * 255 + 0.5) -- 126
+end -- 125
 --- 按文件名安全取贴图（引擎遇到不存在的文件会**抛异常**，所以先 Content.exist）。
-local function textureOf(file) -- 129
-	if file == "" then -- 129
-		return nil -- 130
-	end -- 130
-	local path = "Assets/Image/" .. file -- 131
-	if not Content:exist(path) then -- 131
-		return nil -- 132
-	end -- 132
-	return Texture2D(path) -- 133
-end -- 129
+local function textureOf(file) -- 130
+	if file == "" then -- 130
+		return nil -- 131
+	end -- 131
+	local path = "Assets/Image/" .. file -- 132
+	if not Content:exist(path) then -- 132
+		return nil -- 133
+	end -- 133
+	return Texture2D(path) -- 134
+end -- 130
 --- 给一颗天体模型绑贴图 / 回退染色（关卡与开场共用同一份）。
 -- 
 -- @param model 已加载的模型
 -- @param modelName 模型名（不含路径与扩展名）
 -- @param tintHex 没有贴图时的回退色（0xRRGGBB；0 = 不动 baseColor）
 -- @param emissiveHex 自发光乘数（0xRRGGBB；0 = 用贴图表里的默认值）
-function ____exports.applyPlanetTexture(model, modelName, tintHex, emissiveHex) -- 144
-	local def = nil -- 145
-	do -- 145
-		local i = 0 -- 146
-		while i < #PLANET_TEX do -- 146
-			if PLANET_TEX[i + 1].name == modelName then -- 146
-				def = PLANET_TEX[i + 1] -- 147
-			end -- 147
-			i = i + 1 -- 146
-		end -- 146
-	end -- 146
-	local baseTex = textureOf(def ~= nil and def.base or "") -- 149
-	local emiTex = textureOf(def ~= nil and def.emissive ~= nil and def.emissive or "") -- 150
-	local ringTex = textureOf(def ~= nil and def.ring ~= nil and def.ring or "") -- 151
-	local emiMul = emissiveHex -- 152
-	if emiMul == 0 and emiTex ~= nil then -- 152
-		emiMul = def ~= nil and def.emisMul ~= nil and def.emisMul or 2763306 -- 154
-	end -- 154
-	local i = 0 -- 157
-	while i < 64 do -- 157
-		local mat = model:getMaterial(i) -- 159
-		if mat == nil then -- 159
-			break -- 160
-		end -- 160
-		local isRing = ringTex ~= nil and mat.alphaMode == 2 -- 161
-		if isRing then -- 161
-			mat:setBaseColorTexture(ringTex) -- 163
-			mat.baseColor = Color(255, 255, 255, 255) -- 164
-		elseif baseTex ~= nil then -- 164
-			mat:setBaseColorTexture(baseTex) -- 167
-			mat.baseColor = Color(255, 255, 255, 255) -- 168
-		elseif tintHex > 0 then -- 168
-			mat.baseColor = Color( -- 170
-				redOf(tintHex), -- 170
-				greenOf(tintHex), -- 170
-				blueOf(tintHex), -- 170
-				255 -- 170
-			) -- 170
-		end -- 170
-		if not isRing and emiTex ~= nil and emiMul > 0 then -- 170
-			mat:setEmissiveTexture(emiTex) -- 173
-			mat.emissive = Color3(emiMul) -- 174
-		end -- 174
-		i = i + 1 -- 176
-	end -- 176
-end -- 144
+function ____exports.applyPlanetTexture(model, modelName, tintHex, emissiveHex) -- 145
+	local def = nil -- 146
+	do -- 146
+		local i = 0 -- 147
+		while i < #PLANET_TEX do -- 147
+			if PLANET_TEX[i + 1].name == modelName then -- 147
+				def = PLANET_TEX[i + 1] -- 148
+			end -- 148
+			i = i + 1 -- 147
+		end -- 147
+	end -- 147
+	local baseTex = textureOf(def ~= nil and def.base or "") -- 150
+	local emiTex = textureOf(def ~= nil and def.emissive ~= nil and def.emissive or "") -- 151
+	local ringTex = textureOf(def ~= nil and def.ring ~= nil and def.ring or "") -- 152
+	local emiMul = emissiveHex -- 153
+	if emiMul == 0 and emiTex ~= nil then -- 153
+		emiMul = def ~= nil and def.emisMul ~= nil and def.emisMul or 2763306 -- 155
+	end -- 155
+	local i = 0 -- 158
+	while i < 64 do -- 158
+		local mat = model:getMaterial(i) -- 160
+		if mat == nil then -- 160
+			break -- 161
+		end -- 161
+		local isRing = ringTex ~= nil and mat.alphaMode == 2 -- 162
+		if isRing then -- 162
+			mat:setBaseColorTexture(ringTex) -- 164
+			mat.baseColor = Color(255, 255, 255, 255) -- 165
+		elseif baseTex ~= nil then -- 165
+			mat:setBaseColorTexture(baseTex) -- 168
+			mat.baseColor = Color(255, 255, 255, 255) -- 169
+		elseif tintHex > 0 then -- 169
+			mat.baseColor = Color( -- 171
+				redOf(tintHex), -- 171
+				greenOf(tintHex), -- 171
+				blueOf(tintHex), -- 171
+				255 -- 171
+			) -- 171
+		end -- 171
+		if not isRing and emiTex ~= nil and emiMul > 0 then -- 171
+			mat:setEmissiveTexture(emiTex) -- 174
+			mat.emissive = Color3(emiMul) -- 175
+		end -- 175
+		i = i + 1 -- 177
+	end -- 177
+end -- 145
 --- 探测器朝向偏移（度）。
 -- 
 -- 实测（Test/ModelCalibProbe.ts → .agent/test-results/s31-orient.txt）：
@@ -159,64 +161,64 @@ end -- 144
 --   一根细长磁强计杆沿 **-Z** 伸出（到 z=-1.85，图中朝屏幕上方）。
 --   ⇒ 让 **-Z（细杆）朝前、+Z（两根主杆）拖在后**，就是飞船“在飞”的样子。
 --   即需要 局部 +Z → 速度的反方向：θ = θ_faceVelocity - 90°。
-local ProbeYawOffsetDeg = -90 -- 195
+local ProbeYawOffsetDeg = -90 -- 196
 --- 天线转轴在探测器本地系的位置（y，模型单位）。
 -- 取自拆分前单体文件里 Probe_Antenna 空物体的 translation（建模把它放在碟面背面与
 -- 支撑腿的汇交点）。天线文件按"转轴 = 原点"导出，游戏把天线模型放到本常量 × scale 处。
-____exports.AntennaPivotY = 0.2 -- 202
+____exports.AntennaPivotY = 0.2 -- 203
 --- 把细节图集绑到模型的每个材质（**不改 baseColor**：建模的材质色就是要和图集相乘的）。
-local function applyAtlas(model, tex) -- 346
-	local i = 0 -- 347
-	while i < 64 do -- 347
-		local mat = model:getMaterial(i) -- 349
-		if mat == nil then -- 349
-			break -- 350
-		end -- 350
-		mat:setBaseColorTexture(tex) -- 351
-		i = i + 1 -- 352
-	end -- 352
-end -- 346
-function ____exports.createProbe(parent, opts) -- 356
-	local scale = opts.scale -- 357
-	local pivotY = opts.antennaPivotY ~= nil and opts.antennaPivotY or ____exports.AntennaPivotY -- 358
-	local bodyRadius = opts.bodyRadius ~= nil and opts.bodyRadius or 0.5 * 3.227 -- 359
-	local bodyModel = opts.bodyPath ~= nil and Content:exist(opts.bodyPath) and Model3D(opts.bodyPath) or nil -- 360
-	local antennaModel = bodyModel ~= nil and opts.antennaPath ~= nil and Content:exist(opts.antennaPath) and Model3D(opts.antennaPath) or nil -- 363
-	local singleModel = bodyModel == nil and Model3D(opts.probePath) or nil -- 366
-	if bodyModel == nil and singleModel == nil then -- 366
-		return nil -- 367
-	end -- 367
-	local node = Node3D() -- 369
-	parent:addChild(node) -- 370
-	if bodyModel ~= nil then -- 370
-		bodyModel.scale = Vec3(scale, scale, scale) -- 373
-		node:addChild(bodyModel) -- 374
-	end -- 374
-	if singleModel ~= nil then -- 374
-		singleModel.scale = Vec3(scale, scale, scale) -- 377
-		node:addChild(singleModel) -- 378
-	end -- 378
-	if bodyModel ~= nil and antennaModel ~= nil then -- 378
-		antennaModel.scale = Vec3(scale, scale, scale) -- 385
-		antennaModel.position = Vec3(0, pivotY * scale, 0) -- 386
-		node:addChild(antennaModel) -- 387
-	end -- 387
-	if opts.atlasPath ~= nil and Content:exist(opts.atlasPath) then -- 387
-		local atlas = Texture2D(opts.atlasPath) -- 393
-		if atlas ~= nil then -- 393
-			if bodyModel ~= nil then -- 393
-				applyAtlas(bodyModel, atlas) -- 395
-			end -- 395
-			if singleModel ~= nil then -- 395
-				applyAtlas(singleModel, atlas) -- 396
-			end -- 396
-			if antennaModel ~= nil then -- 396
-				applyAtlas(antennaModel, atlas) -- 397
-			end -- 397
-		end -- 397
-	end -- 397
-	return {node = node, antenna = antennaModel, radius = bodyRadius * scale * 1.1} -- 401
-end -- 356
+local function applyAtlas(model, tex) -- 349
+	local i = 0 -- 350
+	while i < 64 do -- 350
+		local mat = model:getMaterial(i) -- 352
+		if mat == nil then -- 352
+			break -- 353
+		end -- 353
+		mat:setBaseColorTexture(tex) -- 354
+		i = i + 1 -- 355
+	end -- 355
+end -- 349
+function ____exports.createProbe(parent, opts) -- 359
+	local scale = opts.scale -- 360
+	local pivotY = opts.antennaPivotY ~= nil and opts.antennaPivotY or ____exports.AntennaPivotY -- 361
+	local bodyRadius = opts.bodyRadius ~= nil and opts.bodyRadius or 0.5 * 3.227 -- 362
+	local bodyModel = opts.bodyPath ~= nil and Content:exist(opts.bodyPath) and Model3D(opts.bodyPath) or nil -- 363
+	local antennaModel = bodyModel ~= nil and opts.antennaPath ~= nil and Content:exist(opts.antennaPath) and Model3D(opts.antennaPath) or nil -- 366
+	local singleModel = bodyModel == nil and Model3D(opts.probePath) or nil -- 369
+	if bodyModel == nil and singleModel == nil then -- 369
+		return nil -- 370
+	end -- 370
+	local node = Node3D() -- 372
+	parent:addChild(node) -- 373
+	if bodyModel ~= nil then -- 373
+		bodyModel.scale = Vec3(scale, scale, scale) -- 376
+		node:addChild(bodyModel) -- 377
+	end -- 377
+	if singleModel ~= nil then -- 377
+		singleModel.scale = Vec3(scale, scale, scale) -- 380
+		node:addChild(singleModel) -- 381
+	end -- 381
+	if bodyModel ~= nil and antennaModel ~= nil then -- 381
+		antennaModel.scale = Vec3(scale, scale, scale) -- 388
+		antennaModel.position = Vec3(0, pivotY * scale, 0) -- 389
+		node:addChild(antennaModel) -- 390
+	end -- 390
+	if opts.atlasPath ~= nil and Content:exist(opts.atlasPath) then -- 390
+		local atlas = Texture2D(opts.atlasPath) -- 396
+		if atlas ~= nil then -- 396
+			if bodyModel ~= nil then -- 396
+				applyAtlas(bodyModel, atlas) -- 398
+			end -- 398
+			if singleModel ~= nil then -- 398
+				applyAtlas(singleModel, atlas) -- 399
+			end -- 399
+			if antennaModel ~= nil then -- 399
+				applyAtlas(antennaModel, atlas) -- 400
+			end -- 400
+		end -- 400
+	end -- 400
+	return {node = node, antenna = antennaModel, radius = bodyRadius * scale * 1.1} -- 404
+end -- 359
 --- "大天线回头指向地球"的目标法线（关卡与 S3.3 开场共用同一份算式）。
 -- 
 -- 目标法线 = 从"朝上"向目标方向倾斜（倾角随距离渐入——刚出发距离 ≈ 0 时不倾）；
@@ -229,50 +231,50 @@ end -- 356
 -- @param probe 探测器位置（平面坐标）
 -- @param target 指向目标（平面坐标；关卡传地球锚点，开场传地球）
 -- @param bodyYawDeg 机身当前朝向（度；由 probeYawForVelocity 维护）
-function ____exports.pointAntenna(antenna, probe, target, bodyYawDeg) -- 426
-	local ex = (target.x - probe.x) * PlaneToWorldX -- 427
-	local ez = (target.y - probe.y) * PlaneToWorldZ -- 428
-	local dist = math.sqrt(ex * ex + ez * ez) -- 429
-	if dist <= 0.0001 then -- 429
-		return -- 430
-	end -- 430
-	local tiltFactor = (dist - 0.5) / 3 -- 431
-	if tiltFactor < 0 then -- 431
-		tiltFactor = 0 -- 432
-	end -- 432
-	if tiltFactor > 1 then -- 432
-		tiltFactor = 1 -- 433
+function ____exports.pointAntenna(antenna, probe, target, bodyYawDeg) -- 429
+	local ex = (target.x - probe.x) * PlaneToWorldX -- 430
+	local ez = (target.y - probe.y) * PlaneToWorldZ -- 431
+	local dist = math.sqrt(ex * ex + ez * ez) -- 432
+	if dist <= 0.0001 then -- 432
+		return -- 433
 	end -- 433
-	local tilt = 46 * tiltFactor -- 434
-	local phiWorld = math.atan(-ez, ex) * 180 / math.pi -- 435
-	antenna.angles = Vec3(0, phiWorld - bodyYawDeg, -tilt) -- 436
-end -- 426
+	local tiltFactor = (dist - 0.5) / 3 -- 434
+	if tiltFactor < 0 then -- 434
+		tiltFactor = 0 -- 435
+	end -- 435
+	if tiltFactor > 1 then -- 435
+		tiltFactor = 1 -- 436
+	end -- 436
+	local tilt = 46 * tiltFactor -- 437
+	local phiWorld = math.atan(-ez, ex) * 180 / math.pi -- 438
+	antenna.angles = Vec3(0, phiWorld - bodyYawDeg, -tilt) -- 439
+end -- 429
 --- 速度方向 → 机身 yaw（度）。返回 undefined 表示速度太小（保持原朝向）。
 -- 
 -- 世界方向 (dx, 0, dz) 对应 yaw = atan2(-dz, dx)（用已知朝 +X 的旧 Probe.gltf 在
 -- yaw=0/90/180/270 读世界包围盒标定过）；模型自身"朝前的轴"不是 +X 时由
 -- ProbeYawOffsetDeg 补正。
-function ____exports.probeYawForVelocity(v) -- 446
-	local wx = v.x * PlaneToWorldX -- 447
-	local wz = v.y * PlaneToWorldZ -- 448
-	if wx * wx + wz * wz < 1e-12 then -- 448
-		return nil -- 449
-	end -- 449
-	return math.atan(-wz, wx) * 180 / math.pi + ProbeYawOffsetDeg -- 450
-end -- 446
+function ____exports.probeYawForVelocity(v) -- 449
+	local wx = v.x * PlaneToWorldX -- 450
+	local wz = v.y * PlaneToWorldZ -- 451
+	if wx * wx + wz * wz < 1e-12 then -- 451
+		return nil -- 452
+	end -- 452
+	return math.atan(-wz, wx) * 180 / math.pi + ProbeYawOffsetDeg -- 453
+end -- 449
 --- 星空背板距相机的距离（世界单位）与半边尺寸；理由见 createStarBackdrop。
-local BackdropDist = 600 -- 454
-local BackdropHalf = 560 -- 455
+local BackdropDist = 600 -- 457
+local BackdropHalf = 560 -- 458
 --- 天球半径（世界单位）。
-local SkyRadius = 1200 -- 458
+local SkyRadius = 1200 -- 461
 --- 天球资产（Test/gen_orbit_assets.py 生成）。
-local SkySpherePath = "Assets/Model/StarSphere.gltf" -- 460
+local SkySpherePath = "Assets/Model/StarSphere.gltf" -- 463
 --- 星空总亮度（emissive 0xRRGGBB）。
 -- 
 -- 2026-09-26 换天球时把 0x8c 调到 0x7a：新贴图是 2048×1024（1 texel ≈ 4.2 屏幕像素，
 -- 星点直径 1.5–6 px），比旧面片版（1024²，1 texel ≈ 2.3 px）的点更大更亮，
 -- 同样的 emissive 会显得"星点变大变吵"，压一档回到原来的观感。
-local StarBrightnessHex = 8026746 -- 468
+local StarBrightnessHex = 8026746 -- 471
 --- 建星空：**世界尺度的天球 + 每帧把球心挪到相机位置**（2026-09-26，用户第 5 条反馈）。
 -- 
 -- 为什么换掉面片：旧的四边形是"钉在视线前方 600"的，但它**朝向写死**（angleX = -45）。
@@ -286,408 +288,419 @@ local StarBrightnessHex = 8026746 -- 468
 -- 素材由 Test/gen_orbit_assets.py 代码生成：starfield.png（2048×1024 等距圆柱）
 -- + StarSphere.gltf（单位球，**scale = 天球半径**，材质自带 doubleSided）。
 -- 旧的 StarQuad.gltf / 1024² 贴图保留作回退。
-function ____exports.createStarBackdrop(root) -- 493
-	local tex = Texture2D("Assets/Image/starfield.png") -- 494
-	if Content:exist(SkySpherePath) then -- 494
-		local sphere = Model3D(SkySpherePath) -- 498
-		if sphere ~= nil then -- 498
-			local sm = sphere:getMaterial(0) -- 500
-			if sm ~= nil and tex ~= nil then -- 500
-				sm:setEmissiveTexture(tex) -- 504
-				sm.baseColor = Color(0, 0, 0, 255) -- 505
-				sm.emissive = Color3(StarBrightnessHex) -- 506
-				sm.roughness = 1 -- 507
-				sm.metallic = 0 -- 508
-			end -- 508
-			sphere.scale = Vec3(SkyRadius, SkyRadius, SkyRadius) -- 510
-			sphere.position = Vec3(0, 0, 0) -- 511
-			root:addChild(sphere) -- 512
-			return { -- 513
-				node = sphere, -- 514
-				sync = function(____, eye, target) -- 515
-					sphere.position = Vec3(eye.x, eye.y, eye.z) -- 516
-				end -- 515
-			} -- 515
-		end -- 515
-	end -- 515
-	local backdrop = Model3D("Assets/Model/StarQuad.gltf") -- 523
-	if backdrop == nil then -- 523
-		return nil -- 524
-	end -- 524
-	local bm = backdrop:getMaterial(0) -- 525
-	if bm ~= nil and tex ~= nil then -- 525
-		bm:setEmissiveTexture(tex) -- 527
-		bm.baseColor = Color(0, 0, 0, 255) -- 528
-		bm.emissive = Color3(StarBrightnessHex) -- 529
-		bm.roughness = 1 -- 530
-		bm.metallic = 0 -- 531
-	end -- 531
-	backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf) -- 533
-	backdrop.angleX = -45 -- 534
-	backdrop.position = Vec3(0, 0, -BackdropDist) -- 535
-	root:addChild(backdrop) -- 536
-	return { -- 537
-		node = backdrop, -- 538
-		sync = function(____, eye, target) -- 539
-			local dx = target.x - eye.x -- 540
-			local dy = target.y - eye.y -- 541
-			local dz = target.z - eye.z -- 542
-			local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 543
-			if len < 0.000001 then -- 543
-				return -- 544
-			end -- 544
-			local s = BackdropDist / len -- 545
-			backdrop.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s) -- 546
-		end -- 539
-	} -- 539
-end -- 493
+function ____exports.createStarBackdrop(root) -- 496
+	local tex = Texture2D("Assets/Image/starfield.png") -- 497
+	if Content:exist(SkySpherePath) then -- 497
+		local sphere = Model3D(SkySpherePath) -- 501
+		if sphere ~= nil then -- 501
+			local sm = sphere:getMaterial(0) -- 503
+			if sm ~= nil and tex ~= nil then -- 503
+				sm:setEmissiveTexture(tex) -- 507
+				sm.baseColor = Color(0, 0, 0, 255) -- 508
+				sm.emissive = Color3(StarBrightnessHex) -- 509
+				sm.roughness = 1 -- 510
+				sm.metallic = 0 -- 511
+			end -- 511
+			sphere.scale = Vec3(SkyRadius, SkyRadius, SkyRadius) -- 513
+			sphere.position = Vec3(0, 0, 0) -- 514
+			root:addChild(sphere) -- 515
+			return { -- 516
+				node = sphere, -- 517
+				sync = function(____, eye, target) -- 518
+					sphere.position = Vec3(eye.x, eye.y, eye.z) -- 519
+				end -- 518
+			} -- 518
+		end -- 518
+	end -- 518
+	local backdrop = Model3D("Assets/Model/StarQuad.gltf") -- 526
+	if backdrop == nil then -- 526
+		return nil -- 527
+	end -- 527
+	local bm = backdrop:getMaterial(0) -- 528
+	if bm ~= nil and tex ~= nil then -- 528
+		bm:setEmissiveTexture(tex) -- 530
+		bm.baseColor = Color(0, 0, 0, 255) -- 531
+		bm.emissive = Color3(StarBrightnessHex) -- 532
+		bm.roughness = 1 -- 533
+		bm.metallic = 0 -- 534
+	end -- 534
+	backdrop.scale = Vec3(BackdropHalf, BackdropHalf, BackdropHalf) -- 536
+	backdrop.angleX = -45 -- 537
+	backdrop.position = Vec3(0, 0, -BackdropDist) -- 538
+	root:addChild(backdrop) -- 539
+	return { -- 540
+		node = backdrop, -- 541
+		sync = function(____, eye, target) -- 542
+			local dx = target.x - eye.x -- 543
+			local dy = target.y - eye.y -- 544
+			local dz = target.z - eye.z -- 545
+			local len = math.sqrt(dx * dx + dy * dy + dz * dz) -- 546
+			if len < 0.000001 then -- 546
+				return -- 547
+			end -- 547
+			local s = BackdropDist / len -- 548
+			backdrop.position = Vec3(eye.x + dx * s, eye.y + dy * s, eye.z + dz * s) -- 549
+		end -- 542
+	} -- 542
+end -- 496
 --- 光点面片与贴图：与太阳光晕**同源**的仓库内资产（单位四边形 + 径向渐变），不引入新素材。
-local FlowDotModelPath = "Assets/Model/StarQuad.gltf" -- 553
-local FlowDotTexturePath = "Assets/Image/glow.png" -- 554
+local FlowDotModelPath = "Assets/Model/StarQuad.gltf" -- 556
+local FlowDotTexturePath = "Assets/Image/glow.png" -- 557
 --- 光点面片的缩放（StarQuad 顶点是 ±1 ⇒ scale = 直径的一半）。
 -- 随轨道半径放大（外圈离相机远，同样屏幕尺寸要更大的世界尺寸），夹在 [min, max]。
-local FlowDotMinScale = 0.8 -- 559
-local FlowDotMaxScale = 2 -- 560
-local FlowDotScalePerRadius = 0.012 -- 561
+local FlowDotMinScale = 0.8 -- 562
+local FlowDotMaxScale = 2 -- 563
+local FlowDotScalePerRadius = 0.012 -- 564
 --- 光点的自发光色（0xRRGGBB）：暖白，与 2D 规划视图的光点同色系（PlanView 的 flowDotHex）。
-local FlowDotEmissiveHex = 16767392 -- 563
+local FlowDotEmissiveHex = 16767392 -- 566
 --- 构建场景。
 -- 
 -- @returns 场景句柄；若关键模型加载失败则返回 undefined（调用方应报错）。
-function ____exports.buildScene(options) -- 576
-	local ____options_0 = options -- 577
-	local root = ____options_0.root -- 577
-	local bodies = ____options_0.bodies -- 577
-	local visuals = ____options_0.visuals -- 577
-	local probeStart = ____options_0.probeStart -- 577
-	local starWorld = nil -- 585
-	local starRadius = 0 -- 586
-	local starGm = 0 -- 587
-	do -- 587
-		local i = 0 -- 588
-		while i < #bodies do -- 588
-			do -- 588
-				local b = bodies[i + 1] -- 589
-				if b.orbitRadius ~= 0 then -- 589
-					goto __continue55 -- 590
-				end -- 590
-				if b.gm <= starGm then -- 590
-					goto __continue55 -- 591
-				end -- 591
-				starGm = b.gm -- 592
-				starRadius = b.radius -- 593
-				starWorld = ____exports.planeToWorld({x = b.orbitCenter.x, y = b.orbitCenter.y}, 0) -- 594
-			end -- 594
-			::__continue55:: -- 594
-			i = i + 1 -- 588
-		end -- 588
-	end -- 588
-	local hasStar = starWorld ~= nil and starGm >= SunMinGmForLight -- 596
-	do -- 596
-		local light = DirectionalLight3D() -- 605
-		light.color = Color3(16774106) -- 606
-		light.intensity = 3.6 -- 607
-		light.angleX = -42 -- 608
-		light.angleY = 75 -- 609
-		root:addChild(light) -- 610
-	end -- 610
-	local starIndex = -1 -- 613
-	if hasStar then -- 613
-		local best = 0 -- 615
-		do -- 615
-			local i = 0 -- 616
-			while i < #bodies do -- 616
-				local b = bodies[i + 1] -- 617
-				if b.orbitRadius == 0 and b.gm > best then -- 617
-					best = b.gm -- 619
-					starIndex = i -- 620
-				end -- 620
-				i = i + 1 -- 616
-			end -- 616
-		end -- 616
-	end -- 616
-	local planets = {} -- 626
-	do -- 626
-		local i = 0 -- 627
-		while i < #bodies do -- 627
-			local def = bodies[i + 1] -- 628
-			local vis = visuals[i + 1] -- 629
-			local bodyModel = nil -- 632
-			local k = 1 -- 633
-			local modelName = vis.model ~= nil and vis.model or "" -- 634
-			if modelName ~= "" then -- 634
-				local loaded = Model3D(("Assets/Model/" .. modelName) .. ".glb") -- 636
-				if loaded ~= nil then -- 636
-					bodyModel = loaded -- 638
-					k = ____exports.modelRadius(modelName) -- 639
-				end -- 639
-			end -- 639
-			if bodyModel == nil then -- 639
-				bodyModel = Model3D(options.spherePath) -- 643
-				k = 1 -- 644
-			end -- 644
-			if bodyModel == nil then -- 644
-				return nil -- 646
-			end -- 646
-			local scale = vis.displayRadius / k -- 649
-			bodyModel.scale = Vec3(scale, scale, scale) -- 650
-			____exports.applyPlanetTexture( -- 657
-				bodyModel, -- 657
-				modelName, -- 657
-				____exports.packColor(vis.r, vis.g, vis.b), -- 657
-				vis.emissive ~= nil and ____exports.packColor(vis.emissive.r, vis.emissive.g, vis.emissive.b) or 0 -- 658
-			) -- 658
-			root:addChild(bodyModel) -- 660
-			local ringNode = nil -- 663
-			if modelName == "" and vis.ring then -- 663
-				local ring = Model3D(options.ringPath) -- 665
-				if ring ~= nil then -- 665
-					local rs = scale * 1.5 -- 668
-					ring.scale = Vec3(rs, rs, rs) -- 669
-					root:addChild(ring) -- 670
-					ringNode = ring -- 671
-				end -- 671
-			end -- 671
-			planets[#planets + 1] = {body = bodyModel, ring = ringNode, def = def} -- 675
-			i = i + 1 -- 627
-		end -- 627
-	end -- 627
-	do -- 627
-		local i = 0 -- 683
-		while i < #bodies do -- 683
-			do -- 683
-				local def = bodies[i + 1] -- 684
-				if def.orbitRadius <= 0 then -- 684
-					goto __continue72 -- 685
-				end -- 685
-				local ringPath = ("Assets/Model/OrbitRing_" .. __TS__NumberToFixed(def.orbitRadius, 0)) .. ".gltf" -- 686
-				if not Content:exist(ringPath) then -- 686
+function ____exports.buildScene(options) -- 579
+	local ____options_0 = options -- 580
+	local root = ____options_0.root -- 580
+	local bodies = ____options_0.bodies -- 580
+	local visuals = ____options_0.visuals -- 580
+	local probeStart = ____options_0.probeStart -- 580
+	local starWorld = nil -- 588
+	local starRadius = 0 -- 589
+	local starGm = 0 -- 590
+	do -- 590
+		local i = 0 -- 591
+		while i < #bodies do -- 591
+			do -- 591
+				local b = bodies[i + 1] -- 592
+				if b.orbitRadius ~= 0 then -- 592
+					goto __continue55 -- 593
+				end -- 593
+				if b.gm <= starGm then -- 593
+					goto __continue55 -- 594
+				end -- 594
+				starGm = b.gm -- 595
+				starRadius = b.radius -- 596
+				starWorld = ____exports.planeToWorld({x = b.orbitCenter.x, y = b.orbitCenter.y}, 0) -- 597
+			end -- 597
+			::__continue55:: -- 597
+			i = i + 1 -- 591
+		end -- 591
+	end -- 591
+	local hasStar = starWorld ~= nil and starGm >= SunMinGmForLight -- 599
+	do -- 599
+		local light = DirectionalLight3D() -- 608
+		light.color = Color3(16774106) -- 609
+		light.intensity = 3.6 -- 610
+		light.angleX = -42 -- 611
+		light.angleY = 75 -- 612
+		root:addChild(light) -- 613
+	end -- 613
+	local starIndex = -1 -- 616
+	if hasStar then -- 616
+		local best = 0 -- 618
+		do -- 618
+			local i = 0 -- 619
+			while i < #bodies do -- 619
+				local b = bodies[i + 1] -- 620
+				if b.orbitRadius == 0 and b.gm > best then -- 620
+					best = b.gm -- 622
+					starIndex = i -- 623
+				end -- 623
+				i = i + 1 -- 619
+			end -- 619
+		end -- 619
+	end -- 619
+	local planets = {} -- 629
+	do -- 629
+		local i = 0 -- 630
+		while i < #bodies do -- 630
+			local def = bodies[i + 1] -- 631
+			local vis = visuals[i + 1] -- 632
+			local bodyModel = nil -- 635
+			local k = 1 -- 636
+			local modelName = vis.model ~= nil and vis.model or "" -- 637
+			if modelName ~= "" then -- 637
+				local loaded = Model3D(("Assets/Model/" .. modelName) .. ".glb") -- 639
+				if loaded ~= nil then -- 639
+					bodyModel = loaded -- 641
+					k = ____exports.modelRadius(modelName) -- 642
+				end -- 642
+			end -- 642
+			if bodyModel == nil then -- 642
+				bodyModel = Model3D(options.spherePath) -- 646
+				k = 1 -- 647
+			end -- 647
+			if bodyModel == nil then -- 647
+				return nil -- 649
+			end -- 649
+			local scale = vis.displayRadius / k -- 652
+			bodyModel.scale = Vec3(scale, scale, scale) -- 653
+			____exports.applyPlanetTexture( -- 660
+				bodyModel, -- 660
+				modelName, -- 660
+				____exports.packColor(vis.r, vis.g, vis.b), -- 660
+				vis.emissive ~= nil and ____exports.packColor(vis.emissive.r, vis.emissive.g, vis.emissive.b) or 0 -- 661
+			) -- 661
+			root:addChild(bodyModel) -- 663
+			local ringNode = nil -- 666
+			if modelName == "" and vis.ring then -- 666
+				local ring = Model3D(options.ringPath) -- 668
+				if ring ~= nil then -- 668
+					local rs = scale * 1.5 -- 671
+					ring.scale = Vec3(rs, rs, rs) -- 672
+					root:addChild(ring) -- 673
+					ringNode = ring -- 674
+				end -- 674
+			end -- 674
+			planets[#planets + 1] = {body = bodyModel, ring = ringNode, def = def} -- 678
+			i = i + 1 -- 630
+		end -- 630
+	end -- 630
+	do -- 630
+		local i = 0 -- 686
+		while i < #bodies do -- 686
+			do -- 686
+				local def = bodies[i + 1] -- 687
+				if def.orbitRadius <= 0 then -- 687
 					goto __continue72 -- 688
 				end -- 688
-				local orbitNode = Model3D(ringPath) -- 689
-				if orbitNode == nil then -- 689
-					goto __continue72 -- 690
-				end -- 690
-				local oi = 0 -- 691
-				while oi < 8 do -- 691
-					local om = orbitNode:getMaterial(oi) -- 693
-					if om == nil then -- 693
-						break -- 694
-					end -- 694
-					om.baseColor = Color((OrbitRingTintHex & 4294967295) >> 16 & 255, (OrbitRingTintHex & 4294967295) >> 8 & 255, OrbitRingTintHex & 255, 255) -- 696
-					oi = oi + 1 -- 697
-				end -- 697
-				local oc = ____exports.planeToWorld(def.orbitCenter, 0) -- 699
-				orbitNode.position = Vec3(oc.x, oc.y, oc.z) -- 700
-				root:addChild(orbitNode) -- 701
-			end -- 701
-			::__continue72:: -- 701
-			i = i + 1 -- 683
-		end -- 683
-	end -- 683
-	local flowOrbits = {} -- 714
-	local ____Content_exist_result_1 -- 715
-	if Content:exist(FlowDotTexturePath) then -- 715
-		____Content_exist_result_1 = Texture2D(FlowDotTexturePath) -- 715
-	else -- 715
-		____Content_exist_result_1 = nil -- 715
-	end -- 715
-	local flowDotTex = ____Content_exist_result_1 -- 715
-	if Content:exist(FlowDotModelPath) then -- 715
-		do -- 715
-			local i = 0 -- 717
-			while i < #bodies do -- 717
-				do -- 717
-					local def = bodies[i + 1] -- 718
-					if def.orbitRadius < 2 or def.orbitPeriod == 0 then -- 718
-						goto __continue80 -- 720
-					end -- 720
-					local dots = {} -- 721
-					do -- 721
-						local k = 0 -- 722
-						while k < FlowDotsPerOrbit do -- 722
-							local dot = Model3D(FlowDotModelPath) -- 723
-							if dot == nil then -- 723
-								break -- 724
-							end -- 724
-							local dm = dot:getMaterial(0) -- 728
-							if dm ~= nil then -- 728
-								if flowDotTex ~= nil then -- 728
-									dm:setBaseColorTexture(flowDotTex) -- 731
-									dm:setEmissiveTexture(flowDotTex) -- 732
-								end -- 732
-								dm.baseColor = Color(0, 0, 0, 255) -- 734
-								dm.emissive = Color3(FlowDotEmissiveHex) -- 735
-								dm.roughness = 1 -- 736
-								dm.metallic = 0 -- 737
-								dm.alphaMode = 2 -- 738
-							end -- 738
-							local s = def.orbitRadius * FlowDotScalePerRadius -- 740
-							if s < FlowDotMinScale then -- 740
-								s = FlowDotMinScale -- 741
-							end -- 741
-							if s > FlowDotMaxScale then -- 741
-								s = FlowDotMaxScale -- 742
+				local ringPath = ("Assets/Model/OrbitRing_" .. __TS__NumberToFixed(def.orbitRadius, 0)) .. ".gltf" -- 689
+				if not Content:exist(ringPath) then -- 689
+					goto __continue72 -- 691
+				end -- 691
+				local orbitNode = Model3D(ringPath) -- 692
+				if orbitNode == nil then -- 692
+					goto __continue72 -- 693
+				end -- 693
+				local oi = 0 -- 694
+				while oi < 8 do -- 694
+					local om = orbitNode:getMaterial(oi) -- 696
+					if om == nil then -- 696
+						break -- 697
+					end -- 697
+					om.baseColor = Color((OrbitRingTintHex & 4294967295) >> 16 & 255, (OrbitRingTintHex & 4294967295) >> 8 & 255, OrbitRingTintHex & 255, 255) -- 699
+					oi = oi + 1 -- 700
+				end -- 700
+				local oc = ____exports.planeToWorld(def.orbitCenter, 0) -- 702
+				orbitNode.position = Vec3(oc.x, oc.y, oc.z) -- 703
+				root:addChild(orbitNode) -- 704
+			end -- 704
+			::__continue72:: -- 704
+			i = i + 1 -- 686
+		end -- 686
+	end -- 686
+	local flowOrbits = {} -- 717
+	local ____Content_exist_result_1 -- 718
+	if Content:exist(FlowDotTexturePath) then -- 718
+		____Content_exist_result_1 = Texture2D(FlowDotTexturePath) -- 718
+	else -- 718
+		____Content_exist_result_1 = nil -- 718
+	end -- 718
+	local flowDotTex = ____Content_exist_result_1 -- 718
+	if options.orbitFlowDots ~= false and Content:exist(FlowDotModelPath) then -- 718
+		do -- 718
+			local i = 0 -- 721
+			while i < #bodies do -- 721
+				do -- 721
+					local def = bodies[i + 1] -- 722
+					if def.orbitRadius < 2 or def.orbitPeriod == 0 then -- 722
+						goto __continue80 -- 724
+					end -- 724
+					local dots = {} -- 725
+					do -- 725
+						local k = 0 -- 726
+						while k < FlowDotsPerOrbit do -- 726
+							local dot = Model3D(FlowDotModelPath) -- 727
+							if dot == nil then -- 727
+								break -- 728
+							end -- 728
+							local dm = dot:getMaterial(0) -- 732
+							if dm ~= nil then -- 732
+								if flowDotTex ~= nil then -- 732
+									dm:setBaseColorTexture(flowDotTex) -- 735
+									dm:setEmissiveTexture(flowDotTex) -- 736
+								end -- 736
+								dm.baseColor = Color(0, 0, 0, 255) -- 738
+								dm.emissive = Color3(FlowDotEmissiveHex) -- 739
+								dm.roughness = 1 -- 740
+								dm.metallic = 0 -- 741
+								dm.alphaMode = 2 -- 742
 							end -- 742
-							dot.scale = Vec3(s, s, s) -- 743
-							dot.angleX = -90 -- 744
-							root:addChild(dot) -- 745
-							dots[#dots + 1] = dot -- 746
-							k = k + 1 -- 722
-						end -- 722
-					end -- 722
-					if #dots == 0 then -- 722
-						goto __continue80 -- 748
-					end -- 748
-					flowOrbits[#flowOrbits + 1] = {def = def, dots = dots} -- 749
-				end -- 749
-				::__continue80:: -- 749
-				i = i + 1 -- 717
-			end -- 717
-		end -- 717
-		if #flowOrbits > 0 then -- 717
-			print((("[escape-velocity] flow dots: " .. __TS__NumberToFixed(#flowOrbits, 0)) .. " orbits x ") .. __TS__NumberToFixed(FlowDotsPerOrbit, 0)) -- 752
-		end -- 752
-	end -- 752
-	if options.home ~= nil then -- 752
-		local earth = Model3D("Assets/Model/Planet_Earth.glb") -- 761
-		if earth ~= nil then -- 761
-			local ke = ____exports.modelRadius("Planet_Earth") -- 763
-			local hr = options.homeRadius ~= nil and options.homeRadius or 1.15 -- 764
-			local es = hr / ke -- 765
-			earth.scale = Vec3(es, es, es) -- 766
-			local emi = 0 -- 767
-			while emi < 64 do -- 767
-				local em = earth:getMaterial(emi) -- 769
-				if em == nil then -- 769
-					break -- 770
-				end -- 770
-				em.baseColor = Color(110, 170, 235, 255) -- 771
-				em.emissive = Color3(792098) -- 773
-				emi = emi + 1 -- 774
-			end -- 774
-			earth.position = ____exports.planeToWorld(options.home, 0) -- 776
-			root:addChild(earth) -- 777
-		end -- 777
-	end -- 777
-	local probe = ____exports.createProbe(root, { -- 787
-		scale = options.probeScale, -- 788
-		probePath = options.probePath, -- 789
-		bodyPath = options.probeBodyPath, -- 790
-		antennaPath = options.probeAntennaPath, -- 791
-		antennaPivotY = options.probeAntennaPivotY, -- 792
-		bodyRadius = options.probeBodyRadius, -- 793
-		atlasPath = options.probeAtlasPath -- 794
-	}) -- 794
-	if probe == nil then -- 794
-		return nil -- 796
-	end -- 796
-	local probeNode = probe.node -- 797
-	local antennaModel = probe.antenna -- 798
-	local probeRadius = probe.radius -- 799
-	local bodyYawDeg = 0 -- 802
-	local backdrop = ____exports.createStarBackdrop(root) -- 806
-	local glowNode = nil -- 814
-	local glowScale = 0 -- 817
-	if hasStar and starWorld ~= nil then -- 817
-		glowScale = SunGlowScale * starRadius * 2 -- 819
-		local glowPath = "Assets/Model/StarQuad.gltf" -- 820
-		if Content:exist(glowPath) then -- 820
-			local glowModel = Model3D(glowPath) -- 822
-			if glowModel ~= nil then -- 822
-				local glowTex = Texture2D("Assets/Image/glow.png") -- 824
-				local gl = glowModel:getMaterial(0) -- 825
-				if gl ~= nil and glowTex ~= nil then -- 825
-					gl:setBaseColorTexture(glowTex) -- 827
-					gl:setEmissiveTexture(glowTex) -- 828
-					gl.baseColor = Color(0, 0, 0, 255) -- 829
-					gl.emissive = Color3(13154456) -- 830
-					gl.roughness = 1 -- 831
-					gl.metallic = 0 -- 832
-					gl.alphaMode = 2 -- 833
-				end -- 833
-				glowModel.scale = Vec3(glowScale, glowScale, glowScale) -- 835
-				glowModel.position = starWorld -- 836
-				root:addChild(glowModel) -- 837
-				glowNode = glowModel -- 838
-			end -- 838
-		end -- 838
-	end -- 838
-	local function syncBodies(t) -- 844
-		for ____, p in ipairs(planets) do -- 845
-			local wp = ____exports.planeToWorld( -- 846
-				bodyPositionAt(p.def, t), -- 846
-				0 -- 846
-			) -- 846
-			p.body.position = wp -- 847
-			if p.ring ~= nil then -- 847
-				p.ring.position = wp -- 848
-			end -- 848
-		end -- 848
-		for ____, fo in ipairs(flowOrbits) do -- 854
-			local c = orbitCenterAt(fo.def, t) -- 855
-			local r = fo.def.orbitRadius -- 856
-			local n = #fo.dots -- 857
-			do -- 857
-				local k = 0 -- 858
-				while k < n do -- 858
-					local a = flowDotAngle(fo.def, t, k, n) -- 859
-					fo.dots[k + 1].position = Vec3( -- 860
-						(c.x + r * math.cos(a)) * PlaneToWorldX, -- 861
-						0, -- 862
-						(c.y + r * math.sin(a)) * PlaneToWorldZ -- 863
-					) -- 863
-					k = k + 1 -- 858
-				end -- 858
-			end -- 858
-		end -- 858
-	end -- 844
-	local function syncProbe(p) -- 869
-		probeNode.position = ____exports.planeToWorld(p, 0) -- 870
-		if antennaModel ~= nil and options.home ~= nil then -- 870
-			____exports.pointAntenna(antennaModel, p, options.home, bodyYawDeg) -- 876
-		end -- 876
-	end -- 869
-	local function faceVelocity(v) -- 883
-		local yaw = ____exports.probeYawForVelocity(v) -- 884
-		if yaw == nil then -- 884
-			return -- 885
-		end -- 885
-		bodyYawDeg = yaw -- 886
-		probeNode.angleY = bodyYawDeg -- 887
+							local s = def.orbitRadius * FlowDotScalePerRadius -- 744
+							if s < FlowDotMinScale then -- 744
+								s = FlowDotMinScale -- 745
+							end -- 745
+							if s > FlowDotMaxScale then -- 745
+								s = FlowDotMaxScale -- 746
+							end -- 746
+							dot.scale = Vec3(s, s, s) -- 747
+							dot.angleX = -90 -- 748
+							root:addChild(dot) -- 749
+							dots[#dots + 1] = dot -- 750
+							k = k + 1 -- 726
+						end -- 726
+					end -- 726
+					if #dots == 0 then -- 726
+						goto __continue80 -- 752
+					end -- 752
+					flowOrbits[#flowOrbits + 1] = {def = def, dots = dots} -- 753
+				end -- 753
+				::__continue80:: -- 753
+				i = i + 1 -- 721
+			end -- 721
+		end -- 721
+		if #flowOrbits > 0 then -- 721
+			print((("[escape-velocity] flow dots: " .. __TS__NumberToFixed(#flowOrbits, 0)) .. " orbits x ") .. __TS__NumberToFixed(FlowDotsPerOrbit, 0)) -- 756
+		end -- 756
+	end -- 756
+	if options.home ~= nil then -- 756
+		local earth = Model3D("Assets/Model/Planet_Earth.glb") -- 765
+		if earth ~= nil then -- 765
+			local ke = ____exports.modelRadius("Planet_Earth") -- 767
+			local hr = options.homeRadius ~= nil and options.homeRadius or 1.15 -- 768
+			local es = hr / ke -- 769
+			earth.scale = Vec3(es, es, es) -- 770
+			local emi = 0 -- 771
+			while emi < 64 do -- 771
+				local em = earth:getMaterial(emi) -- 773
+				if em == nil then -- 773
+					break -- 774
+				end -- 774
+				em.baseColor = Color(110, 170, 235, 255) -- 775
+				em.emissive = Color3(792098) -- 777
+				emi = emi + 1 -- 778
+			end -- 778
+			earth.position = ____exports.planeToWorld(options.home, 0) -- 780
+			root:addChild(earth) -- 781
+		end -- 781
+	end -- 781
+	local probe = ____exports.createProbe(root, { -- 791
+		scale = options.probeScale, -- 792
+		probePath = options.probePath, -- 793
+		bodyPath = options.probeBodyPath, -- 794
+		antennaPath = options.probeAntennaPath, -- 795
+		antennaPivotY = options.probeAntennaPivotY, -- 796
+		bodyRadius = options.probeBodyRadius, -- 797
+		atlasPath = options.probeAtlasPath -- 798
+	}) -- 798
+	if probe == nil then -- 798
+		return nil -- 800
+	end -- 800
+	local probeNode = probe.node -- 801
+	local antennaModel = probe.antenna -- 802
+	local probeRadius = probe.radius -- 803
+	local bodyYawDeg = 0 -- 806
+	local backdrop = ____exports.createStarBackdrop(root) -- 810
+	local glowNode = nil -- 818
+	local glowScale = 0 -- 821
+	if hasStar and starWorld ~= nil then -- 821
+		glowScale = SunGlowScale * starRadius * 2 -- 823
+		local glowPath = "Assets/Model/StarQuad.gltf" -- 824
+		if Content:exist(glowPath) then -- 824
+			local glowModel = Model3D(glowPath) -- 826
+			if glowModel ~= nil then -- 826
+				local glowTex = Texture2D("Assets/Image/glow.png") -- 828
+				local gl = glowModel:getMaterial(0) -- 829
+				if gl ~= nil and glowTex ~= nil then -- 829
+					gl:setBaseColorTexture(glowTex) -- 831
+					gl:setEmissiveTexture(glowTex) -- 832
+					gl.baseColor = Color(0, 0, 0, 255) -- 833
+					gl.emissive = Color3(13154456) -- 834
+					gl.roughness = 1 -- 835
+					gl.metallic = 0 -- 836
+					gl.alphaMode = 2 -- 837
+				end -- 837
+				glowModel.scale = Vec3(glowScale, glowScale, glowScale) -- 839
+				glowModel.position = starWorld -- 840
+				root:addChild(glowModel) -- 841
+				glowNode = glowModel -- 842
+			end -- 842
+		end -- 842
+	end -- 842
+	local function syncBodies(t) -- 848
+		do -- 848
+			local i = 0 -- 849
+			while i < #planets do -- 849
+				local p = planets[i + 1] -- 850
+				local wp = ____exports.planeToWorld( -- 851
+					bodyPositionAt(p.def, t), -- 851
+					0 -- 851
+				) -- 851
+				p.body.position = wp -- 852
+				if p.ring ~= nil then -- 852
+					p.ring.position = wp -- 853
+				end -- 853
+				local vis = visuals[i + 1] -- 857
+				local spin = vis ~= nil and vis.model ~= nil and SPIN_GAME_SEC[vis.model] or nil -- 858
+				if spin ~= nil and spin > 0 then -- 858
+					local turns = t / spin -- 860
+					p.body.angleY = (turns - math.floor(turns)) * 360 -- 861
+				end -- 861
+				i = i + 1 -- 849
+			end -- 849
+		end -- 849
+		for ____, fo in ipairs(flowOrbits) do -- 868
+			local c = orbitCenterAt(fo.def, t) -- 869
+			local r = fo.def.orbitRadius -- 870
+			local n = #fo.dots -- 871
+			do -- 871
+				local k = 0 -- 872
+				while k < n do -- 872
+					local a = flowDotAngle(fo.def, t, k, n) -- 873
+					fo.dots[k + 1].position = Vec3( -- 874
+						(c.x + r * math.cos(a)) * PlaneToWorldX, -- 875
+						0, -- 876
+						(c.y + r * math.sin(a)) * PlaneToWorldZ -- 877
+					) -- 877
+					k = k + 1 -- 872
+				end -- 872
+			end -- 872
+		end -- 872
+	end -- 848
+	local function syncProbe(p) -- 883
+		probeNode.position = ____exports.planeToWorld(p, 0) -- 884
+		if antennaModel ~= nil and options.home ~= nil then -- 884
+			____exports.pointAntenna(antennaModel, p, options.home, bodyYawDeg) -- 890
+		end -- 890
 	end -- 883
-	local function syncBackdrop(eye, target) -- 891
-		if backdrop ~= nil then -- 891
-			backdrop:sync(eye, target) -- 892
-		end -- 892
-		if glowNode ~= nil and starWorld ~= nil then -- 892
-			local dx = eye.x - starWorld.x -- 895
-			local dy = eye.y - starWorld.y -- 896
-			local dz = eye.z - starWorld.z -- 897
-			if math.abs(dx) > 0.000001 or math.abs(dz) > 0.000001 then -- 897
-				glowNode.angleY = math.atan(dx, dz) * 180 / math.pi -- 899
-			end -- 899
-			local flat = math.sqrt(dy * dy + dz * dz) -- 902
-			local tilt = flat > 0.000001 and math.atan( -- 903
-				math.abs(dy), -- 903
-				flat -- 903
-			) or 0 -- 903
-			local c = math.cos(tilt) -- 904
-			local stretch = c > 0.45 and 1 / c or 2.2 -- 905
-			glowNode.scale = Vec3(glowScale, glowScale * stretch, glowScale) -- 906
+	local function faceVelocity(v) -- 897
+		local yaw = ____exports.probeYawForVelocity(v) -- 898
+		if yaw == nil then -- 898
+			return -- 899
+		end -- 899
+		bodyYawDeg = yaw -- 900
+		probeNode.angleY = bodyYawDeg -- 901
+	end -- 897
+	local function syncBackdrop(eye, target) -- 905
+		if backdrop ~= nil then -- 905
+			backdrop:sync(eye, target) -- 906
 		end -- 906
-	end -- 891
-	syncBodies(0) -- 911
-	syncProbe(probeStart) -- 912
-	return { -- 914
-		syncBodies = syncBodies, -- 915
-		syncProbe = syncProbe, -- 916
-		faceVelocity = faceVelocity, -- 917
-		syncBackdrop = syncBackdrop, -- 918
-		probe = probeNode, -- 919
-		antenna = antennaModel, -- 920
-		planets = planets, -- 921
-		probeRadius = probeRadius -- 922
-	} -- 922
-end -- 576
-return ____exports -- 576
+		if glowNode ~= nil and starWorld ~= nil then -- 906
+			local dx = eye.x - starWorld.x -- 909
+			local dy = eye.y - starWorld.y -- 910
+			local dz = eye.z - starWorld.z -- 911
+			if math.abs(dx) > 0.000001 or math.abs(dz) > 0.000001 then -- 911
+				glowNode.angleY = math.atan(dx, dz) * 180 / math.pi -- 913
+			end -- 913
+			local flat = math.sqrt(dy * dy + dz * dz) -- 916
+			local tilt = flat > 0.000001 and math.atan( -- 917
+				math.abs(dy), -- 917
+				flat -- 917
+			) or 0 -- 917
+			local c = math.cos(tilt) -- 918
+			local stretch = c > 0.45 and 1 / c or 2.2 -- 919
+			glowNode.scale = Vec3(glowScale, glowScale * stretch, glowScale) -- 920
+		end -- 920
+	end -- 905
+	syncBodies(0) -- 925
+	syncProbe(probeStart) -- 926
+	return { -- 928
+		syncBodies = syncBodies, -- 929
+		syncProbe = syncProbe, -- 930
+		faceVelocity = faceVelocity, -- 931
+		syncBackdrop = syncBackdrop, -- 932
+		probe = probeNode, -- 933
+		antenna = antennaModel, -- 934
+		planets = planets, -- 935
+		probeRadius = probeRadius -- 936
+	} -- 936
+end -- 579
+return ____exports -- 579

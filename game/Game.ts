@@ -30,7 +30,7 @@ import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
-import { GoalSpec, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { GameSecondsPerRealSecond, GoalSpec, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
@@ -94,6 +94,19 @@ export interface GameLevel {
 	 * L1 现在是 8000（= maxSteps）：真实阿波罗剖面下这一发要飞 0.9 天，2400 步只画得到 1/3 路程。
 	 */
 	predictSteps?: number;
+	/**
+	 * **1 真实秒 = 多少游戏秒**（B3，来自 `LevelData.GameSecondsPerRealSecond`）。
+	 * 档位速率的换算基准：速率 = 10^pow × 本值。省略 = 用 LevelData 的默认（测试/探针不必填）。
+	 */
+	speedUnit?: number;
+	/** 进关默认档位（B3，来自 Tuning.speedDefaultPow）；省略 = 0（1× = 现实 1 秒）。 */
+	speedDefaultPow?: number;
+	/** 档位上限（B3）；省略 = 7（1000 万×）。 */
+	speedMaxPow?: number;
+	/** 发射瞬间自动提到的那一档（B3，来自 Tuning.flightSpeedPow）。 */
+	flightSpeedPow?: number;
+	/** 3D 取景口径（B2，'local' = 只装探测器 + 锚点天体）；见 Tuning.LevelRuntime.aimFraming。 */
+	aimFraming?: 'local';
 	/**
 	 * 物理步长（S5，来自 Tuning.levelRuntime）。
 	 * 省略 = 全局 Config.PhysicsStep。**必须按关卡给**：L1 的探测器日心速度 30、
@@ -179,6 +192,27 @@ export interface FlightTelemetry {
 }
 
 /** 中性瞄准（没拖过时的姿态）：朝目标、力度取这一关的下限。 */
+/**
+ * **档位 → 世界时钟速率**（游戏秒 / 真实秒，B3，2026-09-28）。
+ *
+ * 口径（用户 2026-09-28）：「1X 就是模拟的真实情况下的地月系的 1 秒」—— 也就是
+ * `pow = 0` 时速率 = 1/SecPerGameSec（现实 1 秒走 1 秒；挂机一天，地球自转一圈）。
+ * 加速 = pow + 1（**后面加个 0**），减速 = pow − 1（下限 0）。纯函数、可单测；物理层一行不动。
+ */
+export function speedRateOf(pow: number, gameSecPerRealSec: number): number {
+	let rate = gameSecPerRealSec > 0 ? gameSecPerRealSec : 1;
+	let n = Math.floor(pow);
+	while (n > 0) {
+		rate *= 10;
+		n -= 1;
+	}
+	while (n < 0) {
+		rate /= 10;
+		n += 1;
+	}
+	return rate;
+}
+
 function neutralAim(minSpeed: number): AimResult {
 	return { velocity: { x: 0, y: -minSpeed }, power: 0, unit: { x: 0, y: -1 } };
 }
@@ -867,6 +901,22 @@ export interface Game {
 	skipIntroTour: () => void;
 	/** 当前是否正在进行 3D 入场倒叙运镜。 */
 	isIntroTourActive: () => boolean;
+	/** 当前档位指数（B3）：速率 = 10^pow ÷ SecPerGameSec 游戏秒/真实秒。 */
+	speedPow: () => number;
+	/** 档位上限（HUD 用它决定"加速"是否还点得动）。 */
+	speedMaxPow: () => number;
+	/** 当前是否暂停（暂停 = 速率 0）。 */
+	isPaused: () => boolean;
+	/** 当前速率（游戏秒 / 真实秒）；暂停时是 0。 */
+	speedRate: () => number;
+	/** 任务时钟（**真实秒**）：从进关起世界流逝了多少现实时间 —— 1× 下它就等于挂钟。 */
+	missionSeconds: () => number;
+	/** 加速一档（×10）。 */
+	speedUp: () => void;
+	/** 减速一档（÷10，下限 0 = 1×）。 */
+	speedDown: () => void;
+	/** 暂停 / 继续（状态型，任何相态都有效）。 */
+	togglePause: () => void;
 	/** 每帧调用一次。 */
 	update: (dt: number) => void;
 }
@@ -874,9 +924,24 @@ export interface Game {
 /** 组装游戏（状态机 + 引擎驱动）。 */
 export function createGame(level: GameLevel, deps: GameDeps): Game {
 	const core = createCore(level.physicsStep);
+
+	// ---- 时间档位（B3，2026-09-28）----
+	// `core.playback` 从此就是"**当前速率**"（游戏秒/真实秒），瞄准期与飞行期共用它 ——
+	// 全项目仍然只有一个时钟（硬约束 10：tWorld = t0 + flightTime / t0 + clock）。
+	// 暂停 = 速率 0（飞行段也因此免费获得暂停：coreUpdate 里 speed = playback × slowmo）。
+	let speedPow = level.speedDefaultPow !== undefined ? level.speedDefaultPow : 0;
+	let paused = false;
+	const speedMaxPow = level.speedMaxPow !== undefined ? level.speedMaxPow : 7;
+	/** 换算基准（1 真实秒 = 多少游戏秒）：关卡没给就用 LevelData 的默认值。 */
+	const speedUnit = level.speedUnit !== undefined && level.speedUnit > 0 ? level.speedUnit : GameSecondsPerRealSecond;
+	const applySpeedRate = (): void => {
+		core.playback = paused ? 0 : speedRateOf(speedPow, speedUnit);
+	};
 	// S5：飞行回放的默认倍速**按关卡**给。L1 的转移飞行只有 0.40 游戏秒，
 	// 2× 播放下是 0.2 真实秒 —— 玩家什么都看不见（这正是"每关一个播放速度"的理由）。
-	core.playback = level.playback !== undefined && level.playback > 0 ? level.playback : FlightPlayback;
+	// B3：速率不再来自 level.playback，而是**档位**（pow 0 = 1× = 现实 1 秒）。
+	// level.playback / level.aimClockRate / Tuning.playbackSpeeds 三个字段就此退役。
+	applySpeedRate();
 
 	/** 已经应用到节点上的视图（"" = 还没应用过）。每帧 applyView 都拿它对账。 */
 	let appliedMode: PlanViewMode | '' = '';
@@ -1092,6 +1157,19 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	 * 想看全景的玩家自己捏合拉远（observeZoom），开场分镜也还给过一次全景。
 	 */
 	const framingPoints = (probe: P2, t: number): { pts: P2[]; radii: number[] } => {
+		// ⓪ **贴局部天体**（B2，L1 专用）：只装「探测器 + 锚点天体」，月球允许出画。
+		//    L1 的停泊轨 3.514e-3，而月球轨 0.2056 = 59 倍 ⇒ 装进月球就看不见停泊轨了。
+		if (level.aimFraming === 'local' && anchorDef !== undefined) {
+			let hr = anchorDef.radius;
+			for (let i = 0; i < level.bodies.length; i++) {
+				const b = level.bodies[i];
+				if (b.gm === anchorDef.gm && b.radius === anchorDef.radius && b.orbitRadius === anchorDef.orbitRadius) {
+					if (i < deps.visuals.length && deps.visuals[i].displayRadius > hr) hr = deps.visuals[i].displayRadius;
+					break;
+				}
+			}
+			return { pts: [probe, bodyPositionAt(anchorDef, t)], radii: [deps.scene.probeRadius, hr] };
+		}
 		// ① 核心：探测器 + 下一站。下一站的半径取 **max(本体半径, 到达容差)** ——
 		//    玩家真正要够的是那个"圈"，圈被画面切掉就没法瞄了。
 		const corePts: P2[] = [probe];
@@ -1181,7 +1259,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// S3.9.4 待机时钟：**没在操控**时世界照常走（探测器沿自己的轨道绕地球转），一按下就冻结。
 		const dragging = deps.aim.isDragging();
 		// 只在**纯瞄准态**流时间：Armed（已瞄好等发射）时冻结 —— 否则目标会从瞄准线下面跑掉。
-		if (core.phase === 'Aiming' && !dragging && idleOrbit !== undefined) {
+		// B3：`Aiming`（没在拖）与 `Armed` 都按档位流；**瞄准中（按住探测器附近拖动）自动暂停**
+		// —— 用户口径：「只有对探测器进行瞄准的时候，时间暂停」。
+		if ((core.phase === 'Aiming' || core.phase === 'Armed') && !dragging && idleOrbit !== undefined) {
 			// ⚠️ 0 = **冻结**（不是"回退成 1"）：L1 是教学关，开局状态必须完全确定，
 			//    否则"进关那几十帧"就足以让探测器自己转掉十几度（实测 0.017 秒 = 14°），
 			//    而且玩家没有任何读数可以据此瞄准。
@@ -1190,9 +1270,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			//    探测器会在你瞄准的这几帧里照样飞走 —— 实测冻结后发射点仍是 (−18.93, 77.63)
 			//    （= 探测器日心轨道上 0.64 秒后的位置），而 probeStart 是 (0, 80.10)，
 			//    于是"Node 侧算得出解、引擎里却 missed"。
-			const aimRate = level.aimClockRate !== undefined && level.aimClockRate >= 0 ? level.aimClockRate : 1;
-			clock += dt * aimRate;
-			orbitClock += dt * aimRate;
+			// 速率 = core.playback（档位 × 10^pow ÷ SecPerGameSec；暂停时是 0）
+			clock += dt * core.playback;
+			orbitClock += dt * core.playback;
 		}
 		const tNow = core.t0 + clock;
 		// 待机位置/速度：**解析求**（宿主位置 + 相对圆轨），不再查惯性轨迹表（B1）
@@ -1359,6 +1439,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 2D 用的是**同一批采样点**（硬约束 5）：只换投影，不重跑 simulate
 			deps.plan.setPrediction(predPoints);
 		}
+		// 探测器停泊轨（B2）：3D 走投影折线（远侧压暗），2D 直接画圆 —— 同一份 (中心, 半径)
+		if (idleOrbit !== undefined) {
+			const hc = bodyPositionAt(level.bodies[idleOrbit.hostIndex], tNow);
+			deps.trajectory.setOrbitRing(hc, idleOrbit.r, basis);
+			deps.plan.setProbeOrbit(hc, idleOrbit.r);
+		}
 		const rings = goalRingsAt(tNow);
 		deps.trajectory.setGoalRings(rings, basis);
 		deps.trajectory.clearTrail();
@@ -1402,6 +1488,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		for (let i = 0; i <= idx; i++) trail.push(core.flight.points[i]);
 		const rings = goalRingsAt(tWorld, idx);
 		const basis = makeBasis(frame);
+		// 飞行期不再画停泊轨（B2）：它属于"出发前"，留着会冻结在发射那一刻
+		deps.trajectory.clearOrbitRing();
+		deps.plan.clearProbeOrbit();
 		deps.trajectory.setTrail(trail, basis);
 		deps.trajectory.setGoalRings(rings, basis);
 		deps.plan.clearPrediction();
@@ -1482,6 +1571,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const trail: P2[] = [];
 		for (let i = 0; i <= idx; i++) trail.push(core.flight.points[i]);
 		const rings = goalRingsAt(tWorld, idx);
+		// 飞行期不再画停泊轨（B2）：它属于"出发前"，留着会冻结在发射那一刻
+		deps.trajectory.clearOrbitRing();
+		deps.plan.clearProbeOrbit();
 		deps.trajectory.setTrail(trail, basis);
 		deps.trajectory.setGoalRings(rings, basis);
 
@@ -1547,6 +1639,33 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	return {
 		phase: (): GamePhase => core.phase,
+		speedPow: (): number => speedPow,
+		speedMaxPow: (): number => speedMaxPow,
+		isPaused: (): boolean => paused,
+		speedRate: (): number => core.playback,
+		missionSeconds: (): number => {
+			const w = core.phase === 'Flying' || core.phase === 'Result' ? core.t0 + core.flightTime : core.t0 + clock;
+			return speedUnit > 0 ? w / speedUnit : 0;
+		},
+		speedUp: (): void => {
+			if (speedPow >= speedMaxPow) return;
+			speedPow += 1;
+			paused = false;
+			applySpeedRate();
+			print('[escape-velocity] speed -> 1e' + speedPow.toFixed(0) + 'x (' + core.playback.toFixed(6) + ' 游戏秒/真实秒)');
+		},
+		speedDown: (): void => {
+			if (speedPow <= 0) return;
+			speedPow -= 1;
+			paused = false;
+			applySpeedRate();
+			print('[escape-velocity] speed -> 1e' + speedPow.toFixed(0) + 'x (' + core.playback.toFixed(6) + ' 游戏秒/真实秒)');
+		},
+		togglePause: (): void => {
+			paused = !paused;
+			applySpeedRate();
+			print('[escape-velocity] ' + (paused ? 'paused' : 'resumed') + ' (speedPow=1e' + speedPow.toFixed(0) + ')');
+		},
 		result: (): ResultKind | undefined => core.result,
 		onAimDrag: (a: AimResult): void => {
 			if (introTourActive) finishIntroTour();
@@ -1598,6 +1717,14 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (obsZoom > 1.8) obsZoom = 1.8;
 		},
 		launch: (v: P2): void => {
+			// B3：发射瞬间把档位提到"飞行观赏档"（L1 = 10,000× ⇒ 0.9 天的快转移 8.6 秒打完）。
+			// 这是**唯一**一处替玩家改档位的地方 —— 1× 下这一发要飞 ~22 小时，等不起。
+			if (level.flightSpeedPow !== undefined && level.flightSpeedPow > speedPow) {
+				speedPow = level.flightSpeedPow;
+				paused = false;
+				applySpeedRate();
+				print('[escape-velocity] speed auto -> 1e' + speedPow.toFixed(0) + 'x (launch)');
+			}
 			if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
 			handoffDate(true); // ⚠️ 同上：日期必须在 coreLaunch 之前交给 t0
 			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）

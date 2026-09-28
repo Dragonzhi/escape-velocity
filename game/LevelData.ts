@@ -48,7 +48,7 @@
 import { Body, P2, bodyPositionAt, distance } from 'game/Gravity';
 import { GravityScale, OrbitSpeedScale } from 'game/Config';
 import {
-	EarthGm, EarthRadius, KmPerUnit, MoonOrbitRadius, MoonRadius, REAL, SunGm, SunRadius,
+	EarthGm, EarthRadius, KmPerUnit, MoonOrbitRadius, MoonRadius, REAL, SecPerGameSec, SunGm, SunRadius,
 	circularSpeed, period, trueGm, trueOrbit, trueRadius,
 } from 'game/Scale';
 import { visualRadius } from 'game/Tuning';
@@ -470,6 +470,15 @@ function sunVisual(levelIndex?: number): PlanetVisualDef {
  * 出发轨道半径 = 1 AU（地球轨道）。六关共用 —— L1 的地球就在这里，L2–L6 从这里出发。
  */
 export const EarthOrbitRadius = trueOrbit(REAL.earth.au);
+
+/**
+ * **1 真实秒 = 多少游戏秒**（B3，2026-09-28）。
+ *
+ * 全项目只有这里读 Scale，别处（Game / Hud / init）都从这里拿 —— 于是"倍速档位"
+ * 的单位可以老实写成「×现实时间」：档位 pow ⇒ 速率 = 10^pow × 本常数。
+ * pow = 0 就是 1×（现实 1 秒）。
+ */
+export const GameSecondsPerRealSecond = 1 / SecPerGameSec;
 
 /** 该点的日心圆轨速度（30.00 平面单位/秒 —— 全套尺度的速度锚点）。 */
 export const EarthOrbitSpeed = circularSpeed(SunGm, EarthOrbitRadius);

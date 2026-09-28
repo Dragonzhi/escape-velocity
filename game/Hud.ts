@@ -298,6 +298,15 @@ export interface AimInput {
 	onFitView: (callback: () => void) => void;
 	/** 显隐 2D 缩放控制组（仅在 2D 规划且非飞行态时显示）。 */
 	setZoomControlsVisible: (on: boolean) => void;
+	// ---- 时间控制组（B3，2026-09-28）----
+	/** 加速一档（×10）。 */
+	onSpeedUp: (callback: () => void) => void;
+	/** 减速一档（÷10）。 */
+	onSpeedDown: (callback: () => void) => void;
+	/** 暂停 / 继续。 */
+	onTogglePause: (callback: () => void) => void;
+	/** 每帧同步：档位指数、上限、是否暂停、任务时钟（**真实秒**）。 */
+	setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number) => void;
 	/** 顶部常驻三火箭任务抽屉（S8.4）。 */
 	setMissionDrawer: (levelName: string, challenges: string[], currentRockets: number) => void;
 	setMissionDrawerVisible: (visible: boolean) => void;
@@ -681,6 +690,83 @@ export function createAimInput(
 	};
 	setZoomVisible(false); // 初始隐藏
 
+	// ---- 时间控制组（B3）：减速 / 暂停 / 加速 + 档位读数 + 任务时钟 ----
+	// 位置：左下角 y = 170 那一行（2D 缩放组在 y = 96，故意错开一行，两组不再抢位置）。
+	// 口径：速率 = 10^pow ÷ SecPerGameSec 游戏秒/真实秒；pow 0 = 1× = 现实 1 秒。
+	// ⚠️ 状态型按钮用 fireOn: 'release'（AGENTS 硬约束 9）；每次动作打一行日志。
+	const TimeBtnW = 78;
+	const TimeBtnH = 64;
+	const TimeRowY = 170;
+	let speedUpHandler: (() => void) | undefined = undefined;
+	let speedDownHandler: (() => void) | undefined = undefined;
+	let pauseHandler: (() => void) | undefined = undefined;
+
+	const slowButton = createButton(root, {
+		w: TimeBtnW, h: TimeBtnH, text: '◀ 慢', fontSize: 26,
+		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
+		onTap: (): void => {
+			print('[escape-velocity] speed down fire');
+			if (speedDownHandler !== undefined) speedDownHandler();
+		},
+	});
+	slowButton.root.position = Vec2(24, TimeRowY);
+	const pauseButton = createButton(root, {
+		w: TimeBtnW, h: TimeBtnH, text: '⏸', fontSize: 30,
+		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
+		onTap: (): void => {
+			print('[escape-velocity] pause toggle fire');
+			if (pauseHandler !== undefined) pauseHandler();
+		},
+	});
+	pauseButton.root.position = Vec2(24 + TimeBtnW + 8, TimeRowY);
+	const fastButton = createButton(root, {
+		w: TimeBtnW, h: TimeBtnH, text: '快 ▶', fontSize: 26,
+		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
+		onTap: (): void => {
+			print('[escape-velocity] speed up fire');
+			if (speedUpHandler !== undefined) speedUpHandler();
+		},
+	});
+	fastButton.root.position = Vec2(24 + (TimeBtnW + 8) * 2, TimeRowY);
+
+	// 读数：档位 + 任务时钟（垫暗板，理由与 Δv 读数的光晕问题相同）
+	const timePlate = createPanel(root, 300, 50, 0x0a0e14, { alpha: 0.45 });
+	timePlate.position = Vec2(24 + (TimeBtnW + 8) * 3 + 4, TimeRowY + 7);
+	const timeLabel = createLabel(root, '1×（现实）  T+ 0:00', 26, ResultHintHex);
+	if (timeLabel !== undefined) {
+		timeLabel.anchor = Vec2(0, 0);
+		timeLabel.position = Vec2(24 + (TimeBtnW + 8) * 3 + 16, TimeRowY + 18);
+	}
+	/** 档位文字：pow 0 就是"1×（现实）"，别写成 1e0×。 */
+	const powText = (pow: number): string => (pow <= 0 ? '1×（现实）' : '1e' + pow.toFixed(0) + '×');
+	/** 任务时钟：真实秒 → "T+ 3天 04:12"。1× 下它每秒跳一格 —— 时间在流逝的唯一可见证据。 */
+	const missionText = (sec: number): string => {
+		const s = sec > 0 ? sec : 0;
+		const days = Math.floor(s / 86400);
+		const rest = s - days * 86400;
+		const hh = Math.floor(rest / 3600);
+		const mm = Math.floor((rest - hh * 3600) / 60);
+		const pad = (v: number): string => (v < 10 ? '0' : '') + v.toFixed(0);
+		return 'T+ ' + (days > 0 ? days.toFixed(0) + '天 ' : '') + pad(hh) + ':' + pad(mm);
+	};
+	let lastTimeText = '';
+	let lastPaused = false;
+	const setTimeControl = (pow: number, maxPow: number, paused: boolean, missionSeconds: number): void => {
+		const txt = powText(pow) + (paused ? ' ⏸ 暂停' : '') + '  ' + missionText(missionSeconds);
+		if (txt !== lastTimeText) {
+			lastTimeText = txt;
+			if (timeLabel !== undefined) timeLabel.text = txt;
+		}
+		if (paused !== lastPaused) {
+			lastPaused = paused;
+			pauseButton.setText(paused ? '▶' : '⏸');
+			pauseButton.setColors(paused ? ResultButtonBgHex : ResultButtonAltBgHex, ResultButtonFgHex);
+		}
+		// 档位到底就不给点（状态驱动，AGENTS 硬约束 5）
+		fastButton.setEnabled(pow < maxPow);
+		slowButton.setEnabled(pow > 0);
+	};
+
 	// ---- 顶部常驻三火箭任务抽屉（S8.4）----
 	const DrawerW = 380;
 	const DrawerH = 46;
@@ -959,6 +1045,18 @@ export function createAimInput(
 					setLabelColor(brakeHintLabel, 0xffc83b);
 				}
 			}
+		},
+		onSpeedUp: (callback: () => void): void => {
+			speedUpHandler = callback;
+		},
+		onSpeedDown: (callback: () => void): void => {
+			speedDownHandler = callback;
+		},
+		onTogglePause: (callback: () => void): void => {
+			pauseHandler = callback;
+		},
+		setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number): void => {
+			setTimeControl(pow, maxPow, paused, missionSeconds);
 		},
 		onZoomIn: (callback: () => void): void => {
 			zoomInHandler = callback;

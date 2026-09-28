@@ -104,6 +104,21 @@ export function visualRadius(key: string, trueRadius: number, levelIndex?: numbe
  */
 export const PLAN_PIN_PX = { sun: 13, planet: 8, probe: 11 };
 
+/**
+ * 各天体的**自转周期**（游戏秒，B2，2026-09-28）。
+ *
+ * 口径：真实自转周期 ÷ SecPerGameSec。
+ *   - 地球 86,164 真实秒 ⇒ **4.5747e-5 游戏秒**（1× 下 24 小时转一圈 —— 就是用户要的
+ *     「挂机一天才能看到地球自转一圈」那种物理真实的慢）；
+ *   - 月球**潮汐锁定** ⇒ 自转周期 = 公转周期 1.2593 游戏秒（永远同一面朝地球）。
+ * ⚠️ 键是**模型名**（`PlanetVisualDef.model`，Scene 里唯一拿得到的身份）；只影响观感、
+ *    不参与任何判定。表里没有的天体不自转。
+ */
+export const SPIN_GAME_SEC: { [key: string]: number } = {
+	Planet_Earth: 4.5747e-5,
+	Moon: 1.2593,
+};
+
 // ---------------------------------------------------------------------------
 // 每关运行时参数
 // ---------------------------------------------------------------------------
@@ -194,6 +209,36 @@ export interface LevelRuntime {
 	 * 等各自校准轮再调（本轮不碰他们的手感）。
 	 */
 	predictSteps: number;
+	// ---- B2/B3（2026-09-28）----
+	/**
+	 * 3D 取景口径（B2）：`'local'` = **贴局部天体**（L1 用）。
+	 *
+	 * L1 的停泊轨半径 3.514e-3，而月球轨 0.2056 是它的 **59 倍** —— 把月球也装进取景
+	 * 会让相机退到看不见停泊轨的地方。`'local'` 时取景集合只有「探测器 + 锚点天体」，
+	 * 月球允许出画（2D 视图负责告诉玩家它在哪，这正是 3D/2D 分工的意义）。
+	 * 省略 = 旧的"逐点装下"口径。
+	 */
+	aimFraming?: 'local';
+	/**
+	 * 是否画**轨道流动光点**（B2，默认 true）。
+	 *
+	 * L1 设 false：它唯一"够格"的轨道是地球的日心轨道（半径 80 —— 与玩家毫无关系），
+	 * 而那颗光点面片的世界尺寸被烧死在 0.8–2.0（见 Scene 的 FlowDot 常量），
+	 * 在 L1 的 0.02 单位世界里就是一张 1.92 单位宽的发光面片罩住整屏（实测"3D 全屏米色"）。
+	 */
+	orbitFlowDots?: boolean;
+	/** 相机俯仰角（度，B2）：L1 要接近轨道平面的 22°；省略 = CameraTiltDefault（45°）。 */
+	tiltDeg?: number;
+	/**
+	 * **倍速档位**（B3）：速率 = 10^pow ÷ SecPerGameSec 游戏秒/真实秒。
+	 *
+	 * pow = 0 就是 **1× = 现实 1 秒**（用户口径：挂机一天，地球自转一圈）；档位按 ×10 走。
+	 * `speedDefaultPow` = 进关默认档；`speedMaxPow` = 上限；`flightSpeedPow` = **发射瞬间
+	 * 自动提到的那一档**（L1 = 4 档 = 10,000× ⇒ 0.9 天的快转移 8.6 秒打完）。
+	 */
+	speedDefaultPow?: number;
+	speedMaxPow?: number;
+	flightSpeedPow?: number;
 }
 
 /**
@@ -222,31 +267,40 @@ export const LEVEL_RUNTIME: LevelRuntime[] = [
 		cameraMin: 0.002, cameraMax: 1.0, aimMin: 3.0, introCloseDist: 0.004,
 		// slowMoFloor 0.01 = 18,700 km ≈ 到达容差 0.02 的一半：进到达区就进慢动作。
 		aimClockRate: 0, slowMoFloor: 0.01, probeVisualRadius: 0.00015,
+		// B2/B3：贴地球机位 + 近平面俯角 + ×10 档位（默认 1×，上限 1000 万×，发射自动提到 10,000×）
+		aimFraming: 'local', tiltDeg: 22, orbitFlowDots: false,
+		speedDefaultPow: 0, speedMaxPow: 7, flightSpeedPow: 4,
 	},
 	{ // L2 金星：飞行 6.7 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 8, sampleEvery: 1, predictSteps: 2400,
 		playback: 2, playbackSpeeds: [1, 2, 4],
 		cameraMin: 20, cameraMax: 200, aimMin: 0.2, introCloseDist: 26, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
+		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：默认 1e6×（≈ 原 aimClockRate 1 = 1.88e6×），飞行 1e6×（原 playback 2）
 	},
 	{ // L3 木星：飞行 45.8 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 4, predictSteps: 2400,
 		playback: 4, playbackSpeeds: [2, 4, 8],
 		cameraMin: 60, cameraMax: 900, aimMin: 0.5, introCloseDist: 60, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
+		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：飞行 45.8 游戏秒 ÷ 10 秒 ≈ 4.6 游戏秒/秒 ⇒ 飞行 1e7×
 	},
 	{ // L4 土星：飞行 ~101 秒
 		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 8, predictSteps: 2400,
 		playback: 8, playbackSpeeds: [4, 8, 16],
 		cameraMin: 100, cameraMax: 1800, aimMin: 0.5, introCloseDist: 120, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
+		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：飞行 ~101 游戏秒 ÷ 10 秒 ≈ 10 游戏秒/秒 ⇒ 飞行 1e7×（≈ 原 playback 8）
 	},
 	{ // L5 天王星：飞行 ~269 秒
 		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16, predictSteps: 2400,
 		playback: 16, playbackSpeeds: [8, 16, 32],
 		cameraMin: 200, cameraMax: 3600, aimMin: 0.5, introCloseDist: 240, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
+		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：飞行 ~269 游戏秒 ÷ 10 秒 ≈ 27 游戏秒/秒 ⇒ 飞行 1e8×
 	},
 	{ // L6 海王星：飞行 ~513 秒
 		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16, predictSteps: 2400,
 		playback: 16, playbackSpeeds: [8, 16, 32],
 		cameraMin: 300, cameraMax: 5600, aimMin: 0.5, introCloseDist: 400, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
+		// B3 档位化：飞行 ~513 游戏秒 ÷ 10 秒 ≈ 51 游戏秒/秒 ⇒ 飞行 1e8×
+		speedDefaultPow: 6, speedMaxPow: 9, flightSpeedPow: 8,
 	},
 ];
 
