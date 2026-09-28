@@ -14,32 +14,32 @@ ____exports.PROBE_VISUAL_RADIUS = 0.0015 -- 34
 -- 
 -- ⇒ L1 的地月系用**专用值**：地球 0.06（世界宽度的 10%）、月球 0.02。
 -- 取值只影响看得见的大小，**不参与任何物理判定**。
-local BODY_VISUAL_L1 = {sun = 0.8, earth = 0.0015, moon = 0.0004, probe = 0.00015} -- 58
-____exports.BODY_VISUAL_RADIUS = { -- 71
-	sun = 1.6, -- 72
-	mercury = 0.018, -- 73
-	venus = 0.03, -- 74
-	earth = 0.025, -- 75
-	moon = 0.012, -- 76
-	jupiter = 2, -- 77
-	saturn = 1.2, -- 78
-	uranus = 0.5, -- 79
-	neptune = 0.4 -- 80
-} -- 80
+local BODY_VISUAL_L1 = {sun = 0.8, earth = 0.0034, moon = 0.00093, probe = 0.00015} -- 58
+____exports.BODY_VISUAL_RADIUS = { -- 74
+	sun = 1.6, -- 75
+	mercury = 0.022, -- 76
+	venus = 0.028, -- 77
+	earth = 0.03, -- 78
+	moon = 0.012, -- 79
+	jupiter = 2, -- 80
+	saturn = 1.2, -- 81
+	uranus = 0.5, -- 82
+	neptune = 0.4 -- 83
+} -- 83
 --- 取某个天体的视觉半径。
 -- 
 -- @param levelIndex 关卡下标（0 = L1）：L1 用地月系专用表，别处用日心系表。
 -- @param key 天体键（'earth' / 'moon' / ...）
 -- @param trueRadius 真实半径（查不到时的兜底，不会静默变成 0）
-function ____exports.visualRadius(key, trueRadius, levelIndex) -- 90
-	local ____table = levelIndex == 0 and BODY_VISUAL_L1 or ____exports.BODY_VISUAL_RADIUS -- 91
-	local v = ____table[key] -- 92
-	return v ~= nil and v or trueRadius -- 93
-end -- 90
+function ____exports.visualRadius(key, trueRadius, levelIndex) -- 93
+	local ____table = levelIndex == 0 and BODY_VISUAL_L1 or ____exports.BODY_VISUAL_RADIUS -- 94
+	local v = ____table[key] -- 95
+	return v ~= nil and v or trueRadius -- 96
+end -- 93
 --- 2D 图钉半径（**屏幕像素**，不随视野缩放）。
 -- 
 -- 天体在 3D 里是点没关系，2D 必须让玩家一眼看到它在哪 —— 这正是分开 3D/2D 的原因。
-____exports.PLAN_PIN_PX = {sun = 13, planet = 8, probe = 11} -- 105
+____exports.PLAN_PIN_PX = {sun = 13, planet = 8, probe = 11} -- 108
 --- 各天体的**自转周期**（游戏秒，B2，2026-09-28）。
 -- 
 -- 口径：真实自转周期 ÷ SecPerGameSec。
@@ -48,117 +48,117 @@ ____exports.PLAN_PIN_PX = {sun = 13, planet = 8, probe = 11} -- 105
 --   - 月球**潮汐锁定** ⇒ 自转周期 = 公转周期 1.2593 游戏秒（永远同一面朝地球）。
 -- ⚠️ 键是**模型名**（`PlanetVisualDef.model`，Scene 里唯一拿得到的身份）；只影响观感、
 --    不参与任何判定。表里没有的天体不自转。
-____exports.SPIN_GAME_SEC = {Planet_Earth = 0.000045747, Moon = 1.2593} -- 117
+____exports.SPIN_GAME_SEC = {Planet_Earth = 0.000045747, Moon = 1.2593} -- 120
 --- 六关的运行时参数表。
 -- 
 -- 播放倍速的推导（每关都要能"看得见"）：
 -- L1 转移飞行 0.40 游戏秒 ⇒ 0.05× 播放 = 8 真实秒；L6 飞行 513 秒 ⇒ 16× = 32 真实秒。
-____exports.LEVEL_RUNTIME = { -- 250
-	{ -- 251
-		physicsStep = 0.00001406967, -- 262
-		maxStepsPerFrame = 16, -- 262
-		sampleEvery = 4, -- 262
-		predictSteps = 8000, -- 262
-		playback = 0.25, -- 265
-		playbackSpeeds = {0.1, 0.25, 0.5}, -- 265
-		cameraMin = 0.002, -- 267
-		cameraMax = 1, -- 267
-		aimMin = 3, -- 267
-		introCloseDist = 0.004, -- 267
-		aimClockRate = 0, -- 269
-		slowMoFloor = 0.01, -- 269
-		probeVisualRadius = 0.00015, -- 269
-		aimFraming = "local", -- 271
-		tiltDeg = 22, -- 271
-		orbitFlowDots = false, -- 271
-		speedDefaultPow = 0, -- 272
-		speedMaxPow = 7, -- 272
-		flightSpeedPow = 4 -- 272
-	}, -- 272
-	{ -- 274
-		physicsStep = 1 / 240, -- 275
-		maxStepsPerFrame = 8, -- 275
-		sampleEvery = 1, -- 275
-		predictSteps = 2400, -- 275
-		playback = 2, -- 276
-		playbackSpeeds = {1, 2, 4}, -- 276
-		cameraMin = 20, -- 277
-		cameraMax = 200, -- 277
-		aimMin = 0.2, -- 277
-		introCloseDist = 26, -- 277
-		aimClockRate = 1, -- 277
-		slowMoFloor = 8, -- 277
-		probeVisualRadius = 2.2 -- 277
-	}, -- 277
-	{ -- 280
-		physicsStep = 1 / 240, -- 281
-		maxStepsPerFrame = 16, -- 281
-		sampleEvery = 4, -- 281
-		predictSteps = 2400, -- 281
-		playback = 4, -- 282
-		playbackSpeeds = {2, 4, 8}, -- 282
-		cameraMin = 60, -- 283
-		cameraMax = 900, -- 283
-		aimMin = 0.5, -- 283
-		introCloseDist = 60, -- 283
-		aimClockRate = 1, -- 283
-		slowMoFloor = 8, -- 283
-		probeVisualRadius = 2.2 -- 283
-	}, -- 283
-	{ -- 286
-		physicsStep = 1 / 240, -- 287
-		maxStepsPerFrame = 16, -- 287
-		sampleEvery = 8, -- 287
-		predictSteps = 2400, -- 287
-		playback = 8, -- 288
-		playbackSpeeds = {4, 8, 16}, -- 288
-		cameraMin = 100, -- 289
-		cameraMax = 1800, -- 289
-		aimMin = 0.5, -- 289
-		introCloseDist = 120, -- 289
-		aimClockRate = 1, -- 289
-		slowMoFloor = 8, -- 289
-		probeVisualRadius = 2.2 -- 289
-	}, -- 289
-	{ -- 292
-		physicsStep = 1 / 120, -- 293
-		maxStepsPerFrame = 32, -- 293
-		sampleEvery = 16, -- 293
-		predictSteps = 2400, -- 293
-		playback = 16, -- 294
-		playbackSpeeds = {8, 16, 32}, -- 294
-		cameraMin = 200, -- 295
-		cameraMax = 3600, -- 295
-		aimMin = 0.5, -- 295
-		introCloseDist = 240, -- 295
-		aimClockRate = 1, -- 295
-		slowMoFloor = 8, -- 295
-		probeVisualRadius = 2.2 -- 295
-	}, -- 295
-	{ -- 298
-		physicsStep = 1 / 120, -- 299
-		maxStepsPerFrame = 32, -- 299
-		sampleEvery = 16, -- 299
-		predictSteps = 2400, -- 299
-		playback = 16, -- 300
-		playbackSpeeds = {8, 16, 32}, -- 300
-		cameraMin = 300, -- 301
-		cameraMax = 5600, -- 301
-		aimMin = 0.5, -- 301
-		introCloseDist = 400, -- 301
-		aimClockRate = 1, -- 301
-		slowMoFloor = 8, -- 301
-		probeVisualRadius = 2.2, -- 301
-		speedDefaultPow = 6, -- 303
-		speedMaxPow = 9, -- 303
-		flightSpeedPow = 8 -- 303
-	} -- 303
-} -- 303
+____exports.LEVEL_RUNTIME = { -- 253
+	{ -- 254
+		physicsStep = 0.00001406967, -- 265
+		maxStepsPerFrame = 16, -- 265
+		sampleEvery = 4, -- 265
+		predictSteps = 8000, -- 265
+		playback = 0.25, -- 268
+		playbackSpeeds = {0.1, 0.25, 0.5}, -- 268
+		cameraMin = 0.002, -- 270
+		cameraMax = 1, -- 270
+		aimMin = 3, -- 270
+		introCloseDist = 0.004, -- 270
+		aimClockRate = 0, -- 272
+		slowMoFloor = 0.01, -- 272
+		probeVisualRadius = 0.00015, -- 272
+		aimFraming = "local", -- 274
+		tiltDeg = 22, -- 274
+		orbitFlowDots = false, -- 274
+		speedDefaultPow = 0, -- 275
+		speedMaxPow = 7, -- 275
+		flightSpeedPow = 4 -- 275
+	}, -- 275
+	{ -- 277
+		physicsStep = 1 / 240, -- 278
+		maxStepsPerFrame = 8, -- 278
+		sampleEvery = 1, -- 278
+		predictSteps = 2400, -- 278
+		playback = 2, -- 279
+		playbackSpeeds = {1, 2, 4}, -- 279
+		cameraMin = 20, -- 280
+		cameraMax = 200, -- 280
+		aimMin = 0.2, -- 280
+		introCloseDist = 26, -- 280
+		aimClockRate = 1, -- 280
+		slowMoFloor = 8, -- 280
+		probeVisualRadius = 2.2 -- 280
+	}, -- 280
+	{ -- 283
+		physicsStep = 1 / 240, -- 284
+		maxStepsPerFrame = 16, -- 284
+		sampleEvery = 4, -- 284
+		predictSteps = 2400, -- 284
+		playback = 4, -- 285
+		playbackSpeeds = {2, 4, 8}, -- 285
+		cameraMin = 60, -- 286
+		cameraMax = 900, -- 286
+		aimMin = 0.5, -- 286
+		introCloseDist = 60, -- 286
+		aimClockRate = 1, -- 286
+		slowMoFloor = 8, -- 286
+		probeVisualRadius = 2.2 -- 286
+	}, -- 286
+	{ -- 289
+		physicsStep = 1 / 240, -- 290
+		maxStepsPerFrame = 16, -- 290
+		sampleEvery = 8, -- 290
+		predictSteps = 2400, -- 290
+		playback = 8, -- 291
+		playbackSpeeds = {4, 8, 16}, -- 291
+		cameraMin = 100, -- 292
+		cameraMax = 1800, -- 292
+		aimMin = 0.5, -- 292
+		introCloseDist = 120, -- 292
+		aimClockRate = 1, -- 292
+		slowMoFloor = 8, -- 292
+		probeVisualRadius = 2.2 -- 292
+	}, -- 292
+	{ -- 295
+		physicsStep = 1 / 120, -- 296
+		maxStepsPerFrame = 32, -- 296
+		sampleEvery = 16, -- 296
+		predictSteps = 2400, -- 296
+		playback = 16, -- 297
+		playbackSpeeds = {8, 16, 32}, -- 297
+		cameraMin = 200, -- 298
+		cameraMax = 3600, -- 298
+		aimMin = 0.5, -- 298
+		introCloseDist = 240, -- 298
+		aimClockRate = 1, -- 298
+		slowMoFloor = 8, -- 298
+		probeVisualRadius = 2.2 -- 298
+	}, -- 298
+	{ -- 301
+		physicsStep = 1 / 120, -- 302
+		maxStepsPerFrame = 32, -- 302
+		sampleEvery = 16, -- 302
+		predictSteps = 2400, -- 302
+		playback = 16, -- 303
+		playbackSpeeds = {8, 16, 32}, -- 303
+		cameraMin = 300, -- 304
+		cameraMax = 5600, -- 304
+		aimMin = 0.5, -- 304
+		introCloseDist = 400, -- 304
+		aimClockRate = 1, -- 304
+		slowMoFloor = 8, -- 304
+		probeVisualRadius = 2.2, -- 304
+		speedDefaultPow = 6, -- 306
+		speedMaxPow = 9, -- 306
+		flightSpeedPow = 8 -- 306
+	} -- 306
+} -- 306
 --- 取第 index 关（0 起）的运行时参数；越界退回最后一关（宁可难看，也不要 nil）。
-function ____exports.levelRuntime(index) -- 308
-	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 308
-		return ____exports.LEVEL_RUNTIME[index + 1] -- 309
-	end -- 309
-	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 310
-end -- 308
-return ____exports -- 308
+function ____exports.levelRuntime(index) -- 311
+	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 311
+		return ____exports.LEVEL_RUNTIME[index + 1] -- 312
+	end -- 312
+	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 313
+end -- 311
+return ____exports -- 311

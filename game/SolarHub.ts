@@ -75,7 +75,7 @@ export interface HubPlanetStation {
 /** 太阳系沙盘中的天体排布。 */
 export const HUB_STATIONS: HubPlanetStation[] = [
 	// 水星 -> L2 水手10号（终点站：水星）
-	{ model: 'Sphere', radius: 0.85, orbit: 7.5, baseAngleDeg: 340, orbitSpeedDegPerSec: 4.2, rotSpeedDegPerSec: 5.0, colorHex: 0x9a8f86, emissiveHex: 0, levelIndex: 1 },
+	{ model: 'Planet_Mercury', radius: 0.85, orbit: 7.5, baseAngleDeg: 340, orbitSpeedDegPerSec: 4.2, rotSpeedDegPerSec: 5.0, colorHex: 0x9a8f86, emissiveHex: 0, levelIndex: 1 },
 	// 金星（点缀 / 引力弹弓中继天体）
 	{ model: 'Planet_Venus', radius: 1.60, orbit: 11.5, baseAngleDeg: 300, orbitSpeedDegPerSec: 2.8, rotSpeedDegPerSec: -2.0, colorHex: 0xf0dcae, emissiveHex: 0 },
 	// 地球 -> L1 阿波罗/嫦娥探月

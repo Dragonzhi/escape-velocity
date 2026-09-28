@@ -515,8 +515,10 @@ export function calcFlightTelemetry(
 		const pts = core.flight.points;
 		const vels = core.flight.velocities;
 		const end = coreProbeIndex(core);
-		const targetIdx = level.goal.planetIndex;
-		const targetBody = targetIdx >= 0 && targetIdx < level.bodies.length ? level.bodies[targetIdx] : undefined;
+		const goalBody = level.goal.planetIndex >= 0 && level.goal.planetIndex < level.bodies.length ? level.bodies[level.goal.planetIndex] : undefined;
+		const c3 = level.mission !== undefined && level.mission.challenges !== undefined ? level.mission.challenges[2] : undefined;
+		const distTargetIdx = (c3 !== undefined && c3.targetPlanetIndex !== undefined) ? c3.targetPlanetIndex : level.goal.planetIndex;
+		const distTargetBody = distTargetIdx >= 0 && distTargetIdx < level.bodies.length ? level.bodies[distTargetIdx] : goalBody;
 
 		for (let k = 0; k <= end && k < pts.length; k++) {
 			const p = pts[k];
@@ -525,18 +527,18 @@ export function calcFlightTelemetry(
 				const spd = Math.sqrt(v.x * v.x + v.y * v.y);
 				if (spd > maxSpeed) maxSpeed = spd;
 			}
-			if (targetBody !== undefined) {
+			if (distTargetBody !== undefined) {
 				const t = core.t0 + k * core.dt;
-				const tp = bodyPositionAt(targetBody, t);
+				const tp = bodyPositionAt(distTargetBody, t);
 				const d = distance(p, tp);
 				if (d < closestDist) closestDist = d;
 			}
 		}
 
-		if (targetBody !== undefined && targetBody.gm > 0 && vels !== undefined && end < pts.length && end < vels.length) {
+		if (goalBody !== undefined && goalBody.gm > 0 && vels !== undefined && end < pts.length && end < vels.length) {
 			const tEnd = core.t0 + end * core.dt;
-			const tpEnd = bodyPositionAt(targetBody, tEnd);
-			const tvEnd = bodyVelocityAt(targetBody, tEnd);
+			const tpEnd = bodyPositionAt(goalBody, tEnd);
+			const tvEnd = bodyVelocityAt(goalBody, tEnd);
 			const rx = pts[end].x - tpEnd.x;
 			const ry = pts[end].y - tpEnd.y;
 			const vx = vels[end].x - tvEnd.x;

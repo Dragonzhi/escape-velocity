@@ -45,7 +45,7 @@ local DegToRad = math.pi / 180 -- 60
 --- 太阳系沙盘中的天体排布。
 ____exports.HUB_STATIONS = { -- 76
 	{ -- 78
-		model = "Sphere", -- 78
+		model = "Planet_Mercury", -- 78
 		radius = 0.85, -- 78
 		orbit = 7.5, -- 78
 		baseAngleDeg = 340, -- 78

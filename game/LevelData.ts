@@ -117,6 +117,8 @@ export interface RocketChallengeDef {
 	type: 'success' | 'fuel' | 'distance' | 'speed' | 'eccentricity';
 	/** 判定阈值 */
 	threshold?: number;
+	/** 关心的目标天体索引（用于计算 closestDist，默认取 goal.planetIndex） */
+	targetPlanetIndex?: number;
 }
 
 /** 任务元数据（S7：真实深空探测任务）。 */
@@ -492,9 +494,14 @@ export const EarthOrbitSpeed = circularSpeed(SunGm, EarthOrbitRadius);
  * 每一行后面的注释就是它的出处（工具输出），改数值必须重跑工具。
  */
 const PH = {
-	mercury: 45.0,
-	// node tools/level-phases.mjs 2 --dirs 240 --dvs 31 --tmax 40
-	venus: 79.6,
+	/**
+	 * L2 水手10号：金星 37.6°、水星 2.2°（真实内太阳系前向逆向减速借力求解，2026-09-28）。
+	 * 探测器在 1 AU 顺行公转轨出发，反向点火 Δv ≈ 2.85 霍曼降轨，在 t ≈ 5.40s 擦过金星公转前方引力走廊
+	 * （近心点 r_peri ≈ 0.0087，在金星希尔球 0.54 内部），获得反向重力拖拽削减日心能量，近日点跌落
+	 * 至水星公转轨道（30.97），并在 t ≈ 7.12s 与水星相切交会（交会最小距离 0.48 < 容差 6.0）。
+	 */
+	mercury: 2.2,
+	venus: 37.6,
 	// node tools/level-phases.mjs 3 --dirs 180 --dvs 21  → 186.1°
 	// node tools/level-phases.mjs 4 --dirs 240 --dvs 31 --tmax 200 → 184.4°
 	// node tools/level-phases.mjs 5 --dirs 240 --dvs 31 --tmax 450 → 175.6°
@@ -629,18 +636,18 @@ function level2(): LevelDef {
 		visuals: [
 			sunVisual(),
 			planetVisual('venus', venus, 0.90, 0.78, 0.55, 'Planet_Venus', false),
-			planetVisual('mercury', mercury, 0.65, 0.65, 0.65, 'Sphere', false),
+			planetVisual('mercury', mercury, 0.65, 0.65, 0.65, 'Planet_Mercury', false),
 		],
 		goal: {
 			kind: 'planet',
 			planetIndex: 2,
 			tolerance: 6,
 			chain: [
-				{ planetIndex: 1, tolerance: 15, label: '金星' },
+				{ planetIndex: 1, tolerance: 0.40, label: '金星' },
 				{ planetIndex: 2, tolerance: 6, label: '水星' },
 			],
 		},
-		dvBudget: 4.0,
+		dvBudget: 3.50,
 		escapeRadius: 3600,
 		maxSteps: 4000,
 		timeWindow: { span: 27 }, // ≥ 金星会合周期 26.8 秒
@@ -652,8 +659,8 @@ function level2(): LevelDef {
 			vehicle: 'flyby',
 			challenges: [
 				{ desc: '借力金星并成功抵达水星', type: 'success' },
-				{ desc: '初始点火消耗 Δv ≤ 75% 预算', type: 'fuel', threshold: 0.75 },
-				{ desc: '金星交会时相对速度降幅 ≥ 12 单位', type: 'speed', threshold: 12.0 },
+				{ desc: '初始点火消耗 Δv ≤ 2.65', type: 'fuel', threshold: 0.75 },
+				{ desc: '金星近心点距离 r_peri ≤ 0.35', type: 'distance', threshold: 0.35, targetPlanetIndex: 1 },
 			],
 		},
 	};
