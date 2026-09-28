@@ -9,6 +9,8 @@ local SlowMoFloorDist = ____Config.SlowMoFloorDist -- 8
 local SlowMoRadiusFactor = ____Config.SlowMoRadiusFactor -- 8
 local ____Game = require("game.Game") -- 10
 local anchorBodyIndex = ____Game.anchorBodyIndex -- 11
+local applyInFlightBrake = ____Game.applyInFlightBrake -- 11
+local calcFlightTelemetry = ____Game.calcFlightTelemetry -- 11
 local coreArm = ____Game.coreArm -- 11
 local coreBackToSelect = ____Game.coreBackToSelect -- 11
 local coreCancelArm = ____Game.coreCancelArm -- 11
@@ -20,6 +22,7 @@ local coreTimeWarpAllowed = ____Game.coreTimeWarpAllowed -- 12
 local coreToggleView = ____Game.coreToggleView -- 12
 local coreUpdate = ____Game.coreUpdate -- 12
 local createCore = ____Game.createCore -- 13
+local isBrakeWindowActive = ____Game.isBrakeWindowActive -- 13
 local resolveResult = ____Game.resolveResult -- 13
 local slowMotionBody = ____Game.slowMotionBody -- 13
 local failures = {} -- 21
@@ -705,31 +708,88 @@ local function testPlaybackSpeed() -- 421
 		((((("slowmo=" .. tostring(core4.slowmo)) .. " body=") .. tostring(core4.slowmoBody)) .. " Δt=") .. __TS__NumberToFixed(core4.flightTime - t3, 3)) .. " 期望 0.500" -- 473
 	) -- 473
 end -- 421
-function ____exports.runTests() -- 476
-	testResolveResult() -- 477
-	testTimeWarpGuard() -- 478
-	testDateHandoff() -- 479
-	testLaunch() -- 480
-	testArmed() -- 481
-	testPlayback() -- 482
-	testRetry() -- 483
-	testIndexClamp() -- 484
-	testDeterministicCycle() -- 485
-	testGoalTruncation() -- 486
-	testViewMode() -- 487
-	testSlowMotion() -- 488
-	testPlaybackSpeed() -- 489
-	local lines = {} -- 491
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 492
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 493
-	local limit = #failures < 12 and #failures or 12 -- 494
-	do -- 494
-		local i = 0 -- 495
-		while i < limit do -- 495
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 496
-			i = i + 1 -- 495
-		end -- 495
-	end -- 495
-	return table.concat(lines, "\n") -- 498
-end -- 476
-return ____exports -- 476
+--- 14) 飞行中实时制动窗口与逆喷变轨（L4 伽利略号等轨道器关卡）。
+local function testInFlightBrake() -- 477
+	local jupiter = { -- 478
+		gm = 5000, -- 479
+		radius = 4, -- 480
+		orbitCenter = {x = 0, y = 0}, -- 481
+		orbitRadius = 0, -- 482
+		orbitPeriod = 0, -- 483
+		phase0 = 0, -- 484
+		orbitDirection = 1 -- 485
+	} -- 485
+	local orbiterLevel = { -- 487
+		bodies = {jupiter}, -- 488
+		probeStart = {x = 0, y = 50}, -- 489
+		goal = {kind = "planet", planetIndex = 0, tolerance = 15, chain = {{planetIndex = 0, tolerance = 15, label = "木星", capture = true}}}, -- 490
+		escapeRadius = 500, -- 496
+		maxSteps = 3000 -- 497
+	} -- 497
+	local core = createCore() -- 500
+	check( -- 501
+		"brake-idle-no-active", -- 501
+		not isBrakeWindowActive(core, orbiterLevel), -- 501
+		"Aiming 态制动窗口不应开启" -- 501
+	) -- 501
+	coreLaunch(core, {x = 2, y = -20}, orbiterLevel) -- 504
+	check( -- 505
+		"brake-flying-start-inactive", -- 505
+		not isBrakeWindowActive(core, orbiterLevel), -- 505
+		"出发瞬间离木星远，制动窗口未开启" -- 505
+	) -- 505
+	local windowReached = false -- 508
+	do -- 508
+		local step = 0 -- 509
+		while step < 80 do -- 509
+			coreUpdate(core, 1 / 60, orbiterLevel) -- 510
+			if isBrakeWindowActive(core, orbiterLevel) then -- 510
+				windowReached = true -- 512
+				break -- 513
+			end -- 513
+			step = step + 1 -- 509
+		end -- 509
+	end -- 509
+	check("brake-window-active-near", windowReached, "探测器飞掠木星引力井时应激活制动窗口") -- 516
+	local brakeOk = applyInFlightBrake(core, orbiterLevel) -- 519
+	check("brake-apply-success", brakeOk and core.hasBraked, "制动窗口内按下逆喷应成功生效") -- 520
+	local repeatBrake = applyInFlightBrake(core, orbiterLevel) -- 523
+	check("brake-guard-duplicate", not repeatBrake, "已制动后不应重复触发") -- 524
+	local telem = calcFlightTelemetry(core, orbiterLevel) -- 527
+	check( -- 528
+		"brake-telemetry-eccentricity", -- 528
+		telem.eccentricity ~= nil and telem.eccentricity < 1, -- 528
+		"制动后轨道应闭合为椭圆捕获轨（e < 1.0），实际 e=" .. (telem.eccentricity ~= nil and __TS__NumberToFixed(telem.eccentricity, 3) or "nil") -- 529
+	) -- 529
+	coreRetry(core) -- 532
+	check("brake-retry-reset", not core.hasBraked and core.brakePointIndex == -1, "重试后制动标记应恢复初值") -- 533
+end -- 477
+function ____exports.runTests() -- 536
+	testResolveResult() -- 537
+	testTimeWarpGuard() -- 538
+	testDateHandoff() -- 539
+	testLaunch() -- 540
+	testArmed() -- 541
+	testPlayback() -- 542
+	testRetry() -- 543
+	testIndexClamp() -- 544
+	testDeterministicCycle() -- 545
+	testGoalTruncation() -- 546
+	testViewMode() -- 547
+	testSlowMotion() -- 548
+	testPlaybackSpeed() -- 549
+	testInFlightBrake() -- 550
+	local lines = {} -- 552
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 553
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 554
+	local limit = #failures < 12 and #failures or 12 -- 555
+	do -- 555
+		local i = 0 -- 556
+		while i < limit do -- 556
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 557
+			i = i + 1 -- 556
+		end -- 556
+	end -- 556
+	return table.concat(lines, "\n") -- 559
+end -- 536
+return ____exports -- 536

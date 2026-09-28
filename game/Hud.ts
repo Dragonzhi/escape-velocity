@@ -286,6 +286,12 @@ export interface AimInput {
 	 * （隐藏而不关触摸的层会吞掉整个区域的点击 —— 真机验收踩过，见 AGENTS 硬约束 4。）
 	 */
 	setDate: (t0: number, span: number) => void;
+	/** 飞行中实时制动逆喷按钮被点击（L4 伽利略号等轨道器关卡）。 */
+	onLiveBrake: (callback: () => void) => void;
+	/** 由主循环同步实时制动按钮的显隐（仅在飞行中进入制动窗口时显示）。 */
+	setLiveBrakeVisible: (visible: boolean) => void;
+	/** 由主循环同步是否已执行制动（更新按钮文案与颜色）。 */
+	setLiveBraked: (braked: boolean) => void;
 	/** 根节点：调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
 }
@@ -689,6 +695,41 @@ export function createAimInput(
 	makeBrakeButton('刹车', true, brakeRightX);
 	paintBrake();
 
+	// ---- 飞行实时逆喷制动按钮（L4 伽利略号等轨道器核心机制）----
+	let liveBrakeHandler: (() => void) | undefined = undefined;
+	let liveBrakeActive = false;
+	let liveBrakedState = false;
+	const LiveBrakeW = 220;
+	const LiveBrakeH = 100;
+	const liveBrakeButton = createButton(root, {
+		w: LiveBrakeW,
+		h: LiveBrakeH,
+		text: 'BRAKE 逆喷',
+		fontSize: 36,
+		bgHex: 0xa65008,
+		fgHex: 0xfff8e0,
+		borderHex: 0xffaa33,
+		fireOn: 'press',
+		onTap: (): void => {
+			print('[escape-velocity] live brake button fire (press)');
+			if (liveBrakeHandler !== undefined) liveBrakeHandler();
+		},
+	});
+	liveBrakeButton.root.position = Vec2(viewW - LiveBrakeW - 24, 96);
+	liveBrakeButton.root.visible = false;
+	liveBrakeButton.setEnabled(false);
+
+	// 逆喷提示横幅
+	const hintW = 440;
+	const hintH = 50;
+	const brakeHintPlate = createPanel(root, hintW, hintH, 0x0a0e14, { alpha: 0.65, borderHex: 0xffaa33 });
+	brakeHintPlate.position = Vec2((viewW - hintW) / 2, viewH - 240);
+	const brakeHintLabel = createLabel(brakeHintPlate, '【木星捕获窗口已开启 · 按下 BRAKE 逆喷入轨】', 22, 0xffc83b);
+	if (brakeHintLabel !== undefined) {
+		setLabelCenter(brakeHintLabel, hintW / 2, hintH / 2);
+	}
+	brakeHintPlate.visible = false;
+
 	parent.addChild(root);
 
 	return {
@@ -700,7 +741,13 @@ export function createAimInput(
 			// 触摸开关必须跟着走：swallowTouches 的层只要开着，就会把点击独占，
 			// 底下的关卡层永远收不到（多关并存时这是致命的）
 			touchLayer.touchEnabled = value;
-			if (!value) dragging = false;
+			if (!value) {
+				dragging = false;
+				liveBrakeActive = false;
+				liveBrakeButton.root.visible = false;
+				liveBrakeButton.setEnabled(false);
+				brakeHintPlate.visible = false;
+			}
 		},
 		onBrake: (callback: (on: boolean) => void): void => {
 			brakeHandler = callback;
@@ -799,6 +846,36 @@ export function createAimInput(
 		// 包一层箭头函数：简写属性会让 TSTL 为对象成员函数引入 self
 		handleOffset: (delta: ScreenOffset): void => handleDelta(delta),
 		debugProbeOffset: (): ScreenOffset => probeOffset,
+		onLiveBrake: (callback: () => void): void => {
+			liveBrakeHandler = callback;
+		},
+		setLiveBrakeVisible: (visible: boolean): void => {
+			if (liveBrakeActive === visible) return;
+			liveBrakeActive = visible;
+			liveBrakeButton.root.visible = visible;
+			liveBrakeButton.setEnabled(visible);
+			brakeHintPlate.visible = visible;
+		},
+		setLiveBraked: (braked: boolean): void => {
+			if (liveBrakedState === braked) return;
+			liveBrakedState = braked;
+			if (braked) {
+				liveBrakeButton.setText('已捕获入轨');
+				liveBrakeButton.setColors(0x184232, 0xd0ffea);
+				liveBrakeButton.setEnabled(false);
+				if (brakeHintLabel !== undefined) {
+					setLabelText(brakeHintLabel, '【主发动机逆喷成功！已捕获入轨】');
+					setLabelColor(brakeHintLabel, 0x3ee6a0);
+				}
+			} else {
+				liveBrakeButton.setText('BRAKE 逆喷');
+				liveBrakeButton.setColors(0xa65008, 0xfff8e0);
+				if (brakeHintLabel !== undefined) {
+					setLabelText(brakeHintLabel, '【木星捕获窗口已开启 · 按下 BRAKE 逆喷入轨】');
+					setLabelColor(brakeHintLabel, 0xffc83b);
+				}
+			}
+		},
 		root,
 	};
 }

@@ -8,9 +8,9 @@ import { Body, P2 } from 'game/Gravity';
 import { FlightPlayback, PhysicsStep, SlowMoFactor, SlowMoFloorDist, SlowMoRadiusFactor } from 'game/Config';
 import { GoalSpec } from 'game/LevelData';
 import {
-	GameLevel, anchorBodyIndex, coreArm, coreBackToSelect, coreCancelArm, coreHandoffDate, coreLaunch,
+	GameLevel, anchorBodyIndex, applyInFlightBrake, calcFlightTelemetry, coreArm, coreBackToSelect, coreCancelArm, coreHandoffDate, coreLaunch,
 	coreProbeIndex, coreRetry, coreTimeWarpAllowed, coreToggleView, coreUpdate,
-	createCore, resolveResult, slowMotionBody,
+	createCore, isBrakeWindowActive, resolveResult, slowMotionBody,
 } from 'game/Game';
 
 interface Failure {
@@ -473,6 +473,66 @@ function testPlaybackSpeed(): void {
 		'slowmo=' + core4.slowmo + ' body=' + core4.slowmoBody + ' Δt=' + (core4.flightTime - t3).toFixed(3) + ' 期望 0.500');
 }
 
+/** 14) 飞行中实时制动窗口与逆喷变轨（L4 伽利略号等轨道器关卡）。 */
+function testInFlightBrake(): void {
+	const jupiter: Body = {
+		gm: 5000,
+		radius: 4,
+		orbitCenter: { x: 0, y: 0 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+	};
+	const orbiterLevel: GameLevel = {
+		bodies: [jupiter],
+		probeStart: { x: 0, y: 50 },
+		goal: {
+			kind: 'planet',
+			planetIndex: 0,
+			tolerance: 15,
+			chain: [{ planetIndex: 0, tolerance: 15, label: '木星', capture: true }],
+		},
+		escapeRadius: 500,
+		maxSteps: 3000,
+	};
+
+	const core = createCore();
+	check('brake-idle-no-active', !isBrakeWindowActive(core, orbiterLevel), 'Aiming 态制动窗口不应开启');
+
+	// 发射：初速度向右下方飞掠木星
+	coreLaunch(core, { x: 2, y: -20 }, orbiterLevel);
+	check('brake-flying-start-inactive', !isBrakeWindowActive(core, orbiterLevel), '出发瞬间离木星远，制动窗口未开启');
+
+	// 推进直到靠近木星（进入容差 15 附近）
+	let windowReached = false;
+	for (let step = 0; step < 80; step++) {
+		coreUpdate(core, 1 / 60, orbiterLevel);
+		if (isBrakeWindowActive(core, orbiterLevel)) {
+			windowReached = true;
+			break;
+		}
+	}
+	check('brake-window-active-near', windowReached, '探测器飞掠木星引力井时应激活制动窗口');
+
+	// 执行实时逆喷
+	const brakeOk = applyInFlightBrake(core, orbiterLevel);
+	check('brake-apply-success', brakeOk && core.hasBraked, '制动窗口内按下逆喷应成功生效');
+
+	// 防重触发守卫
+	const repeatBrake = applyInFlightBrake(core, orbiterLevel);
+	check('brake-guard-duplicate', !repeatBrake, '已制动后不应重复触发');
+
+	// 解算遥测数据，验证入轨偏心率
+	const telem = calcFlightTelemetry(core, orbiterLevel);
+	check('brake-telemetry-eccentricity', telem.eccentricity !== undefined && telem.eccentricity < 1.0,
+		'制动后轨道应闭合为椭圆捕获轨（e < 1.0），实际 e=' + (telem.eccentricity !== undefined ? telem.eccentricity.toFixed(3) : 'nil'));
+
+	// 重试本关应重置制动状态
+	coreRetry(core);
+	check('brake-retry-reset', !core.hasBraked && core.brakePointIndex === -1, '重试后制动标记应恢复初值');
+}
+
 export function runTests(): string {
 	testResolveResult();
 	testTimeWarpGuard();
@@ -487,6 +547,7 @@ export function runTests(): string {
 	testViewMode();
 	testSlowMotion();
 	testPlaybackSpeed();
+	testInFlightBrake();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

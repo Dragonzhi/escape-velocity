@@ -158,6 +158,10 @@ export interface GameCore {
 	slowmo: boolean;
 	/** 触发慢动作的天体索引（-1 = 没有）。取景时相机贴近这颗天体。 */
 	slowmoBody: number;
+	/** 是否在飞行中已触发逆喷制动（L4 伽利略号等轨道器关卡）。 */
+	hasBraked: boolean;
+	/** 逆喷制动生效时的采样点索引（-1 = 未制动）。 */
+	brakePointIndex: number;
 }
 
 /** 飞行遥测数据（S7：用于任务结算与三枚火箭挑战判定）。 */
@@ -196,6 +200,8 @@ export function createCore(dt?: number): GameCore {
 		playback: FlightPlayback,
 		slowmo: false,
 		slowmoBody: -1,
+		hasBraked: false,
+		brakePointIndex: -1,
 	};
 }
 
@@ -274,6 +280,8 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	// S3.17：慢动作状态由 coreUpdate 逐帧重算，这里给干净的初值（发射瞬间不可能在慢动作里）
 	core.slowmo = false;
 	core.slowmoBody = -1;
+	core.hasBraked = false;
+	core.brakePointIndex = -1;
 	core.phase = 'Flying';
 	// 设计稿第 4 条：**按下发射自动切 3D** —— 它是相态流转的一部分，不是 UI 的补丁
 	core.viewMode = '3D';
@@ -528,7 +536,128 @@ export function coreRetry(core: GameCore, aimMin?: number): void {
 	core.result = undefined;
 	core.slowmo = false;
 	core.slowmoBody = -1;
+	core.hasBraked = false;
+	core.brakePointIndex = -1;
 	core.aim = neutralAim(levelAimMin(aimMin));
+}
+
+/**
+ * 判定当前飞行状态下是否处于可逆喷制动窗口。
+ * 纯函数，可单测。
+ */
+export function isBrakeWindowActive(core: GameCore, level: GameLevel): boolean {
+	if (core.phase !== 'Flying' || core.flight === undefined || core.hasBraked) return false;
+	const curIdx = coreProbeIndex(core);
+	const pts = core.flight.points;
+	if (curIdx < 0 || curIdx >= pts.length) return false;
+
+	const targetIdx = level.goal.planetIndex;
+	if (targetIdx < 0 || targetIdx >= level.bodies.length) return false;
+	const targetBody = level.bodies[targetIdx];
+	const tNow = core.t0 + core.flightTime;
+	const targetPos = bodyPositionAt(targetBody, tNow);
+	const dist = distance(pts[curIdx], targetPos);
+
+	// 制动窗口有效距离：靠近目标天体（进入慢动作影响区或容差的 1.5 倍）且未撞毁
+	const floorD = level.slowMoFloor !== undefined && level.slowMoFloor > 0 ? level.slowMoFloor : SlowMoFloorDist;
+	const brakeDistLimit = Math.max(level.goal.tolerance * 1.5, targetBody.radius * SlowMoRadiusFactor, floorD);
+	return dist <= brakeDistLimit && dist > targetBody.radius;
+}
+
+/**
+ * 飞行中逆喷制动（L4 伽利略号等轨道器核心玩法）。
+ * 纯函数逻辑，更新 core.flight 及其后续轨迹，并重新判定目标与结果。
+ * 返回 true 表示制动成功应用。
+ */
+export function applyInFlightBrake(core: GameCore, level: GameLevel): boolean {
+	if (!isBrakeWindowActive(core, level)) return false;
+	if (core.flight === undefined) return false;
+
+	const curIdx = coreProbeIndex(core);
+	const curPos = core.flight.points[curIdx];
+	const curVel = core.flight.velocities !== undefined && curIdx < core.flight.velocities.length
+		? core.flight.velocities[curIdx]
+		: { x: 0, y: 0 };
+	const tNow = core.t0 + core.flightTime;
+
+	const targetIdx = level.goal.planetIndex;
+	const targetBody = level.bodies[targetIdx];
+	const targetPos = bodyPositionAt(targetBody, tNow);
+	const targetVel = bodyVelocityAt(targetBody, tNow);
+
+	// 探测器相对目标天体（木星）的速度
+	const relVel = { x: curVel.x - targetVel.x, y: curVel.y - targetVel.y };
+	const relSpeed = Math.sqrt(relVel.x * relVel.x + relVel.y * relVel.y);
+	const dist = distance(curPos, targetPos);
+
+	if (relSpeed <= 1e-6 || dist <= 1e-6) return false;
+
+	// 木星局部圆轨道速度 v_circ = sqrt(mu / r)
+	const vCirc = Math.sqrt(targetBody.gm / dist);
+
+	// 将相对速度削减至捕获速度（闭合椭圆，0.98 * vCirc 保证机械能 < 0）
+	const targetRelSpeed = vCirc * 0.98;
+	const reductionFactor = targetRelSpeed / relSpeed;
+	const clampedFactor = Math.min(0.95, reductionFactor);
+
+	const newRelVel = {
+		x: relVel.x * clampedFactor,
+		y: relVel.y * clampedFactor,
+	};
+	const newVel: P2 = {
+		x: targetVel.x + newRelVel.x,
+		y: targetVel.y + newRelVel.y,
+	};
+
+	// 从当前点出发，推演后续的捕获闭合轨道
+	const remainingSteps = Math.max(1000, level.maxSteps - curIdx);
+	const postBrakeSim = simulate(
+		{ pos: curPos, vel: newVel },
+		level.bodies,
+		{
+			steps: remainingSteps,
+			dt: core.dt,
+			sampleEvery: 1,
+			escapeRadius: level.escapeRadius,
+			t0: tNow,
+		}
+	);
+
+	// 拼接轨迹点与速度
+	const mergedPoints: P2[] = core.flight.points.slice(0, curIdx);
+	for (let i = 0; i < postBrakeSim.points.length; i++) {
+		mergedPoints.push(postBrakeSim.points[i]);
+	}
+	const mergedVelocities: P2[] = (core.flight.velocities || []).slice(0, curIdx);
+	if (postBrakeSim.velocities !== undefined) {
+		for (let i = 0; i < postBrakeSim.velocities.length; i++) {
+			mergedVelocities.push(postBrakeSim.velocities[i]);
+		}
+	}
+
+	core.flight = {
+		outcome: postBrakeSim.outcome,
+		points: mergedPoints,
+		velocities: mergedVelocities,
+		state: postBrakeSim.state,
+		hitIndex: postBrakeSim.hitIndex,
+		stepsRun: curIdx + postBrakeSim.stepsRun,
+	};
+
+	core.hasBraked = true;
+	core.brakePointIndex = curIdx;
+
+	// 重新判定目标和结算
+	core.goalIndex = findGoalIndex(mergedPoints, level.bodies, level.goal, core.dt, core.t0, mergedVelocities);
+	core.result = resolveResult(postBrakeSim.outcome, core.goalIndex, level.goal);
+
+	print('[escape-velocity] in-flight brake applied at t=' + tNow.toFixed(2)
+		+ ' curIdx=' + curIdx.toFixed(0)
+		+ ' relSpeed=' + relSpeed.toFixed(3) + ' -> ' + Math.sqrt(newRelVel.x * newRelVel.x + newRelVel.y * newRelVel.y).toFixed(3)
+		+ ' vCirc=' + vCirc.toFixed(3)
+		+ ' result=' + core.result);
+
+	return true;
 }
 
 /**
@@ -723,6 +852,12 @@ export interface Game {
 	 * 旧实现只在拖动回调里更新，静止态永远停在初始值 0）。
 	 */
 	burnNow: () => number;
+	/** 飞行中实时制动窗口是否开启（L4 伽利略号等轨道器关卡）。 */
+	isBrakeWindowActive: () => boolean;
+	/** 触发飞行中实时逆喷制动。 */
+	applyInFlightBrake: () => boolean;
+	/** 是否已经执行过实时制动。 */
+	hasBraked: () => boolean;
 	/** 每帧调用一次。 */
 	update: (dt: number) => void;
 }
@@ -1481,7 +1616,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			print('[escape-velocity] playback speed -> ' + speed.toFixed(0) + 'x (phase=' + core.phase + ')');
 		},
 		playbackSpeed: (): number => core.playback,
-	burnNow: (): number => Math.sqrt(core.aim.velocity.x * core.aim.velocity.x + core.aim.velocity.y * core.aim.velocity.y),
+		burnNow: (): number => Math.sqrt(core.aim.velocity.x * core.aim.velocity.x + core.aim.velocity.y * core.aim.velocity.y),
+		isBrakeWindowActive: (): boolean => isBrakeWindowActive(core, level),
+		applyInFlightBrake: (): boolean => applyInFlightBrake(core, level),
+		hasBraked: (): boolean => core.hasBraked,
 		// 包一层箭头函数：简写属性会触发 TS100016（见 Hud.ts 同名注释）
 		update: (frameDt: number): void => update(frameDt),
 	};

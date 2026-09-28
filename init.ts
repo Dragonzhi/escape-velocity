@@ -57,6 +57,10 @@ interface LevelRuntime {
 }
 
 let debugTriggerResultFn: ((levelIndex: number, outcome?: ResultKind) => void) | undefined = undefined;
+let debugTriggerBrakeWindowFn: ((levelIndex: number) => void) | undefined = undefined;
+let debugTriggerBrakePressFn: (() => void) | undefined = undefined;
+let debugForceBrakeWindow = false;
+let debugForceBraked = false;
 let activeResultPanel: ResultPanel | undefined = undefined;
 
 /** 关卡槽位：`built` 与 `runtime` 分开，避免出现带空洞的数组（手册 §7.2）。 */
@@ -409,6 +413,11 @@ if (levelTotal <= 0) {
 			print('[escape-velocity] playback speed -> ' + speed.toFixed(0) + 'x (L' + (index + 1).toFixed(0) + ')');
 		});
 		aim.setPlayback(game.playbackSpeed());
+		// 飞行实时逆喷制动（L4 伽利略号等轨道器关卡）：玩家按下逆喷按钮
+		aim.onLiveBrake((): void => {
+			print('[escape-velocity] tap: live brake (L' + (index + 1).toFixed(0) + ')');
+			game.applyInFlightBrake();
+		});
 
 			const runtime: LevelRuntime = {
 			index,
@@ -825,6 +834,11 @@ if (levelTotal <= 0) {
 			// 倍速兜底按钮（S3.17）：只在飞行态出现（隐藏 + 断触摸），高亮跟着 core.playback 走
 			runtime.aim.setPlaybackVisible(phaseNow === 'Flying');
 			runtime.aim.setPlayback(runtime.game.playbackSpeed());
+			// 实时逆喷制动按钮（L4 伽利略号等轨道器关卡）：只在飞行态且进入捕获窗口时出现
+			const brakeActive = (phaseNow === 'Flying' && runtime.game.isBrakeWindowActive()) || debugForceBrakeWindow;
+			const isBraked = runtime.game.hasBraked() || debugForceBraked;
+			runtime.aim.setLiveBrakeVisible(brakeActive);
+			runtime.aim.setLiveBraked(isBraked);
 			// 开发钩子的自动发射（见上方 enter-request 说明）
 			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0 || autoArmAt >= 0) {
 				autoFrame += 1;
@@ -898,6 +912,31 @@ if (levelTotal <= 0) {
 			totalPossibleRockets: 18,
 		});
 	};
+
+	debugTriggerBrakeWindowFn = (levelIndex: number): void => {
+		if (solarHub !== undefined) solarHub.hide();
+		if (opening !== undefined) opening.hide();
+		enterLevel(levelIndex);
+		const rt = activeRuntime();
+		if (rt !== undefined) {
+			rt.game.launch({ x: 2, y: -20 });
+			debugForceBrakeWindow = true;
+			debugForceBraked = false;
+			rt.aim.setLiveBrakeVisible(true);
+			rt.aim.setLiveBraked(false);
+			if (rt.game.viewMode() !== '3D') rt.game.toggleViewMode();
+		}
+	};
+
+	debugTriggerBrakePressFn = (): void => {
+		debugForceBrakeWindow = true;
+		debugForceBraked = true;
+		const rt = activeRuntime();
+		if (rt !== undefined) {
+			rt.aim.setLiveBrakeVisible(true);
+			rt.aim.setLiveBraked(true);
+		}
+	};
 }
 
 /** 获取当前处于激活状态的结算面板（调试/截图用）。 */
@@ -909,5 +948,19 @@ export function getActiveResultPanel(): ResultPanel | undefined {
 export function triggerDebugResult(levelIndex: number, outcome: ResultKind = 'success'): void {
 	if (debugTriggerResultFn !== undefined) {
 		debugTriggerResultFn(levelIndex, outcome);
+	}
+}
+
+/** 触发进入制动窗口演示（调试/自动化截图用）。 */
+export function triggerDebugBrakeWindow(levelIndex: number = 3): void {
+	if (debugTriggerBrakeWindowFn !== undefined) {
+		debugTriggerBrakeWindowFn(levelIndex);
+	}
+}
+
+/** 触发按下逆喷制动按钮演示（调试/自动化截图用）。 */
+export function triggerDebugBrakePress(): void {
+	if (debugTriggerBrakePressFn !== undefined) {
+		debugTriggerBrakePressFn();
 	}
 }
