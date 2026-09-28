@@ -53,7 +53,7 @@ local function testStationMappings() -- 33
 	local count = levelCount() -- 34
 	check("mission-count-match", #LEVEL_TO_STATION_INDEX == count, "映射关卡数量与 levelCount 不一致") -- 35
 	check("l2-mariner10-targets-mercury", LEVEL_TO_STATION_INDEX[2] == 0, "水手10号必须锚定在水星 (Station 0)") -- 38
-	check("l3-parker-targets-sun", LEVEL_TO_STATION_INDEX[3] == -1, "帕克号必须锚定在太阳日冕层 (Station -1)") -- 40
+	check("l3-voyager2-targets-neptune", LEVEL_TO_STATION_INDEX[3] == 7, "旅行者2号必须锚定在海王星 (Station 7)") -- 40
 	do -- 40
 		local i = 0 -- 42
 		while i < count do -- 42

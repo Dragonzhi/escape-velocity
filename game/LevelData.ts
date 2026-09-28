@@ -121,6 +121,28 @@ export interface RocketChallengeDef {
 	targetPlanetIndex?: number;
 }
 
+/** 入场 3D 倒叙长镜头运镜单幕定义（S8.1）。 */
+export interface IntroTourSegment {
+	/** 该段时长（秒） */
+	duration: number;
+	/** 关注的目标天体索引（-1 或省略表示探测器） */
+	targetPlanetIndex?: number;
+	/** 相机水平方位角（度） */
+	azDeg?: number;
+	/** 相机俯仰角（度） */
+	tiltDeg?: number;
+	/** 相机距离（世界单位；未填则根据天体/探测器视觉半径自适应） */
+	camDist?: number;
+	/** 运镜期间展示的仪式感字幕 */
+	banner: string;
+}
+
+/** 入场 3D 倒叙长镜头运镜配置。 */
+export interface IntroTourDef {
+	totalDuration: number;
+	segments: IntroTourSegment[];
+}
+
 /** 任务元数据（S7：真实深空探测任务）。 */
 export interface MissionMeta {
 	/** 任务代号：'L1' ~ 'L6' */
@@ -135,6 +157,8 @@ export interface MissionMeta {
 	vehicle: 'flyby' | 'orbiter';
 	/** 三枚火箭挑战列表 [第1枚, 第2枚, 第3枚] */
 	challenges: [RocketChallengeDef, RocketChallengeDef, RocketChallengeDef];
+	/** 入场 3D 倒叙长镜头运镜（S8.1） */
+	introTour?: IntroTourDef;
 }
 
 /** 一关的完整定义。 */
@@ -161,6 +185,8 @@ export interface LevelDef {
 	probeVariant?: 'solar' | 'rtg';
 	planets: Body[];
 	visuals: PlanetVisualDef[];
+	/** 街机模式：沿途 3 颗金色星尘的平面位置。 */
+	stars?: P2[];
 	goal: GoalSpec;
 	/**
 	 * Δv 预算（S3.9.2b，用户要求）：满力对应的速度就是它 —— "力大砖飞要被挡住"。
@@ -500,8 +526,8 @@ const PH = {
 	 * （近心点 r_peri ≈ 0.0087，在金星希尔球 0.54 内部），获得反向重力拖拽削减日心能量，近日点跌落
 	 * 至水星公转轨道（30.97），并在 t ≈ 7.12s 与水星相切交会（交会最小距离 0.48 < 容差 6.0）。
 	 */
-	mercury: 2.2,
-	venus: 37.6,
+	mercury: 2.18,
+	venus: 37.587,
 	// node tools/level-phases.mjs 3 --dirs 180 --dvs 21  → 186.1°
 	// node tools/level-phases.mjs 4 --dirs 240 --dvs 31 --tmax 200 → 184.4°
 	// node tools/level-phases.mjs 5 --dirs 240 --dvs 31 --tmax 450 → 175.6°
@@ -535,80 +561,77 @@ const PH = {
 };
 
 /**
- * L1：地月系。
+ * 街机第 1 关：地月弯道 (Moon Curve)。
  *
- * - 地球是**真天体**：真 gm、真半径，自己在绕日公转（这是"物理统一"的试纸）；
- * - 月球绕地球，周期由开普勒第三定律算出 = 1.2593 秒（真实值）；
- * - 探测器在**真实的阿波罗停泊轨**上：200 km 高度（地心 6,571 km = **3.514e-3 单位**），
- *   停泊周期 **88.4 分钟**、圆轨速度 7.788 km/s；初始速度 = 地球的公转速度 + 绕地圆轨速度（顺行）；
- * - 点火目标：TLI —— 抬到月球轨道 0.2056，需要 **3.133 km/s（≈ 阿波罗实测 3.05–3.15）**，
- *   转移到月球 **4.978 天**（一圈 : 转移 = 1 : 81，这一关的时间跨度就是它）。
- *
- * 数值出处与实测见 [`docs/L1重构设计案.md`](../docs/L1重构设计案.md) 第二节。
+ * 核心玩法：引力转弯教学，正前方碎石墙阻挡直射，利用地球引力弯折变向绕过陨石，吃 3 颗星尘进入月球靶心！
  */
 function level1(): LevelDef {
-	const earthOrbit = EarthOrbitRadius;
 	const earth: Body = {
-		gm: EarthGm,
-		radius: EarthRadius,
-		orbitCenter: { x: 0, y: 0 },
-		orbitRadius: earthOrbit,
-		orbitPeriod: period(earthOrbit, SunGm),
-		phase0: deg(90),
+		gm: 460000,
+		radius: 42,
+		orbitCenter: { x: 35, y: -15 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
 		orbitDirection: 1,
+		name: '地球',
 	};
-	const moon = satellite('moon', earth, MoonOrbitRadius, PH.moon);
-	// 停泊轨 = **真实阿波罗剖面**：200 km 高度 ⇒ 地心 6,571 km = 3.514e-3 单位。
-	// 半径由 Scale 的真半径 + 高度推出（**不手填**，与"Body.radius 只能由 Scale 算"同一条纪律）。
-	const parking = (REAL.earth.radiusKm + 200) / KmPerUnit;
-	// 地球在 90°：位置 (0, R)、速度 (-30, 0)。探测器在地球**外侧** parking（径向 +y），
-	// 顺行绕地的切向就是 -x ⇒ 相对速度 (-v_c, 0)。
-	const earthPos = bodyPositionAt(earth, 0);
-	const earthVel = bodyVelocityAt(earth, 0);
-	const vCirc = circularSpeed(EarthGm, parking);
+	const asteroid: Body = {
+		gm: 0,
+		radius: 32,
+		orbitCenter: { x: -40, y: 5 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		isObstacle: true,
+		name: '陨石障碍',
+	};
+	const moon: Body = {
+		gm: 40000,
+		radius: 28,
+		orbitCenter: { x: 140, y: 320 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		name: '月球',
+	};
+
 	return {
 		id: 1,
-		title: '月球',
+		title: '第 1 关 · 地月弯道',
 		probeVariant: 'solar',
-		brief: '月球任务 · 近地停泊轨 200 km：你正在绕地球飞，月球在 38 万 km 外。点火把它推向月球 —— 这一程要飞 5 天，别对着月球现在的位置点火。',
-		probeStart: { x: earthPos.x, y: earthPos.y + parking },
-		probeVel0: { x: earthVel.x - vCirc, y: earthVel.y },
-		planets: [sun(), earth, moon],
-		// ⚠️ 第三参 0 = 用地月系专用视觉半径表（地球 0.06 / 月球 0.02 / 太阳 0.8）。
-		//    别关传 undefined 用日心系表 —— L1 的世界只有 0.6 单位宽，
-		//    日心系的 0.025 在这里只占 4%，3D 里就是看不见（用户实测）。
-		visuals: [
-			sunVisual(0),
-			planetVisual('earth', earth, 0.42, 0.62, 0.85, 'Planet_Earth', false, 0),
-			planetVisual('moon', moon, 0.56, 0.56, 0.60, 'Moon', false, 0),
+		brief: '【街机引力转弯教学】直射路线被太空碎石墙阻挡！后拉弹弓瞄准，利用地球引力弯折变向，绕过陨石并收集 3 颗金色星尘，滑入月球靶心！',
+		probeStart: { x: -140, y: -340 },
+		probeVel0: { x: 0, y: 0 },
+		stars: [
+			{ x: -70, y: -220 }, // 基础星：出射线路上
+			{ x: 130, y: 15 },   // 技巧星：引力转弯外侧弧顶
+			{ x: 160, y: 220 },  // 大师星：月球靶心前门
 		],
-		// 到达容差 0.02 = 月球物理半径的 21 倍，也是 2D 到达圈的半径（唯一判据）。
-		goal: { kind: 'planet', planetIndex: 2, tolerance: 0.02 },
-		// Δv 预算 4.6 单位（≈ 4.57 km/s）：TLI 需要 3.1556，实测可行解落在 3.56–4.6 之间（B0 扫掠）。
-		dvBudget: 4.6,
-		// ⚠️ escapeRadius 量的是**到太阳（原点）的距离**，不是"离地球多远"。
-		// 探测器出发时就在 (0, 80.1) ⇒ 写 3 会让它**第一帧就判"已逃逸"**
-		// （2026-09-27 实测：0/2880 条弧线可行，全是 outcome=escaped @t=0.001）。
-		escapeRadius: 400,
-		// 0.1126 游戏秒（= 8000 步 @1.406967e-5，见 Tuning）= 2.46 天。
-		// ⚠️ 注意：**可行解不是霍曼转移**（3.1556 要 4.978 天），而是 3.56–4.6 的**快转移 ≈ 0.9 天**
-		//    —— B0 扫掠实测命中都在 0.85–0.94 天（第 694~767 个采样点）。8000 步 = 2.46 天留了 2.6 倍余量。
-		maxSteps: 8000,
-		planCenter: 1, // 以地球为中心（见 LevelDef.planCenter 的说明）
+		planets: [earth, asteroid, moon],
+		visuals: [
+			{ r: 0.42, g: 0.62, b: 0.85, displayRadius: 42, ring: false, model: 'Planet_Earth' },
+			{ r: 0.70, g: 0.60, b: 0.50, displayRadius: 32, ring: false, model: 'Asteroid_Rock' },
+			{ r: 0.80, g: 0.80, b: 0.85, displayRadius: 28, ring: false, model: 'Moon' },
+		],
+		goal: { kind: 'planet', planetIndex: 2, tolerance: 65 },
+		dvBudget: 450,
+		escapeRadius: 1200,
+		maxSteps: 1000,
 		mission: {
 			id: 'L1',
-			codeName: 'Moon',
-			historicalRef: '阿波罗 / 嫦娥探月',
-			subtitle: '启蒙',
+			codeName: 'MoonCurve',
+			historicalRef: '街机引力弹弓',
+			subtitle: '地月弯道',
 			vehicle: 'flyby',
 			challenges: [
-				{ desc: '成功抵达月球轨道或飞掠月球', type: 'success' },
-				{ desc: '发射点火消耗 Δv ≤ 3.68（预算的 80%）', type: 'fuel', threshold: 0.8 },
-				{ desc: '近月点距离 r_peri ≤ 0.003（≈ 5,600 km）', type: 'distance', threshold: 0.003 },
+				{ desc: '成功穿过月球靶心星门', type: 'success' },
+				{ desc: '收集至少 2 颗金色星尘', type: 'fuel', threshold: 0.8 },
+				{ desc: '完美收集全部 3 颗金色星尘', type: 'speed', threshold: 300 },
 			],
 		},
-		// ⚠️ L1 **没有时间轴**：日期一变地球就转走，而 probeStart 是个固定点 ⇒
-		//    探测器会离开地球。月球自己的相位就是这一关的"时机"。
 	};
 }
 
@@ -620,231 +643,168 @@ function departure(): { pos: P2; vel: P2 } {
 	};
 }
 
-/** L2 水手10号：地球 ➔ 金星 ➔ 水星（人类首次行星引力借力）。 */
+/**
+ * 街机第 2 关：金星逆向漂移 (Venus Drift)。
+ *
+ * 核心玩法：逆向引力减速，上方发射，下方水星靶心。中间陨石墙阻挡，必须迎头切入金星引力井反向减速并大角度转弯，平稳滑入水星靶心！
+ */
 function level2(): LevelDef {
-	const venus = orbiter('venus', PH.venus);
-	const mercury = orbiter('mercury', PH.mercury);
-	const d = departure();
+	const venus: Body = {
+		gm: 520000,
+		radius: 40,
+		orbitCenter: { x: -40, y: 40 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		name: '金星',
+	};
+	const asteroid: Body = {
+		gm: 0,
+		radius: 35,
+		orbitCenter: { x: -30, y: -100 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		isObstacle: true,
+		name: '陨石障碍',
+	};
+	const mercury: Body = {
+		gm: 30000,
+		radius: 26,
+		orbitCenter: { x: -160, y: -280 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		name: '水星',
+	};
+
 	return {
 		id: 2,
-		title: '水手10号',
+		title: '第 2 关 · 金星逆向漂移',
 		probeVariant: 'solar',
-		brief: '水手10号 · 1 AU 出发：人类首次行星引力辅助。向内俯冲，利用金星前向借力大幅削减轨道动能，深潜入水星轨道！',
-		probeStart: d.pos,
-		probeVel0: d.vel,
-		planets: [sun(), venus, mercury],
-		visuals: [
-			sunVisual(),
-			planetVisual('venus', venus, 0.90, 0.78, 0.55, 'Planet_Venus', false),
-			planetVisual('mercury', mercury, 0.65, 0.65, 0.65, 'Planet_Mercury', false),
+		brief: '【逆向引力减速】上方发射，下方水星靶心。碎石带封锁直落通道！向金星右侧迎面切入逆向引力井，借力减速并完成大角度转弯，进入水星狭窄靶心！',
+		probeStart: { x: 30, y: 380 },
+		probeVel0: { x: 0, y: 0 },
+		stars: [
+			{ x: 10, y: 200 },    // 基础星：出射
+			{ x: -20, y: 30 },    // 技巧星：切入金星引力井
+			{ x: -120, y: -160 }, // 大师星：降速拐角处
 		],
-		goal: {
-			kind: 'planet',
-			planetIndex: 2,
-			tolerance: 6,
-			chain: [
-				{ planetIndex: 1, tolerance: 0.40, label: '金星' },
-				{ planetIndex: 2, tolerance: 6, label: '水星' },
-			],
-		},
-		dvBudget: 3.50,
-		escapeRadius: 3600,
-		maxSteps: 4000,
-		timeWindow: { span: 27 }, // ≥ 金星会合周期 26.8 秒
+		planets: [venus, asteroid, mercury],
+		visuals: [
+			{ r: 0.90, g: 0.78, b: 0.55, displayRadius: 40, ring: false, model: 'Planet_Venus' },
+			{ r: 0.70, g: 0.60, b: 0.50, displayRadius: 35, ring: false, model: 'Asteroid_Rock' },
+			{ r: 0.65, g: 0.65, b: 0.65, displayRadius: 26, ring: false, model: 'Planet_Mercury' },
+		],
+		goal: { kind: 'planet', planetIndex: 2, tolerance: 65 },
+		dvBudget: 450,
+		escapeRadius: 1200,
+		maxSteps: 1000,
 		mission: {
 			id: 'L2',
-			codeName: 'Mariner 10',
-			historicalRef: '水手10号 (1973)',
-			subtitle: '潜行',
+			codeName: 'VenusDrift',
+			historicalRef: '街机引力弹弓',
+			subtitle: '逆向减速',
 			vehicle: 'flyby',
 			challenges: [
-				{ desc: '借力金星并成功抵达水星', type: 'success' },
-				{ desc: '初始点火消耗 Δv ≤ 2.65', type: 'fuel', threshold: 0.75 },
-				{ desc: '金星近心点距离 r_peri ≤ 0.35', type: 'distance', threshold: 0.35, targetPlanetIndex: 1 },
+				{ desc: '成功穿过水星靶心星门', type: 'success' },
+				{ desc: '收集至少 2 颗金色星尘', type: 'fuel', threshold: 0.8 },
+				{ desc: '完美收集全部 3 颗金色星尘', type: 'speed', threshold: 300 },
 			],
 		},
 	};
 }
 
-/** L3 帕克号：地球 ➔ 金星 ➔ 太阳日冕区（触碰太阳极热地狱）。 */
+/**
+ * 街机第 3 关：双星大甩尾 (Grand Slingshot)。
+ *
+ * 核心玩法：木星 90° 强力大甩尾变向将探测器抛向土星，土星二次加速飞越深空障碍墙，连续借力冲入海王星靶心星门！
+ */
 function level3(): LevelDef {
-	const venus = orbiter('venus', PH.venus);
-	const d = departure();
+	const jupiter: Body = {
+		gm: 550000,
+		radius: 46,
+		orbitCenter: { x: -90, y: -60 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		name: '木星',
+	};
+	const saturn: Body = {
+		gm: 480000,
+		radius: 42,
+		orbitCenter: { x: 70, y: 80 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		name: '土星',
+	};
+	const asteroid: Body = {
+		gm: 0,
+		radius: 35,
+		orbitCenter: { x: 40, y: -40 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		isObstacle: true,
+		name: '陨石障碍',
+	};
+	const neptune: Body = {
+		gm: 35000,
+		radius: 30,
+		orbitCenter: { x: 200, y: 320 },
+		orbitRadius: 0,
+		orbitPeriod: 0,
+		phase0: 0,
+		orbitDirection: 1,
+		name: '海王星',
+	};
+
 	return {
 		id: 3,
-		title: '帕克号',
-		probeVariant: 'solar',
-		brief: '帕克号 · 1 AU 出发：人类制造的最狂暴“触日者”。利用金星大幅削减日心角动量，近距离俯冲入太阳日冕危险带且未撞毁！',
-		probeStart: d.pos,
-		probeVel0: d.vel,
-		planets: [sun(), venus],
-		visuals: [
-			sunVisual(),
-			planetVisual('venus', venus, 0.90, 0.78, 0.55, 'Planet_Venus', false),
+		title: '第 3 关 · 双星大甩尾',
+		probeVariant: 'rtg',
+		brief: '【双星极限接力弹弓】木星 90° 强力甩尾变向将探测器抛向土星，土星二次加速飞越深空障碍墙，呼啸冲入海王星靶心星门！',
+		probeStart: { x: -220, y: -320 },
+		probeVel0: { x: 0, y: 0 },
+		stars: [
+			{ x: -130, y: -250 }, // 基础星：奔向木星
+			{ x: 130, y: 15 },    // 技巧星：木星抛射交棒区
+			{ x: 230, y: 230 },   // 大师星：冲向海王星
 		],
-		goal: {
-			kind: 'planet',
-			planetIndex: 0, // 太阳
-			tolerance: 15,  // 日冕危险带半径 R_corona = 15
-		},
-		dvBudget: 6.0,
-		escapeRadius: 3600,
-		maxSteps: 6000,
-		timeWindow: { span: 27 },
+		planets: [jupiter, saturn, asteroid, neptune],
+		visuals: [
+			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 46, ring: false, model: 'Planet_Jupiter' },
+			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 42, ring: true, model: 'Planet_Saturn' },
+			{ r: 0.70, g: 0.60, b: 0.50, displayRadius: 35, ring: false, model: 'Asteroid_Rock' },
+			{ r: 0.34, g: 0.50, b: 0.86, displayRadius: 30, ring: false, model: 'Planet_Neptune' },
+		],
+		goal: { kind: 'planet', planetIndex: 3, tolerance: 70 },
+		dvBudget: 480,
+		escapeRadius: 1200,
+		maxSteps: 1000,
 		mission: {
 			id: 'L3',
-			codeName: 'Parker',
-			historicalRef: '帕克太阳探测器 (2018)',
-			subtitle: '烈日',
+			codeName: 'GrandSlingshot',
+			historicalRef: '街机引力弹弓',
+			subtitle: '双星连环甩尾',
 			vehicle: 'flyby',
 			challenges: [
-				{ desc: '近日点深入太阳日冕观测带 (r_peri ≤ 15) 且未撞毁', type: 'success' },
-				{ desc: '初始点火消耗 Δv ≤ 80% 预算', type: 'fuel', threshold: 0.8 },
-				{ desc: '近日点最高日心速度突破 vmax ≥ 60 单位', type: 'speed', threshold: 60.0 },
+				{ desc: '成功穿过海王星靶心星门', type: 'success' },
+				{ desc: '收集至少 2 颗金色星尘', type: 'fuel', threshold: 0.8 },
+				{ desc: '完美收集全部 3 颗金色星尘', type: 'speed', threshold: 300 },
 			],
 		},
 	};
 }
 
-/** L4 伽利略号：地球 ➔ 木星泊入（轨道器模式正式登场）。 */
-function level4(): LevelDef {
-	const jupiter = orbiter('jupiter', PH.jupiter4);
-	const d = departure();
-	return {
-		id: 4,
-		title: '伽利略号',
-		probeVariant: 'rtg',
-		brief: '伽利略号 · 1 AU 出发：人类第一艘长期驻留环绕木星的轨道器。抵达木星巨型引力井，在慢动作特写中捕捉制动窗口，按下 [ BRAKE ] 优雅泊入闭合环绕轨！',
-		probeStart: d.pos,
-		probeVel0: d.vel,
-		planets: [sun(), jupiter],
-		visuals: [
-			sunVisual(),
-			planetVisual('jupiter', jupiter, 0.85, 0.72, 0.50, 'Planet_Jupiter', false),
-		],
-		goal: {
-			kind: 'planet',
-			planetIndex: 1, // 木星
-			tolerance: 40,
-			chain: [
-				{ planetIndex: 1, tolerance: 40, label: '木星', capture: true },
-			],
-		},
-		dvBudget: 14.0,
-		escapeRadius: 3600,
-		maxSteps: 25000,
-		timeWindow: { span: 18 },
-		mission: {
-			id: 'L4',
-			codeName: 'Galileo',
-			historicalRef: '伽利略号 (1989)',
-			subtitle: '泊入',
-			vehicle: 'orbiter',
-			challenges: [
-				{ desc: '在制动窗口内成功按下刹车闭合入轨', type: 'success' },
-				{ desc: '地面发射点火 Δv ≤ 70% 预算', type: 'fuel', threshold: 0.7 },
-				{ desc: '入轨偏心率 e ≤ 0.25', type: 'eccentricity', threshold: 0.25 },
-			],
-		},
-	};
-}
-
-/** L5 新视野号：地球 ➔ 木星狂暴加速 ➔ 柯伊伯带深空。 */
-function level5(): LevelDef {
-	const jupiter = orbiter('jupiter', PH.jupiter5);
-	const d = departure();
-	return {
-		id: 5,
-		title: '新视野号',
-		probeVariant: 'rtg',
-		brief: '新视野号 · 1 AU 出发：人类有史以来最狂暴的深空信使。寻找木星后向加速最佳切角，利用太阳系最强引力弹弓把探测器甩向柯伊伯带深空外边界！',
-		probeStart: d.pos,
-		probeVel0: d.vel,
-		planets: [sun(), jupiter],
-		visuals: [
-			sunVisual(),
-			planetVisual('jupiter', jupiter, 0.85, 0.72, 0.50, 'Planet_Jupiter', false),
-		],
-		goal: {
-			kind: 'escape',
-			planetIndex: 1,
-			tolerance: 40,
-			chain: [
-				{ planetIndex: 1, tolerance: 40, label: '木星' },
-			],
-		},
-		dvBudget: 15.0,
-		escapeRadius: 3600,
-		maxSteps: 35000,
-		timeWindow: { span: 17.5 },
-		mission: {
-			id: 'L5',
-			codeName: 'New Horizons',
-			historicalRef: '新视野号 (2006)',
-			subtitle: '狂飙',
-			vehicle: 'flyby',
-			challenges: [
-				{ desc: '借力木星获得逃逸能量抵达外边界', type: 'success' },
-				{ desc: '地面发射初速消耗 Δv ≤ 75% 预算', type: 'fuel', threshold: 0.75 },
-				{ desc: '速度增幅 ≥ 15 且逃逸末速度 vend ≥ 40', type: 'speed', threshold: 40.0 },
-			],
-		},
-	};
-}
-
-/** L6 旅行者2号：地球 ➔ 木星 ➔ 土星 ➔ 天王星 ➔ 海王星 ➔ 星际空间。 */
-function level6(): LevelDef {
-	const jupiter = orbiter('jupiter', PH.jupiter6);
-	const saturn = orbiter('saturn', PH.saturn6);
-	const uranus = orbiter('uranus', PH.uranus6);
-	const neptune = orbiter('neptune', PH.neptune6);
-	const d = departure();
-	return {
-		id: 6,
-		title: '旅行者2号',
-		probeVariant: 'rtg',
-		brief: '旅行者2号 · 1 AU 出发：175 年一遇的行星连珠奇迹！对准发射窗口，连续四星接力借力飞出海王星轨道，冲入星际空间，触发暗淡蓝点终章！',
-		probeStart: d.pos,
-		probeVel0: d.vel,
-		planets: [sun(), jupiter, saturn, uranus, neptune],
-		visuals: [
-			sunVisual(),
-			planetVisual('jupiter', jupiter, 0.85, 0.72, 0.50, 'Planet_Jupiter', false),
-			planetVisual('saturn', saturn, 0.75, 0.70, 0.60, 'Planet_Saturn', true),
-			planetVisual('uranus', uranus, 0.62, 0.82, 0.86, 'Planet_Uranus', false),
-			planetVisual('neptune', neptune, 0.34, 0.50, 0.86, 'Planet_Neptune', false),
-		],
-		goal: {
-			kind: 'planet',
-			planetIndex: 4,
-			tolerance: 120,
-			chain: [
-				{ planetIndex: 1, tolerance: 40, label: '木星' },
-				{ planetIndex: 2, tolerance: 60, label: '土星' },
-				{ planetIndex: 3, tolerance: 90, label: '天王星' },
-				{ planetIndex: 4, tolerance: 120, label: '海王星' },
-			],
-		},
-		dvBudget: 16.0,
-		escapeRadius: 3600,
-		maxSteps: 70000,
-		timeWindow: { span: 17.5 },
-		mission: {
-			id: 'L6',
-			codeName: 'Voyager 2',
-			historicalRef: '旅行者2号 (1977)',
-			subtitle: '奇迹',
-			vehicle: 'flyby',
-			challenges: [
-				{ desc: '成功四星连续借力并飞出海王星轨道', type: 'success' },
-				{ desc: '初始发射点火 Δv ≤ 80% 预算', type: 'fuel', threshold: 0.8 },
-				{ desc: '四星交会无碰撞且近心点精度 ≤ 5%', type: 'distance', threshold: 0.05 },
-			],
-		},
-	};
-}
-
-const LEVELS: LevelDef[] = [level1(), level2(), level3(), level4(), level5(), level6()];
+const LEVELS: LevelDef[] = [level1(), level2(), level3()];
 
 /** 关卡总数。 */
 export function levelCount(): number {
@@ -873,6 +833,8 @@ function applyScalesLocal(bodies: Body[], gravityScale: number, orbitScale: numb
 			orbitPeriod: b.orbitPeriod === 0 || orbitScale <= 0 ? b.orbitPeriod : b.orbitPeriod / orbitScale,
 			phase0: b.phase0,
 			orbitDirection: b.orbitDirection,
+			isObstacle: b.isObstacle,
+			name: b.name,
 			// ⚠️ 宿主也要一起缩放（否则卫星绕着一颗"没被缩放"的行星转 —— 位置会错开）
 			host: b.host !== undefined ? applyScalesLocal([b.host], gravityScale, orbitScale)[0] : undefined,
 		});

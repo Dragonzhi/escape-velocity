@@ -45,31 +45,28 @@ ____exports.CameraLerp = 0.1 -- 85
 --- 发射速度下限（平面单位/秒）。极短拖动时的速度。
 -- 
 -- S3.7 关卡重构：世界尺度 ×2.5（见 PLAN S3.7）⇒ 速度同步 ×2.5，轨迹形状与飞行时间不变。
-____exports.AimMinSpeed = 5 -- 96
+____exports.AimMinSpeed = 50 -- 96
 --- 发射速度上限（平面单位/秒）。满力时的速度。
-____exports.AimMaxSpeed = 55 -- 99
+____exports.AimMaxSpeed = 260 -- 99
 --- 每关的 Δv 预算缺省值（没写 `LevelDef.dvBudget` 的关卡用它）。
--- 
--- 用户 2026-09-26 的要求："需要一个 delta-v 之类的东西限制玩家可以施加给飞行器的力度，
--- 避免力大砖飞、完全不顾及引力弹弓"。有效上限 = `min(AimMaxSpeed, dvBudget)`。
-____exports.DvBudgetDefault = 55 -- 107
+____exports.DvBudgetDefault = 260 -- 104
 --- 时间流速率（S3.9.4）：按住「加速 / 回退」时世界时钟走得多快（倍）。
 -- 40 倍下，L4 的 359 秒时间轴约 9 秒按住就能扫完 —— 玩家能看见行星在挪，又不至于等到手酸。
-____exports.TimeWarpRate = 40 -- 113
+____exports.TimeWarpRate = 40 -- 110
 --- 时间流**步长**（秒/次，S3.9.4）：按一次「加速 / 回退」世界时钟走多少。
 -- 15 秒下木星挪 5°（一眼看得出），连点十下就能走完整条时间轴（359 秒）。
-____exports.TimeWarpStep = 15 -- 119
+____exports.TimeWarpStep = 15 -- 116
 --- 时间流**连按的启动延迟**（秒，S3.11）：按下后先单独走一步（= 点按语义），
 -- 停这么久还没松手才开始连按。连按间隔 = `TimeWarpStep / TimeWarpRate`（15/40 ≈ 0.375 秒）。
 -- 
 -- 为什么要有它：L4/L6 的时间轴有 300 秒，只靠"点一下走 15 秒"要按 20 次；
 -- 而"按住即走"如果没有延迟，想只走一步的人手一抖就会走两步。
-____exports.WarpHoldDelaySec = 0.3 -- 128
+____exports.WarpHoldDelaySec = 0.3 -- 125
 --- 刹车模式下的 Δv 分配（S3.9.2）：拖动力度 = 总 Δv，其中这一份用于**点火**，
 -- 剩下的留给后半程反推 —— 于是"刹得越狠 ⇒ 冲得越慢"是算术（共享同一个预算）。
-____exports.BrakeShare = 0.75 -- 134
+____exports.BrakeShare = 0.75 -- 131
 --- 拖动多远算“满力”（**视图像素**）。
-____exports.AimMaxDragPx = 380 -- 141
+____exports.AimMaxDragPx = 380 -- 138
 --- 取景预算（S3.12）：把**锚点天体（太阳/地球）**也装进画面所需的最大相机距离。
 -- 
 -- 为什么要预算：用户要的是"玩家面对的其实是**轨道的一部分**，不是整个轨道"，
@@ -77,14 +74,14 @@ ____exports.AimMaxDragPx = 380 -- 141
 -- 先保证"探测器 + 下一站（含它那个到达圈）"装得下；锚点天体**装得下才装** ——
 -- 装不下就让它在画外（它的光晕还会从画面边缘扫进来，反而更像"远处一颗恒星"）。
 -- 实测：不设预算时太阳会把取景顶到贴脸（太阳半屏、探测器变成一个小点）。
-____exports.CameraFramingBudget = 240 -- 161
-____exports.SunLightIntensity = 8 -- 163
+____exports.CameraFramingBudget = 240 -- 158
+____exports.SunLightIntensity = 8 -- 160
 --- 点光源有效范围：要盖到海王星轨道（195）×2 还留余量。
-____exports.SunLightRange = 1600 -- 165
+____exports.SunLightRange = 1600 -- 162
 --- 光晕面片的缩放（× 恒星半径）：太小看不出"发光"，太大会糊住行星。
-____exports.SunGlowScale = 1.7 -- 167
+____exports.SunGlowScale = 1.7 -- 164
 --- 认定"这是一颗恒星"的 gm 下限：L2~L6 的太阳是 72000，L1 的地球只有 2600（L1 不设点光源）。
-____exports.SunMinGmForLight = 10000 -- 169
+____exports.SunMinGmForLight = 10000 -- 166
 --- 飞行回放的**手动倍速档**（模拟秒 / 真实秒，S3.17 起它是"兜底档"而不是常数）。
 -- 
 -- 1 = 实时；2 = 两倍速（默认）。玩家在飞行中可以用 HUD 的 1×/2×/4× 三颗按钮覆盖它
@@ -92,21 +89,21 @@ ____exports.SunMinGmForLight = 10000 -- 169
 -- **叠在**这个档位上（× SlowMoFactor），不替换它 —— 所以"当前播放速度"永远是
 --    手动档 × (慢动作中 ? SlowMoFactor : 1)
 -- 唯一写进 core.flightTime 的地方在 game/Game.ts 的 coreUpdate（不重算物理、不引入第二套时钟）。
-____exports.FlightPlayback = 2 -- 180
+____exports.FlightPlayback = 2 -- 177
 --- 慢动作播放系数：**相对当前手动倍速**的 1/4（不是 0.25× 实时、也不是 1.5×）。
 -- 
 -- 基准（写进注释，别再换算错）：默认手动档 2× ⇒ 慢动作期间 2 × 0.25 = 0.5× 实时；
 -- 玩家切到 4× 时慢动作是 1× 实时，切到 1× 时是 0.25× 实时。
-____exports.SlowMoFactor = 0.25 -- 197
+____exports.SlowMoFactor = 0.25 -- 194
 --- 慢动作触发阈值（世界单位）= `max(天体半径 × SlowMoRadiusFactor, SlowMoFloorDist)`。
 -- 
 -- 为什么是半径 × 系数：天体大小差别太大（月球 1.0 / 木星 4.63 / 太阳 28），
 -- 固定世界单位对木星太细（瞬间就过去）、对月球太粗（全程慢动作）。
 -- 系数 5 的实测含义：木星阈值 23.2（盖住它 17.6 的到达容差 ⇒ **抵达即慢动作**）、
 -- 月球阈值取地板 8（盖住 5 的容差）、金星 8.6、地球 8.8（L1 探测器轨道半径 10 ⇒ 起飞不误触）。
-____exports.SlowMoRadiusFactor = 5 -- 207
+____exports.SlowMoRadiusFactor = 5 -- 204
 --- 慢动作触发阈值的地板（世界单位）：小天体（月球）也要有足够长的慢动作窗口。
-____exports.SlowMoFloorDist = 8 -- 210
+____exports.SlowMoFloorDist = 8 -- 207
 --- 慢动作期间的取景下限（相机与被掠天体的距离地板，世界单位）。
 -- 
 -- 与进关镜头特写的 `IntroCloseDist` 同一量级（木星半径 × 6 ≈ 28）：低于它，
@@ -114,7 +111,7 @@ ____exports.SlowMoFloorDist = 8 -- 210
 -- （实测：不放开下限时相机只从 ~110 收到 60，木星在画面里只大 1.8 倍）。
 -- 取景仍然走 CameraRig 的逐点半径求解（step 的第 4 个参数只是换了下限，
 -- 不是另写一套取景）；装不下时求解器自己会往后退，相机不会穿进天体。
-____exports.SlowMoCloseDist = 26 -- 221
+____exports.SlowMoCloseDist = 26 -- 218
 --- 终章相机距**太阳**（世界原点）的距离（世界单位）。
 -- 
 -- 为什么是 1000：L6 的探测器终点在海王星轨道附近（195），越界半径 700。
@@ -126,8 +123,8 @@ ____exports.SlowMoCloseDist = 26 -- 221
 --   - 太阳（半径 28）角半径 ≈ 1.6 度 ≈ 38 px ⇒ 一个亮点 + 光晕；
 --   - 地球（半径 1.76，轨道 80）距相机约 920–1080 ⇒ 角半径 ≈ 0.10 度 ≈ 2.4 px
 --     ⇒ **直径约 5 px 的一个点**。就是要这么小，别放大。
-____exports.FinaleCamDist = 1000 -- 245
+____exports.FinaleCamDist = 1000 -- 242
 --- 终章相态的**取景倾角**（度）：复用日常取景的默认倾角，不另立一套。
 -- 完全俯视会让轨道圈叠成一条线；45° 下行星轨道还是椭圆，"太阳系还在转"看得出来。
-____exports.FinaleCamTiltDeg = ____exports.CameraTiltDefault -- 251
-return ____exports -- 251
+____exports.FinaleCamTiltDeg = ____exports.CameraTiltDefault -- 248
+return ____exports -- 248

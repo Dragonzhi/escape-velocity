@@ -764,32 +764,75 @@ local function testInFlightBrake() -- 477
 	coreRetry(core) -- 532
 	check("brake-retry-reset", not core.hasBraked and core.brakePointIndex == -1, "重试后制动标记应恢复初值") -- 533
 end -- 477
-function ____exports.runTests() -- 536
-	testResolveResult() -- 537
-	testTimeWarpGuard() -- 538
-	testDateHandoff() -- 539
-	testLaunch() -- 540
-	testArmed() -- 541
-	testPlayback() -- 542
-	testRetry() -- 543
-	testIndexClamp() -- 544
-	testDeterministicCycle() -- 545
-	testGoalTruncation() -- 546
-	testViewMode() -- 547
-	testSlowMotion() -- 548
-	testPlaybackSpeed() -- 549
-	testInFlightBrake() -- 550
-	local lines = {} -- 552
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 553
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 554
-	local limit = #failures < 12 and #failures or 12 -- 555
-	do -- 555
-		local i = 0 -- 556
-		while i < limit do -- 556
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 557
-			i = i + 1 -- 556
-		end -- 556
-	end -- 556
-	return table.concat(lines, "\n") -- 559
-end -- 536
-return ____exports -- 536
+--- 15) 街机星尘收集与重置（纯函数 / 状态机判定）。
+local function testArcadeStars() -- 537
+	local stars = {{x = 0, y = 10}, {x = 0, y = 5}, {x = 100, y = 100}} -- 538
+	local level = { -- 543
+		bodies = {{ -- 544
+			gm = 0, -- 544
+			radius = 1, -- 544
+			orbitCenter = {x = 0, y = 0}, -- 544
+			orbitRadius = 0, -- 544
+			orbitPeriod = 0, -- 544
+			phase0 = 0, -- 544
+			orbitDirection = 1 -- 544
+		}}, -- 544
+		probeStart = {x = 0, y = 15}, -- 545
+		goal = {kind = "planet", planetIndex = 0, tolerance = 2}, -- 546
+		escapeRadius = 200, -- 547
+		maxSteps = 1000, -- 548
+		stars = stars -- 549
+	} -- 549
+	local core = createCore(0.016, stars) -- 552
+	check("arcade-stars-initial-uncollected", #core.collectedStars == 3 and not core.collectedStars[1] and not core.collectedStars[2], "开局所有星尘未收集") -- 553
+	coreLaunch(core, {x = 0, y = -10}, level) -- 556
+	check("arcade-launch-flying", core.phase == "Flying", "进入飞行相态") -- 557
+	do -- 557
+		local i = 0 -- 560
+		while i < 40 do -- 560
+			coreUpdate(core, 0.016, level) -- 561
+			i = i + 1 -- 560
+		end -- 560
+	end -- 560
+	check("arcade-star-0-collected", core.collectedStars[1] == true, "第1颗星尘应被收集") -- 563
+	check("arcade-star-1-collected", core.collectedStars[2] == true, "第2颗星尘应被收集") -- 564
+	check("arcade-star-2-missed", core.collectedStars[3] == false, "第3颗远处的星不应被收集") -- 565
+	local telem = calcFlightTelemetry(core, level) -- 567
+	check( -- 568
+		"arcade-telemetry-stars", -- 568
+		telem.starsCollected == 2, -- 568
+		"遥测星数应为 2，实际为 " .. tostring(telem.starsCollected) -- 568
+	) -- 568
+	coreRetry(core) -- 571
+	check("arcade-retry-stars-reset", not core.collectedStars[1] and not core.collectedStars[2] and not core.collectedStars[3], "重试后星尘必须全重置") -- 572
+end -- 537
+function ____exports.runTests() -- 575
+	testResolveResult() -- 576
+	testTimeWarpGuard() -- 577
+	testDateHandoff() -- 578
+	testLaunch() -- 579
+	testArmed() -- 580
+	testPlayback() -- 581
+	testRetry() -- 582
+	testIndexClamp() -- 583
+	testDeterministicCycle() -- 584
+	testGoalTruncation() -- 585
+	testViewMode() -- 586
+	testSlowMotion() -- 587
+	testPlaybackSpeed() -- 588
+	testInFlightBrake() -- 589
+	testArcadeStars() -- 590
+	local lines = {} -- 592
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 593
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 594
+	local limit = #failures < 12 and #failures or 12 -- 595
+	do -- 595
+		local i = 0 -- 596
+		while i < limit do -- 596
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 597
+			i = i + 1 -- 596
+		end -- 596
+	end -- 596
+	return table.concat(lines, "\n") -- 599
+end -- 575
+return ____exports -- 575

@@ -36,8 +36,8 @@ function testStationMappings(): void {
 
 	// L2 (水手10号) 必须锚定在水星 (stIndex === 0)
 	check('l2-mariner10-targets-mercury', LEVEL_TO_STATION_INDEX[1] === 0, '水手10号必须锚定在水星 (Station 0)');
-	// L3 (帕克号) 必须锚定在太阳 (stIndex === -1)
-	check('l3-parker-targets-sun', LEVEL_TO_STATION_INDEX[2] === -1, '帕克号必须锚定在太阳日冕层 (Station -1)');
+	// L3 (旅行者2号) 必须锚定在海王星 (stIndex === 7)
+	check('l3-voyager2-targets-neptune', LEVEL_TO_STATION_INDEX[2] === 7, '旅行者2号必须锚定在海王星 (Station 7)');
 
 	for (let i = 0; i < count; i++) {
 		const stIndex = LEVEL_TO_STATION_INDEX[i];

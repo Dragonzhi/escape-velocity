@@ -186,88 +186,83 @@ local function testFitRadius() -- 111
 	if l1 == nil then -- 137
 		check("fit-real-l1", false, "getLevel(0) 返回 undefined") -- 139
 	else -- 139
-		local real1 = planFitRadius( -- 143
-			scaledPlanets(l1), -- 143
-			l1.probeStart, -- 143
-			l1.goal.planetIndex, -- 143
-			l1.goal.tolerance, -- 143
-			l1.planCenter -- 143
-		) -- 143
-		check( -- 145
-			"fit-real-l1-earth-centred", -- 145
-			real1 > 0.2 and real1 < 0.26, -- 145
-			("L1 fit=" .. __TS__NumberToFixed(real1, 4)) .. "（应 ≈ 0.2056 + 0.02 = 0.2256）" -- 145
-		) -- 145
-		check( -- 148
-			"fit-real-l1-excludes-sun", -- 148
-			real1 < 1, -- 148
-			("L1 fit=" .. __TS__NumberToFixed(real1, 4)) .. "（若含太阳会是 80+）" -- 148
-		) -- 148
-	end -- 148
-	local l6 = getLevel(5) -- 150
-	if l6 == nil then -- 150
-		check("fit-real-l6", false, "getLevel(5) 返回 undefined") -- 152
-	else -- 152
-		local real6 = planFitRadius( -- 155
-			scaledPlanets(l6), -- 155
-			l6.probeStart, -- 155
-			l6.goal.planetIndex, -- 155
-			120 -- 155
-		) -- 155
-		check( -- 156
-			"fit-real-l6", -- 156
-			real6 >= 2400 and real6 < 2600, -- 156
-			("L6 fit=" .. __TS__NumberToFixed(real6, 2)) .. "（应 ≈ 海王星 2405.6 + 120）" -- 156
-		) -- 156
-	end -- 156
+		local real1 = planFitRadius( -- 141
+			scaledPlanets(l1), -- 141
+			l1.probeStart, -- 141
+			l1.goal.planetIndex, -- 141
+			l1.goal.tolerance, -- 141
+			l1.planCenter -- 141
+		) -- 141
+		check( -- 142
+			"fit-real-l1-arcade-centred", -- 142
+			real1 >= 300 and real1 <= 500, -- 142
+			("L1 fit=" .. __TS__NumberToFixed(real1, 4)) .. "（街机同屏取景应在 300~500 像素范围）" -- 142
+		) -- 142
+	end -- 142
+	local l3 = getLevel(2) -- 145
+	if l3 == nil then -- 145
+		check("fit-real-l3", false, "getLevel(2) 返回 undefined") -- 147
+	else -- 147
+		local real3 = planFitRadius( -- 149
+			scaledPlanets(l3), -- 149
+			l3.probeStart, -- 149
+			l3.goal.planetIndex, -- 149
+			l3.goal.tolerance -- 149
+		) -- 149
+		check( -- 150
+			"fit-real-l3", -- 150
+			real3 >= 300 and real3 <= 500, -- 150
+			("L3 fit=" .. __TS__NumberToFixed(real3, 2)) .. "（街机同屏取景应在 300~500 像素范围）" -- 150
+		) -- 150
+	end -- 150
 end -- 111
 --- S5 §3.8 规则 3：2D 到达圈画的必须是**真实容差**，不是视觉半径。
-local function testArrivalRingIsRealTolerance() -- 161
-	local l1 = getLevel(0) -- 162
-	if l1 == nil then -- 162
-		check("ring-l1", false, "getLevel(0) undefined") -- 163
-		return -- 163
-	end -- 163
-	check( -- 164
-		"ring-l1-equals-tolerance", -- 164
-		math.abs(arrivalRingRadius(l1.goal) - l1.goal.tolerance) < 1e-12, -- 164
-		(("ring=" .. tostring(arrivalRingRadius(l1.goal))) .. " tol=") .. tostring(l1.goal.tolerance) -- 164
-	) -- 164
-	local ringBefore = arrivalRingRadius(l1.goal) -- 169
-	local savedRadius = l1.visuals[3].displayRadius -- 170
-	l1.visuals[3].displayRadius = savedRadius * 3 + 1 -- 171
-	local ringAfter = arrivalRingRadius(l1.goal) -- 172
-	l1.visuals[3].displayRadius = savedRadius -- 173
-	check( -- 174
-		"ring-l1-ignores-visual-radius", -- 174
-		ringBefore == ringAfter, -- 174
-		((((((("ring=" .. tostring(ringBefore)) .. " -> ") .. tostring(ringAfter)) .. "（视觉半径从 ") .. tostring(savedRadius)) .. " 改成 ") .. tostring(savedRadius * 3 + 1)) .. " 后到达圈必须不变）" -- 174
-	) -- 174
-	local l6 = getLevel(5) -- 177
-	if l6 ~= nil then -- 177
-		check( -- 179
-			"ring-l6-chain-max", -- 179
-			math.abs(arrivalRingRadius(l6.goal) - 120) < 1e-9, -- 179
-			("ring=" .. tostring(arrivalRingRadius(l6.goal))) .. "（链上最大容差）" -- 179
-		) -- 179
-	end -- 179
-end -- 161
-function ____exports.runTests() -- 184
-	testArrivalRingIsRealTolerance() -- 185
-	testMapping() -- 186
-	testPlaneToScreen() -- 187
-	testFitRadius() -- 188
-	local lines = {} -- 190
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 191
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 192
-	local limit = #failures < 12 and #failures or 12 -- 193
-	do -- 193
-		local i = 0 -- 194
-		while i < limit do -- 194
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 195
-			i = i + 1 -- 194
-		end -- 194
-	end -- 194
-	return table.concat(lines, "\n") -- 197
-end -- 184
-return ____exports -- 184
+local function testArrivalRingIsRealTolerance() -- 155
+	local l1 = getLevel(0) -- 156
+	if l1 == nil then -- 156
+		check("ring-l1", false, "getLevel(0) undefined") -- 157
+		return -- 157
+	end -- 157
+	check( -- 158
+		"ring-l1-equals-tolerance", -- 158
+		math.abs(arrivalRingRadius(l1.goal) - l1.goal.tolerance) < 1e-12, -- 158
+		(("ring=" .. tostring(arrivalRingRadius(l1.goal))) .. " tol=") .. tostring(l1.goal.tolerance) -- 158
+	) -- 158
+	local ringBefore = arrivalRingRadius(l1.goal) -- 163
+	local savedRadius = l1.visuals[3].displayRadius -- 164
+	l1.visuals[3].displayRadius = savedRadius * 3 + 1 -- 165
+	local ringAfter = arrivalRingRadius(l1.goal) -- 166
+	l1.visuals[3].displayRadius = savedRadius -- 167
+	check( -- 168
+		"ring-l1-ignores-visual-radius", -- 168
+		ringBefore == ringAfter, -- 168
+		((((((("ring=" .. tostring(ringBefore)) .. " -> ") .. tostring(ringAfter)) .. "（视觉半径从 ") .. tostring(savedRadius)) .. " 改成 ") .. tostring(savedRadius * 3 + 1)) .. " 后到达圈必须不变）" -- 168
+	) -- 168
+	local l6 = getLevel(5) -- 171
+	if l6 ~= nil then -- 171
+		check( -- 173
+			"ring-l6-chain-max", -- 173
+			math.abs(arrivalRingRadius(l6.goal) - 120) < 1e-9, -- 173
+			("ring=" .. tostring(arrivalRingRadius(l6.goal))) .. "（链上最大容差）" -- 173
+		) -- 173
+	end -- 173
+end -- 155
+function ____exports.runTests() -- 178
+	testArrivalRingIsRealTolerance() -- 179
+	testMapping() -- 180
+	testPlaneToScreen() -- 181
+	testFitRadius() -- 182
+	local lines = {} -- 184
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 185
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 186
+	local limit = #failures < 12 and #failures or 12 -- 187
+	do -- 187
+		local i = 0 -- 188
+		while i < limit do -- 188
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 189
+			i = i + 1 -- 188
+		end -- 188
+	end -- 188
+	return table.concat(lines, "\n") -- 191
+end -- 178
+return ____exports -- 178

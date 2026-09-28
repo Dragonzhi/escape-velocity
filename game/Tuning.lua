@@ -49,116 +49,124 @@ ____exports.PLAN_PIN_PX = {sun = 13, planet = 8, probe = 11} -- 108
 -- ⚠️ 键是**模型名**（`PlanetVisualDef.model`，Scene 里唯一拿得到的身份）；只影响观感、
 --    不参与任何判定。表里没有的天体不自转。
 ____exports.SPIN_GAME_SEC = {Planet_Earth = 0.000045747, Moon = 1.2593} -- 120
+--- 天体的**显示名**（2D 读数用，B 修复③，2026-09-28）。
+-- 
+-- 键是**模型名**（`PlanetVisualDef.model`）——与 SPIN_GAME_SEC 同一套身份，PlanView/Scene
+-- 拿不到中文名，只有模型名。用户要的 2D 观感是"像航天模拟器的地图"：**每个天体挂着名字与距离**，
+-- 于是"月球在哪、还有多远"不用靠猜。
+____exports.BODY_LABEL = { -- 132
+	Sun = "太阳", -- 133
+	Moon = "月球", -- 134
+	Planet_Earth = "地球", -- 135
+	Planet_Mercury = "水星", -- 136
+	Planet_Venus = "金星", -- 137
+	Planet_Mars = "火星", -- 138
+	Planet_Jupiter = "木星", -- 139
+	Planet_Saturn = "土星", -- 140
+	Planet_Uranus = "天王星", -- 141
+	Planet_Neptune = "海王星", -- 142
+	Asteroid_Rock = "太空陨石", -- 143
+	Target_Gate = "星门终点", -- 144
+	Star_Crystal = "星尘晶体" -- 145
+} -- 145
+--- 取显示名；表里没有的名字退回「天体」（不编造名字，也不留空）。
+function ____exports.bodyLabel(model) -- 149
+	if model ~= nil then -- 149
+		local v = ____exports.BODY_LABEL[model] -- 151
+		if v ~= nil then -- 151
+			return v -- 152
+		end -- 152
+	end -- 152
+	return "天体" -- 154
+end -- 149
+--- 引擎默认的近裁剪面（世界单位）。
+-- 
+-- 出处：引擎的 `Script/Dev/Entry.yue` 里写着 `View.nearPlaneDistance = 0.1`（`farPlaneDistance = 10000`）。
+-- ⚠️ 它**是全局的**（`View` 是应用级单例；`Camera3D` 的 d.ts 只有 position/target/up/lookAt，
+-- 没有 near/far），所以「近平面跟着世界尺度走」只能由代码在**切关/切相机时**写一遍
+-- （见 init.ts 的 `applyClipPlanes`）。
+____exports.CLIP_NEAR_DEFAULT = 0.1 -- 169
+--- 引擎默认的远裁剪面（世界单位）。星空天球在 600–1200 处，必须装得下。
+____exports.CLIP_FAR_DEFAULT = 10000 -- 172
 --- 六关的运行时参数表。
 -- 
 -- 播放倍速的推导（每关都要能"看得见"）：
 -- L1 转移飞行 0.40 游戏秒 ⇒ 0.05× 播放 = 8 真实秒；L6 飞行 513 秒 ⇒ 16× = 32 真实秒。
-____exports.LEVEL_RUNTIME = { -- 253
-	{ -- 254
-		physicsStep = 0.00001406967, -- 265
-		maxStepsPerFrame = 16, -- 265
-		sampleEvery = 4, -- 265
-		predictSteps = 8000, -- 265
-		playback = 0.25, -- 268
-		playbackSpeeds = {0.1, 0.25, 0.5}, -- 268
-		cameraMin = 0.002, -- 270
-		cameraMax = 1, -- 270
-		aimMin = 3, -- 270
-		introCloseDist = 0.004, -- 270
-		aimClockRate = 0, -- 272
-		slowMoFloor = 0.01, -- 272
-		probeVisualRadius = 0.00015, -- 272
-		aimFraming = "local", -- 274
-		tiltDeg = 22, -- 274
-		orbitFlowDots = false, -- 274
-		speedDefaultPow = 0, -- 275
-		speedMaxPow = 7, -- 275
-		flightSpeedPow = 4 -- 275
-	}, -- 275
-	{ -- 277
-		physicsStep = 1 / 240, -- 278
-		maxStepsPerFrame = 8, -- 278
-		sampleEvery = 1, -- 278
-		predictSteps = 2400, -- 278
-		playback = 2, -- 279
-		playbackSpeeds = {1, 2, 4}, -- 279
-		cameraMin = 20, -- 280
-		cameraMax = 200, -- 280
-		aimMin = 0.2, -- 280
-		introCloseDist = 26, -- 280
-		aimClockRate = 1, -- 280
-		slowMoFloor = 8, -- 280
-		probeVisualRadius = 2.2 -- 280
-	}, -- 280
-	{ -- 283
-		physicsStep = 1 / 240, -- 284
-		maxStepsPerFrame = 16, -- 284
-		sampleEvery = 4, -- 284
-		predictSteps = 2400, -- 284
-		playback = 4, -- 285
-		playbackSpeeds = {2, 4, 8}, -- 285
-		cameraMin = 60, -- 286
-		cameraMax = 900, -- 286
-		aimMin = 0.5, -- 286
-		introCloseDist = 60, -- 286
-		aimClockRate = 1, -- 286
-		slowMoFloor = 8, -- 286
-		probeVisualRadius = 2.2 -- 286
-	}, -- 286
-	{ -- 289
-		physicsStep = 1 / 240, -- 290
-		maxStepsPerFrame = 16, -- 290
-		sampleEvery = 8, -- 290
-		predictSteps = 2400, -- 290
-		playback = 8, -- 291
-		playbackSpeeds = {4, 8, 16}, -- 291
-		cameraMin = 100, -- 292
-		cameraMax = 1800, -- 292
-		aimMin = 0.5, -- 292
-		introCloseDist = 120, -- 292
-		aimClockRate = 1, -- 292
-		slowMoFloor = 8, -- 292
-		probeVisualRadius = 2.2 -- 292
-	}, -- 292
-	{ -- 295
-		physicsStep = 1 / 120, -- 296
-		maxStepsPerFrame = 32, -- 296
-		sampleEvery = 16, -- 296
-		predictSteps = 2400, -- 296
-		playback = 16, -- 297
-		playbackSpeeds = {8, 16, 32}, -- 297
-		cameraMin = 200, -- 298
-		cameraMax = 3600, -- 298
-		aimMin = 0.5, -- 298
-		introCloseDist = 240, -- 298
-		aimClockRate = 1, -- 298
-		slowMoFloor = 8, -- 298
-		probeVisualRadius = 2.2 -- 298
-	}, -- 298
-	{ -- 301
-		physicsStep = 1 / 120, -- 302
-		maxStepsPerFrame = 32, -- 302
-		sampleEvery = 16, -- 302
-		predictSteps = 2400, -- 302
-		playback = 16, -- 303
-		playbackSpeeds = {8, 16, 32}, -- 303
-		cameraMin = 300, -- 304
-		cameraMax = 5600, -- 304
-		aimMin = 0.5, -- 304
-		introCloseDist = 400, -- 304
-		aimClockRate = 1, -- 304
-		slowMoFloor = 8, -- 304
-		probeVisualRadius = 2.2, -- 304
-		speedDefaultPow = 6, -- 306
-		speedMaxPow = 9, -- 306
-		flightSpeedPow = 8 -- 306
-	} -- 306
-} -- 306
+____exports.LEVEL_RUNTIME = {{ -- 335
+	physicsStep = 0.016, -- 337
+	maxStepsPerFrame = 4, -- 337
+	sampleEvery = 1, -- 337
+	predictSteps = 800, -- 337
+	playback = 1, -- 338
+	playbackSpeeds = {0.5, 1, 2}, -- 338
+	cameraMin = 200, -- 339
+	cameraMax = 1200, -- 339
+	aimMin = 60, -- 339
+	introCloseDist = 100, -- 339
+	aimClockRate = 0, -- 340
+	slowMoFloor = 45, -- 340
+	probeVisualRadius = 10, -- 340
+	aimFraming = "local", -- 341
+	tiltDeg = 0, -- 341
+	orbitFlowDots = false, -- 341
+	orbitRings = false, -- 341
+	speedDefaultPow = 0, -- 342
+	speedMaxPow = 0, -- 342
+	flightSpeedPow = 0, -- 342
+	cameraNear = 0.1, -- 343
+	cameraFar = 5000 -- 343
+}, { -- 343
+	physicsStep = 0.016, -- 346
+	maxStepsPerFrame = 4, -- 346
+	sampleEvery = 1, -- 346
+	predictSteps = 800, -- 346
+	playback = 1, -- 347
+	playbackSpeeds = {0.5, 1, 2}, -- 347
+	cameraMin = 200, -- 348
+	cameraMax = 1200, -- 348
+	aimMin = 60, -- 348
+	introCloseDist = 100, -- 348
+	aimClockRate = 0, -- 349
+	slowMoFloor = 45, -- 349
+	probeVisualRadius = 10, -- 349
+	aimFraming = "local", -- 350
+	tiltDeg = 0, -- 350
+	orbitFlowDots = false, -- 350
+	orbitRings = false, -- 350
+	speedDefaultPow = 0, -- 351
+	speedMaxPow = 0, -- 351
+	flightSpeedPow = 0, -- 351
+	cameraNear = 0.1, -- 352
+	cameraFar = 5000 -- 352
+}, { -- 352
+	physicsStep = 0.016, -- 355
+	maxStepsPerFrame = 4, -- 355
+	sampleEvery = 1, -- 355
+	predictSteps = 800, -- 355
+	playback = 1, -- 356
+	playbackSpeeds = {0.5, 1, 2}, -- 356
+	cameraMin = 200, -- 357
+	cameraMax = 1200, -- 357
+	aimMin = 60, -- 357
+	introCloseDist = 100, -- 357
+	aimClockRate = 0, -- 358
+	slowMoFloor = 45, -- 358
+	probeVisualRadius = 10, -- 358
+	aimFraming = "local", -- 359
+	tiltDeg = 0, -- 359
+	orbitFlowDots = false, -- 359
+	orbitRings = false, -- 359
+	speedDefaultPow = 0, -- 360
+	speedMaxPow = 0, -- 360
+	flightSpeedPow = 0, -- 360
+	cameraNear = 0.1, -- 361
+	cameraFar = 5000 -- 361
+}} -- 361
 --- 取第 index 关（0 起）的运行时参数；越界退回最后一关（宁可难看，也不要 nil）。
-function ____exports.levelRuntime(index) -- 311
-	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 311
-		return ____exports.LEVEL_RUNTIME[index + 1] -- 312
-	end -- 312
-	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 313
-end -- 311
-return ____exports -- 311
+function ____exports.levelRuntime(index) -- 366
+	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 366
+		return ____exports.LEVEL_RUNTIME[index + 1] -- 367
+	end -- 367
+	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 368
+end -- 366
+return ____exports -- 366

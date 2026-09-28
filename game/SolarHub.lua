@@ -94,8 +94,7 @@ ____exports.HUB_STATIONS = { -- 76
 		orbitSpeedDegPerSec = 0.8, -- 86
 		rotSpeedDegPerSec = 25, -- 86
 		colorHex = 14729362, -- 86
-		emissiveHex = 0, -- 86
-		levelIndex = 3 -- 86
+		emissiveHex = 0 -- 86
 	}, -- 86
 	{ -- 88
 		model = "Planet_Saturn", -- 88
@@ -115,8 +114,7 @@ ____exports.HUB_STATIONS = { -- 76
 		orbitSpeedDegPerSec = 0.35, -- 90
 		rotSpeedDegPerSec = 12, -- 90
 		colorHex = 11066852, -- 90
-		emissiveHex = 0, -- 90
-		levelIndex = 4 -- 90
+		emissiveHex = 0 -- 90
 	}, -- 90
 	{ -- 92
 		model = "Planet_Neptune", -- 92
@@ -127,18 +125,11 @@ ____exports.HUB_STATIONS = { -- 76
 		rotSpeedDegPerSec = 11, -- 92
 		colorHex = 8099312, -- 92
 		emissiveHex = 0, -- 92
-		levelIndex = 5 -- 92
+		levelIndex = 2 -- 92
 	} -- 92
 } -- 92
---- 关卡索引 -> HUB_STATIONS 下标的映射（L3 为太阳，用 -1 表示）。
-____exports.LEVEL_TO_STATION_INDEX = { -- 96
-	2, -- 96
-	0, -- 96
-	-1, -- 96
-	4, -- 96
-	6, -- 96
-	7 -- 96
-} -- 96
+--- 关卡索引 -> HUB_STATIONS 下标的映射（L1 地球: 2, L2 水星: 0, L3 海王星: 7）。
+____exports.LEVEL_TO_STATION_INDEX = {2, 0, 7} -- 96
 --- 视觉配置常量。
 local SunRadius = 4.8 -- 99
 local OrbitRingsPath = "Assets/Model/OrbitRings.gltf" -- 100
@@ -641,7 +632,10 @@ function ____exports.createSolarHub(options) -- 169
 		) -- 621
 		setLabelText( -- 622
 			totalRocketsLabel, -- 622
-			("全深空火箭勋章: " .. __TS__NumberToFixed(total, 0)) .. " / 18 ★" -- 622
+			((("全深空火箭勋章: " .. __TS__NumberToFixed(total, 0)) .. " / ") .. __TS__NumberToFixed( -- 622
+				levelCount() * 3, -- 622
+				0 -- 622
+			)) .. " ★" -- 622
 		) -- 622
 		do -- 622
 			local i = 0 -- 624

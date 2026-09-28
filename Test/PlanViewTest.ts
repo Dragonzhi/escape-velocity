@@ -133,27 +133,21 @@ function testFitRadius(): void {
 	const fitEmpty = planFitRadius([], { x: 0, y: 0 }, -1, 0);
 	check('fit-nonzero', fitEmpty > 0 && fitEmpty < 1e9, `fit=${fitEmpty}`);
 
-	// 真实关卡数据（唯一事实来源）：L1 与 L6
+	// 真实关卡数据：L1 与 L3（街机模式同屏视野）
 	const l1 = getLevel(0);
 	if (l1 === undefined) {
 		check('fit-real-l1', false, 'getLevel(0) 返回 undefined');
 	} else {
-		// S5：L1 以**地球**为中心取景（planCenter = 1）。整个世界只有 0.6 单位宽，
-		// 以太阳为中心的话探测器与月球只是屏幕中心的一个点（0.2/80 = 0.25% 视野）。
 		const real1 = planFitRadius(scaledPlanets(l1), l1.probeStart, l1.goal.planetIndex, l1.goal.tolerance, l1.planCenter);
-		// 应 ≈ 月球轨道 0.2056 + 容差 0.02
-		check('fit-real-l1-earth-centred', real1 > 0.2 && real1 < 0.26,
-			`L1 fit=${real1.toFixed(4)}（应 ≈ 0.2056 + 0.02 = 0.2256）`);
-		// 地心取景**不能**把太阳算进来（太阳离地球 80 单位，一算进来就退回太阳系全景）
-		check('fit-real-l1-excludes-sun', real1 < 1, `L1 fit=${real1.toFixed(4)}（若含太阳会是 80+）`);
+		check('fit-real-l1-arcade-centred', real1 >= 300 && real1 <= 500,
+			`L1 fit=${real1.toFixed(4)}（街机同屏取景应在 300~500 像素范围）`);
 	}
-	const l6 = getLevel(5);
-	if (l6 === undefined) {
-		check('fit-real-l6', false, 'getLevel(5) 返回 undefined');
+	const l3 = getLevel(2);
+	if (l3 === undefined) {
+		check('fit-real-l3', false, 'getLevel(2) 返回 undefined');
 	} else {
-		// 链式目标：取链上最大容差（L6 最后一站 120）
-		const real6 = planFitRadius(scaledPlanets(l6), l6.probeStart, l6.goal.planetIndex, 120);
-		check('fit-real-l6', real6 >= 2400 && real6 < 2600, `L6 fit=${real6.toFixed(2)}（应 ≈ 海王星 2405.6 + 120）`);
+		const real3 = planFitRadius(scaledPlanets(l3), l3.probeStart, l3.goal.planetIndex, l3.goal.tolerance);
+		check('fit-real-l3', real3 >= 300 && real3 <= 500, `L3 fit=${real3.toFixed(2)}（街机同屏取景应在 300~500 像素范围）`);
 	}
 }
 

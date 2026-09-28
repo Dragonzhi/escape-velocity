@@ -72,6 +72,10 @@ const MODEL_RADIUS: ModelRadius[] = [
 	// 两者的环现在都是**模型自带**的（不再叠 Ring.gltf，见行星循环里的判断）。
 	{ name: 'Planet_Saturn', k: 1.0000 },
 	{ name: 'Planet_Uranus', k: 1.0000 },
+	// 街机引力弹弓三款道具资产（docs/3D建模需求.md）
+	{ name: 'Asteroid_Rock', k: 1.0000 },
+	{ name: 'Star_Crystal', k: 1.0000 },
+	{ name: 'Target_Gate', k: 1.0000 },
 ];
 
 /** 取模型半径系数；表里没有的名字按 1.0 处理（等价于旧行为）。 */
@@ -271,6 +275,8 @@ export interface SceneOptions {
 	probeBodyRadius?: number;
 	/** 探测器细节图集（只给带 UV 的新模型）。 */
 	probeAtlasPath?: string;
+	/** 街机模式：沿途星尘坐标。 */
+	stars?: P2[];
 }
 
 /**
@@ -300,6 +306,12 @@ export interface GameScene {
 	planets: PlanetNode[];
 	/** 探测器模型的**世界**外接半径，喂给相机取景（否则天线会被画面边缘切掉）。 */
 	probeRadius: number;
+	/** 街机星尘节点。 */
+	starNodes?: { node: Node3D.Type; pos: P2; collected: boolean }[];
+	/** 设置某颗星尘被收集。 */
+	setStarCollected?: (index: number) => void;
+	/** 重置所有星尘状态。 */
+	resetStars?: () => void;
 }
 
 /** 探测器组装参数。 */
@@ -856,6 +868,29 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 		}
 	}
 
+	// ---- 街机模式：3D 星尘晶体与星门 ----
+	const starNodes: { node: Node3D.Type; pos: P2; collected: boolean }[] = [];
+	const starModelPath = 'Assets/Model/Star_Crystal.glb';
+	if (options.stars !== undefined && Content.exist(starModelPath)) {
+		for (let sIdx = 0; sIdx < options.stars.length; sIdx++) {
+			const sPos = options.stars[sIdx];
+			const sModel = Model3D(starModelPath);
+			if (sModel !== undefined) {
+				const sm = sModel.getMaterial(0);
+				if (sm !== undefined) {
+					sm.baseColor = Color(255, 220, 50, 255);
+					sm.emissive = Color3(0xffcc00);
+				}
+				const sRadius = 14; // 街机视觉尺寸
+				sModel.scale = Vec3(sRadius, sRadius, sRadius);
+				const wp = planeToWorld(sPos, 0);
+				sModel.position = wp;
+				root.addChild(sModel);
+				starNodes.push({ node: sModel, pos: sPos, collected: false });
+			}
+		}
+	}
+
 	// ---- 同步函数 ----
 	const syncBodies = (t: number): void => {
 		for (let i = 0; i < planets.length; i++) {
@@ -873,10 +908,19 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 				p.body.angleY = (turns - Math.floor(turns)) * 360;
 			}
 		}
+		// 同步星尘自转与浮动
+		for (let i = 0; i < starNodes.length; i++) {
+			const sn = starNodes[i];
+			if (!sn.collected) {
+				sn.node.visible = true;
+				sn.node.angleY = (t * 120 + i * 40) % 360;
+				const wp = planeToWorld(sn.pos, 0);
+				sn.node.position = Vec3(wp.x, Math.sin(t * 4 + i) * 6, wp.z);
+			} else {
+				sn.node.visible = false;
+			}
+		}
 		// 沿轨道流动的光点（S3.16）：每帧只改 position。
-		// 第 k 个光点的角 = 行星此刻的角 + k·2π/N（OrbitFlow.flowDotAngle，与 bodyPositionAt
-		// 同一个式子）⇒ 方向 = orbitDirection、快慢 ∝ ω。t 就是 Game.ts 传下来的 tWorld
-		// （= core.t0 + core.flightTime）—— 没有第二时间源，拨日期时行星与光点一起动。
 		for (const fo of flowOrbits) {
 			const c = orbitCenterAt(fo.def, t);
 			const r = fo.def.orbitRadius;
@@ -946,5 +990,18 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 		antenna: antennaModel,
 		planets,
 		probeRadius,
+		starNodes,
+		setStarCollected: (index: number): void => {
+			if (index >= 0 && index < starNodes.length) {
+				starNodes[index].collected = true;
+				starNodes[index].node.visible = false;
+			}
+		},
+		resetStars: (): void => {
+			for (let i = 0; i < starNodes.length; i++) {
+				starNodes[i].collected = false;
+				starNodes[i].node.visible = true;
+			}
+		},
 	};
 }

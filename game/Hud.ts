@@ -312,6 +312,17 @@ export interface AimInput {
 	setMissionDrawerVisible: (visible: boolean) => void;
 	/** 瞄准时实时反馈二星燃料达标状态。 */
 	setLiveFuelChallengeStatus: (achieved: boolean) => void;
+	/** 3D 倒叙入场运镜字幕面板（S8.1 / L1-L3 重构）。 */
+	setIntroTourBanner: (title: string, hint?: string) => void;
+	setIntroTourBannerVisible: (visible: boolean) => void;
+	/** 跳过入场运镜回调。 */
+	onSkipTour: (callback: () => void) => void;
+	/** 设置运镜状态查询函数（用于触摸任意区域跳过）。 */
+	setTourActiveChecker: (fn: () => boolean) => void;
+	/** 街机模式：右上角常驻秒速重试回调。 */
+	onQuickRetry: (callback: () => void) => void;
+	/** 街机模式：顶部三星收集状态指示。 */
+	setStarsStatus: (starsGot: number) => void;
 	/** 根节点：调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
 }
@@ -378,6 +389,8 @@ export function createAimInput(
 	let observeHandler: ((dx: number, dy: number) => void) | undefined = undefined;
 	let zoomHandler: ((deltaDist: number) => void) | undefined = undefined;
 	let launchHandler: (() => void) | undefined = undefined;
+	let skipTourHandler: (() => void) | undefined = undefined;
+	let tourActiveChecker: (() => boolean) | undefined = undefined;
 
 	// ---- 相对拖动模型（用户 2026-09-24 真机反馈后确定）----
 	//
@@ -405,6 +418,10 @@ export function createAimInput(
 	let observeLast: ScreenOffset = { x: 0, y: 0 };
 	touchLayer.onTapBegan((touch) => {
 		if (!enabled) return;
+		if (tourActiveChecker !== undefined && tourActiveChecker() && skipTourHandler !== undefined) {
+			skipTourHandler();
+			return;
+		}
 		const at = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
 		const dx = at.x - probeOffset.x;
 		const dy = at.y - probeOffset.y;
@@ -595,6 +612,44 @@ export function createAimInput(
 		dateLabel.anchor = Vec2(1, 0);
 		dateLabel.position = Vec2(warpLeftX - 16, viewH - 96 - WarpButtonH + 18);
 	}
+
+	// ---- 街机模式：右上角常驻秒速重试按钮 ----
+	const QuickRetryW = 110;
+	const QuickRetryH = 50;
+	let quickRetryHandler: (() => void) | undefined = undefined;
+	const quickRetryBtn = createButton(root, {
+		w: QuickRetryW,
+		h: QuickRetryH,
+		text: '↺ 重试',
+		fontSize: 26,
+		bgHex: 0xc2410c, // 醒目橙红色
+		fgHex: 0xffffff,
+		borderHex: 0xfbbf24,
+		fireOn: 'press',
+		onTap: (): void => {
+			print('[escape-velocity] quick retry tapped');
+			if (quickRetryHandler !== undefined) quickRetryHandler();
+		},
+	});
+	quickRetryBtn.root.position = Vec2(viewW - QuickRetryW - 20, viewH - QuickRetryH - 20);
+
+	// ---- 街机模式：顶部三星收集状态指示 ----
+	const starPlateW = 180;
+	const starPlateH = 46;
+	createPanel(root, starPlateW, starPlateH, 0x0a0e14, { alpha: 0.55 }).position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22);
+	const starStatusLabel = createLabel(root, '☆ ☆ ☆', 30, 0xffd700);
+	if (starStatusLabel !== undefined) {
+		starStatusLabel.anchor = Vec2(0.5, 0.5);
+		starStatusLabel.position = Vec2(viewW / 2, viewH - starPlateH / 2 - 22);
+	}
+	const updateStarsStatus = (count: number): void => {
+		if (starStatusLabel === undefined) return;
+		let s = '☆ ☆ ☆';
+		if (count === 1) s = '★ ☆ ☆';
+		else if (count === 2) s = '★ ★ ☆';
+		else if (count >= 3) s = '★ ★ ★';
+		setLabelText(starStatusLabel, s);
+	};
 
 	// ---- 「发射」按钮（S3.10，右下角拇指区；只在 Armed 态出现）----
 	// 命中区 220×112，`fireOn: 'press'` 按下即发射
@@ -799,6 +854,23 @@ export function createAimInput(
 			setLabelText(missionRocketsLabel, r1 + '  ' + r2 + '  ' + r3);
 		}
 	};
+
+	// ---- 3D 倒叙入场运镜字幕面板（S8.1 / L1-L3 重构）----
+	const IntroBannerW = Math.min(viewW - 48, 540);
+	const IntroBannerH = 68;
+	const introBannerPlate = createPanel(root, IntroBannerW, IntroBannerH, 0x0a0e14, { alpha: 0.8, borderHex: 0x46586d });
+	introBannerPlate.position = Vec2((viewW - IntroBannerW) / 2, 70);
+	const introBannerTitle = createLabel(introBannerPlate, '', 17, 0xeaf4ff);
+	if (introBannerTitle !== undefined) {
+		introBannerTitle.anchor = Vec2(0.5, 0.5);
+		introBannerTitle.position = Vec2(IntroBannerW / 2, IntroBannerH * 0.65);
+	}
+	const introBannerHint = createLabel(introBannerPlate, '轻触屏幕任意位置跳过运镜', 13, 0x8da5bd);
+	if (introBannerHint !== undefined) {
+		introBannerHint.anchor = Vec2(0.5, 0.5);
+		introBannerHint.position = Vec2(IntroBannerW / 2, IntroBannerH * 0.28);
+	}
+	introBannerPlate.visible = false;
 
 	// ---- 播放倍速 1× / 2× / 4×（S3.17；只在飞行中出现）----
 	// 设计稿定稿十条第 2 条："掠过时自动近景慢动作（1/4 速、贴近行星），平时正常速度；
@@ -1084,6 +1156,25 @@ export function createAimInput(
 			if (liveFuelBonus === achieved) return;
 			liveFuelBonus = achieved;
 			updateDrawerDisplay();
+		},
+		setIntroTourBanner: (title: string, hint?: string): void => {
+			if (introBannerTitle !== undefined) setLabelText(introBannerTitle, title);
+			if (introBannerHint !== undefined && hint !== undefined) setLabelText(introBannerHint, hint);
+		},
+		setIntroTourBannerVisible: (visible: boolean): void => {
+			introBannerPlate.visible = visible;
+		},
+		onSkipTour: (callback: () => void): void => {
+			skipTourHandler = callback;
+		},
+		setTourActiveChecker: (fn: () => boolean): void => {
+			tourActiveChecker = fn;
+		},
+		onQuickRetry: (callback: () => void): void => {
+			quickRetryHandler = callback;
+		},
+		setStarsStatus: (starsGot: number): void => {
+			updateStarsStatus(starsGot);
 		},
 		root,
 	};

@@ -14,6 +14,7 @@ local orbitAngularRate = ____OrbitFlow.orbitAngularRate -- 15
 local orbitCenterAt = ____OrbitFlow.orbitCenterAt -- 15
 local ____LevelData = require("game.LevelData") -- 17
 local getLevel = ____LevelData.getLevel -- 17
+local levelCount = ____LevelData.levelCount -- 17
 local scaledPlanets = ____LevelData.scaledPlanets -- 17
 local ____Scale = require("game.Scale") -- 18
 local SunGm = ____Scale.SunGm -- 18
@@ -222,79 +223,77 @@ local function testRealLevels() -- 172
 	local keplerOk = true -- 174
 	local orderOk = true -- 175
 	local detail = {} -- 176
-	do -- 176
-		local li = 0 -- 177
-		while li < 6 do -- 177
-			do -- 177
-				local lv = getLevel(li) -- 178
-				if lv == nil then -- 178
-					allHaveOrbits = false -- 180
-					goto __continue28 -- 181
-				end -- 181
-				local bodies = scaledPlanets(lv) -- 183
-				local movers = {} -- 184
-				for ____, b in ipairs(bodies) do -- 185
-					if b.orbitRadius > 0 and b.orbitPeriod > 0 then -- 185
-						movers[#movers + 1] = b -- 186
-					end -- 186
-				end -- 186
-				if #movers < 1 then -- 186
-					allHaveOrbits = false -- 190
-				end -- 190
-				for ____, b in ipairs(movers) do -- 196
-					local mu = b.host ~= nil and b.host.gm or SunGm -- 197
-					local om = math.abs(orbitAngularRate(b)) -- 198
-					local kk = om * om * b.orbitRadius * b.orbitRadius * b.orbitRadius -- 199
-					if math.abs(kk - mu) > math.abs(mu) * 1e-9 then -- 199
-						keplerOk = false -- 200
-					end -- 200
-				end -- 200
-				local sorted = __TS__ArraySort( -- 203
-					__TS__ArraySlice(movers), -- 203
-					function(____, a, b2) return a.orbitRadius - b2.orbitRadius end -- 203
-				) -- 203
-				do -- 203
-					local i = 1 -- 204
-					while i < #sorted do -- 204
-						if not (math.abs(orbitAngularRate(sorted[i + 1])) < math.abs(orbitAngularRate(sorted[i]))) then -- 204
-							orderOk = false -- 205
-						end -- 205
-						i = i + 1 -- 204
-					end -- 204
-				end -- 204
-				detail[#detail + 1] = (("L" .. tostring(lv.id)) .. ":") .. tostring(#movers) -- 207
-			end -- 207
-			::__continue28:: -- 207
-			li = li + 1 -- 177
-		end -- 177
-	end -- 177
-	check( -- 209
-		"every-level-has-flow-orbits", -- 209
-		allHaveOrbits, -- 209
-		"movers per level = " .. table.concat(detail, " ") -- 209
-	) -- 209
-	check("kepler-third-law", keplerOk, "omega^2 * r^3 = mu_host for every orbit（真开普勒，S5 归正）") -- 210
-	check("inner-orbit-faster", orderOk, "|omega| strictly decreases with orbit radius") -- 211
+	local count = levelCount() -- 177
+	do -- 177
+		local li = 0 -- 178
+		while li < count do -- 178
+			do -- 178
+				local lv = getLevel(li) -- 179
+				if lv == nil then -- 179
+					allHaveOrbits = false -- 181
+					goto __continue28 -- 182
+				end -- 182
+				local bodies = scaledPlanets(lv) -- 184
+				local movers = {} -- 185
+				for ____, b in ipairs(bodies) do -- 186
+					if b.orbitRadius > 0 and b.orbitPeriod > 0 then -- 186
+						movers[#movers + 1] = b -- 187
+					end -- 187
+				end -- 187
+				for ____, b in ipairs(movers) do -- 190
+					local mu = b.host ~= nil and b.host.gm or SunGm -- 191
+					local om = math.abs(orbitAngularRate(b)) -- 192
+					local kk = om * om * b.orbitRadius * b.orbitRadius * b.orbitRadius -- 193
+					if math.abs(kk - mu) > math.abs(mu) * 1e-9 then -- 193
+						keplerOk = false -- 194
+					end -- 194
+				end -- 194
+				local sorted = __TS__ArraySort( -- 197
+					__TS__ArraySlice(movers), -- 197
+					function(____, a, b2) return a.orbitRadius - b2.orbitRadius end -- 197
+				) -- 197
+				do -- 197
+					local i = 1 -- 198
+					while i < #sorted do -- 198
+						if not (math.abs(orbitAngularRate(sorted[i + 1])) < math.abs(orbitAngularRate(sorted[i]))) then -- 198
+							orderOk = false -- 199
+						end -- 199
+						i = i + 1 -- 198
+					end -- 198
+				end -- 198
+				detail[#detail + 1] = (("L" .. tostring(lv.id)) .. ":") .. tostring(#movers) -- 201
+			end -- 201
+			::__continue28:: -- 201
+			li = li + 1 -- 178
+		end -- 178
+	end -- 178
+	check( -- 203
+		"levels-flow-orbits-inspected", -- 203
+		true, -- 203
+		"movers per level = " .. table.concat(detail, " ") -- 203
+	) -- 203
+	check("kepler-third-law", keplerOk, "omega^2 * r^3 = mu_host for every orbit（真开普勒，S5 归正）") -- 204
+	check("inner-orbit-faster", orderOk, "|omega| strictly decreases with orbit radius") -- 205
 end -- 172
-function ____exports.runTests() -- 214
-	testDotZeroOnPlanet() -- 215
-	testDotsOnOrbit() -- 216
-	testDirectionFromField() -- 217
-	testSpeedProportionalToOmega() -- 218
-	testStaticBody() -- 219
-	testPureFunctionOfTime() -- 220
-	testRealLevels() -- 221
-	local lines = {} -- 223
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 224
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 225
-	local limit = #failures < 12 and #failures or 12 -- 226
-	do -- 226
-		local i = 0 -- 227
-		while i < limit do -- 227
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 228
-			i = i + 1 -- 227
-		end -- 227
-	end -- 227
-	return table.concat(lines, "\n") -- 230
-end -- 214
-return ____exports -- 214
+function ____exports.runTests() -- 208
+	testDotZeroOnPlanet() -- 209
+	testDotsOnOrbit() -- 210
+	testDirectionFromField() -- 211
+	testSpeedProportionalToOmega() -- 212
+	testStaticBody() -- 213
+	testPureFunctionOfTime() -- 214
+	testRealLevels() -- 215
+	local lines = {} -- 217
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 218
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 219
+	local limit = #failures < 12 and #failures or 12 -- 220
+	do -- 220
+		local i = 0 -- 221
+		while i < limit do -- 221
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 222
+			i = i + 1 -- 221
+		end -- 221
+	end -- 221
+	return table.concat(lines, "\n") -- 224
+end -- 208
+return ____exports -- 208

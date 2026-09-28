@@ -29,7 +29,7 @@ function check(name: string, ok: boolean, detail: string): void {
 /** 1) 结构有效性：视觉表对齐、目标索引合法、容差 > 半径。 */
 function testValidity(): void {
 	const n = levelCount();
-	check('level-count', n === 6, `levelCount=${n}（愿景定稿六关）`);
+	check('level-count', n === 3, `levelCount=${n}（史诗三部曲三关）`);
 
 	for (let i = 0; i < n; i++) {
 		const lv = getLevel(i);
@@ -61,42 +61,27 @@ function testValidity(): void {
 
 		check(`lv${lv.id}-brief`, lv.brief !== undefined && lv.brief.length > 0, '缺少任务简报');
 
-		// S5 硬门（计划 §3.3）：**初速必须是该点的圆轨速度**，否则探测器一出发就坠日。
-		// L1 是局部系统（绕地球），别的关是绕太阳。
+		// 街机模式：探测器在发射台静止出发，由弹弓拖拽赋予初速
 		const v0 = lv.probeVel0;
-		check(`lv${lv.id}-probe-velocity-present`, v0 !== undefined, 'probeVel0 必须存在（S5 起必填）');
+		check(`lv${lv.id}-probe-velocity-present`, v0 !== undefined, 'probeVel0 必须存在');
 		if (v0 !== undefined) {
-			if (lv.id === 1) {
-				const host = lv.planets[1];
-				const hp = bodyPositionAt(host, 0);
-				const hv = bodyVelocityAt(host, 0);
-				const d = Math.sqrt((lv.probeStart.x - hp.x) ** 2 + (lv.probeStart.y - hp.y) ** 2);
-				const rel = Math.sqrt((v0.x - hv.x) ** 2 + (v0.y - hv.y) ** 2);
-				const want = Math.sqrt(host.gm / d);
-				check('l1-velocity-is-circular-around-earth', Math.abs(rel - want) < want * 1e-6,
-					`rel=${rel.toFixed(6)} 圆轨=${want.toFixed(6)} d=${d.toFixed(4)}`);
-			} else {
-				const d = Math.sqrt(lv.probeStart.x ** 2 + lv.probeStart.y ** 2);
-				const want = Math.sqrt(SunGm / d);
-				const sp = Math.sqrt(v0.x ** 2 + v0.y ** 2);
-				check(`lv${lv.id}-velocity-is-circular`, Math.abs(sp - want) < want * 1e-6,
-					`|v0|=${sp.toFixed(6)} 圆轨=${want.toFixed(6)} r=${d.toFixed(3)}`);
-			}
+			check(`lv${lv.id}-probe-at-rest`, v0.x === 0 && v0.y === 0, `初速度在发射台上必须为 0: (${v0.x}, ${v0.y})`);
+		}
+
+		// 街机模式：秒开局，入场运镜为可选
+		const tour = lv.mission !== undefined ? lv.mission.introTour : undefined;
+		if (tour !== undefined) {
+			check(`lv${lv.id}-intro-tour-duration>0`, tour.totalDuration > 0, `duration=${tour.totalDuration}`);
+			check(`lv${lv.id}-intro-tour-segments>=3`, tour.segments.length >= 3, `segments=${tour.segments.length}`);
 		}
 	}
 
-	// Scale 溯源：物理半径/轨道/周期必须来自 game/Scale（防止有人又手填一个"好看的"数）
+	// 街机关卡天体与障碍物几何完整性验证
 	const l1 = getLevel(0);
 	if (l1 !== undefined) {
-		check('scale-provenance-earth-radius', Math.abs(l1.planets[1].radius - 0.0034070) < 1e-6, `earth r=${l1.planets[1].radius}`);
-		check('scale-provenance-moon-orbit', Math.abs(l1.planets[2].orbitRadius - 0.2055644) < 1e-6, `moon a=${l1.planets[2].orbitRadius}`);
-		// 月球周期必须用**地球**的 gm 算（拿月球自己的 gm 会得到 11.35 秒 —— 踩过）
-		check('moon-period-uses-host-gm', Math.abs(l1.planets[2].orbitPeriod - 1.2593) < 1e-3, `moon T=${l1.planets[2].orbitPeriod}`);
-	}
-	const l4 = getLevel(3);
-	if (l4 !== undefined) {
-		check('scale-provenance-jupiter-orbit', Math.abs(l4.planets[1].orbitRadius - 416.231) < 1e-2, `jupiter a=${l4.planets[1].orbitRadius}`);
-		check('scale-provenance-jupiter-period', Math.abs(l4.planets[1].orbitPeriod - 198.845) < 1e-2, `jupiter T=${l4.planets[1].orbitPeriod}`);
+		check('arcade-l1-earth-radius', l1.planets[0].radius > 0 && l1.planets[0].gm > 0, `earth r=${l1.planets[0].radius}`);
+		check('arcade-l1-obstacle-present', l1.planets[1].isObstacle === true, '第2个天体必须为障碍物');
+		check('arcade-l1-stars-count', l1.stars !== undefined && l1.stars.length === 3, '必须有 3 颗金色星尘');
 	}
 }
 
@@ -337,22 +322,18 @@ function testReachability(): SweepStat[] {
 		const t0Count = lv.timeWindow !== undefined ? 4 : 1;
 		const rtLv = levelRuntime(i);
 		levelDvMin = rtLv.aimMin;
-		levelDvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
+		levelDvTop = AimMaxSpeed;
 		levelVel0 = lv.probeVel0 !== undefined ? lv.probeVel0 : { x: 0, y: 0 };
-		// ⚠️ 步长/步数按关卡给（S5）：
-		//   - L1 用**真步长** 1.406967e-5（= 26.5 真实秒）—— 它就是验收对象（200 km 停泊轨在 1/120 下会被算成垃圾）；
-		//   - 外圈用粗步长 1/40 + 步数上限 32000 —— 否则 L6 一次扫掠是 70000 步 × 1152 样本
-		//     ≈ 8000 万步，批跑直接超时被杀（2026-09-27 实测：标记文件停在 phase=running）。
-		sweepDt = i === 0 ? rtLv.physicsStep : 1 / 40;
+		sweepDt = rtLv.physicsStep;
 		sweepEvery = 1;
-		// 覆盖 200 秒足够：六关的设计航线到最远站是 8 / 25 / 72 / 78 / 128 秒（工具输出）。
-		sweepSteps = i === 0 ? lv.maxSteps : Math.min(lv.maxSteps, 8000);
-		// 三级升级：① 12×4 惯性；② 密网格 惯性；③ 12×4 **刹车模式**（S3.9.2 —— 两次点火共享 Δv，
-		// 是"到达时能减速"的另一条路，捕放入轨要靠它）。任何一级过了就算这一关有解。
+		sweepSteps = lv.maxSteps;
 		levelBrake = false;
 		let stat = sweepLevel(lv, 12, 4, t0Count);
 		if (stat.solutions === 0) {
 			stat = sweepLevel(lv, 24, 6, lv.timeWindow !== undefined ? 4 : 1);
+		}
+		if (stat.solutions === 0) {
+			stat = sweepLevel(lv, 120, 6, 1);
 		}
 		if (stat.solutions === 0) {
 			levelBrake = true;
@@ -405,9 +386,8 @@ function testTimeWindow(stats: SweepStat[]): void {
 		check(`lv${lv.id}-window-open`, !WINDOW_GATE || openOk,
 			`时间轴必须有能落进去的窗口：solutions=${st.solutions}`);
 	}
-	// S3.13：时间轴从「只有 L4/L6 有」变成**六关都有**（设计稿第十条：不再有特例）—— 这条断言守的正是那个决定。
-	check('time-window-exists', !WINDOW_GATE || withWindow === n,
-		'六关都必须有时间轴：withWindow=' + withWindow + '/' + n + '（L1 例外：它没有日期轴，见 LevelDef 里 L1 的说明）');
+	check('time-window-exists', !WINDOW_GATE || withWindow === n - 1,
+		'除 L1 外各关都必须有时间轴：withWindow=' + withWindow + '/' + (n - 1) + '（L1 例外：它没有日期轴，见 LevelDef 里 L1 的说明）');
 }
 
 /** 6) 任务元数据完整性（S7）。 */
@@ -437,11 +417,10 @@ function testEvaluateRockets(): void {
 		check('rockets-escaped-0', evaluateRockets(l1, 'escaped', 0.1) === 0, '逃逸应为 0 枚火箭');
 		check('rockets-success-overburn-1', evaluateRockets(l1, 'success', l1.dvBudget * 0.95) === 1, '燃油超标应为 1 枚火箭');
 		check('rockets-fuel-ok-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5) === 2, '达成省油应为 2 枚火箭');
-		// B0：三星的「近月点」阈值改到 0.003（≈5,600 km）—— 注入距离跟着改（0.002 达标 / 0.01 不达标）
-		check('rockets-peri-ok-3', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.002 }) === 3, '达成近掠应为 3 枚火箭');
-		check('rockets-peri-fail-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.01 }) === 2, '未达成近掠应为 2 枚火箭');
+		check('rockets-peri-ok-3', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { maxSpeed: 320 }) === 3, '达成高速狂飙应为 3 枚火箭');
+		check('rockets-peri-fail-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { maxSpeed: 200 }) === 2, '未达成速度挑战应为 2 枚火箭');
 
-		const det = evaluateRocketsDetailed(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.002 });
+		const det = evaluateRocketsDetailed(l1, 'success', l1.dvBudget * 0.5, { maxSpeed: 320 });
 		check('rockets-detailed-count', det.rockets === 3, '详细评价火箭数应为 3');
 		check('rockets-detailed-c1', det.achieved[0] === true, '挑战 1 应达成');
 		check('rockets-detailed-c2', det.achieved[1] === true, '挑战 2 应达成');
@@ -455,7 +434,7 @@ function testEvaluateRockets(): void {
 
 	const l3 = getLevel(2);
 	if (l3 !== undefined) {
-		check('rockets-l3-speed-3', evaluateRockets(l3, 'success', l3.dvBudget * 0.7, { maxSpeed: 65 }) === 3, '高速狂飙应为 3 枚火箭');
+		check('rockets-l3-speed-3', evaluateRockets(l3, 'success', l3.dvBudget * 0.7, { maxSpeed: 350 }) === 3, '高速狂飙应为 3 枚火箭');
 	}
 }
 

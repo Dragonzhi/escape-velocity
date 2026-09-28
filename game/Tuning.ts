@@ -122,6 +122,55 @@ export const SPIN_GAME_SEC: { [key: string]: number } = {
 	Moon: 1.2593,
 };
 
+/**
+ * 天体的**显示名**（2D 读数用，B 修复③，2026-09-28）。
+ *
+ * 键是**模型名**（`PlanetVisualDef.model`）——与 SPIN_GAME_SEC 同一套身份，PlanView/Scene
+ * 拿不到中文名，只有模型名。用户要的 2D 观感是"像航天模拟器的地图"：**每个天体挂着名字与距离**，
+ * 于是"月球在哪、还有多远"不用靠猜。
+ */
+export const BODY_LABEL: { [key: string]: string } = {
+	Sun: '太阳',
+	Moon: '月球',
+	Planet_Earth: '地球',
+	Planet_Mercury: '水星',
+	Planet_Venus: '金星',
+	Planet_Mars: '火星',
+	Planet_Jupiter: '木星',
+	Planet_Saturn: '土星',
+	Planet_Uranus: '天王星',
+	Planet_Neptune: '海王星',
+	Asteroid_Rock: '太空陨石',
+	Target_Gate: '星门终点',
+	Star_Crystal: '星尘晶体',
+};
+
+/** 取显示名；表里没有的名字退回「天体」（不编造名字，也不留空）。 */
+export function bodyLabel(model?: string): string {
+	if (model !== undefined) {
+		const v = BODY_LABEL[model];
+		if (v !== undefined) return v;
+	}
+	return '天体';
+}
+
+// ---------------------------------------------------------------------------
+// 3D 裁剪面（近 / 远平面）
+// ---------------------------------------------------------------------------
+
+/**
+ * 引擎默认的近裁剪面（世界单位）。
+ *
+ * 出处：引擎的 `Script/Dev/Entry.yue` 里写着 `View.nearPlaneDistance = 0.1`（`farPlaneDistance = 10000`）。
+ * ⚠️ 它**是全局的**（`View` 是应用级单例；`Camera3D` 的 d.ts 只有 position/target/up/lookAt，
+ * 没有 near/far），所以「近平面跟着世界尺度走」只能由代码在**切关/切相机时**写一遍
+ * （见 init.ts 的 `applyClipPlanes`）。
+ */
+export const CLIP_NEAR_DEFAULT = 0.1;
+
+/** 引擎默认的远裁剪面（世界单位）。星空天球在 600–1200 处，必须装得下。 */
+export const CLIP_FAR_DEFAULT = 10000;
+
 // ---------------------------------------------------------------------------
 // 每关运行时参数
 // ---------------------------------------------------------------------------
@@ -233,6 +282,21 @@ export interface LevelRuntime {
 	/** 相机俯仰角（度，B2）：L1 要接近轨道平面的 22°；省略 = CameraTiltDefault（45°）。 */
 	tiltDeg?: number;
 	/**
+	 * 是否画**行星轨道圈**（3D 网格，默认 true）。L1 设 false。
+	 *
+	 * 为什么 L1 必须关（2026-09-28 实测定位，**这是"3D 里一片灰"的真正元凶**）：
+	 * 轨道圈是一张**半径 = 世界单位的 3D 环网面**（`Assets/Model/OrbitRing_<r>.gltf`，不缩放）。
+	 * 而 L1 的相机就**站在地球的日心轨道圈上** —— 地球轨半径 80.000009，相机离原点 80.0117。
+	 * 于是那张环网面在视野里横贯全屏：近平面 0.1 时只剩一条细缝（"切到 3D 啥也看不到"那阵子
+	 * 屏幕上唯一那点灰就是它），近平面改成 2e-4 之后**铺满整个下半屏**。
+	 * 实测颜色 (55,60,63) = `OrbitRingTintHex` 0x36404d 被暖方向光照亮后的结果 —— 对得上。
+	 *
+	 * 这不是"关掉一个装饰"：在贴地球机位里，这条 80 单位的日心轨道**与玩家要做的事毫无关系**
+	 * （玩家绕的是 3.514e-3 的停泊轨，它由 trajectory 的投影折线另画）。L2–L6 反过来 ——
+	 * 那几关玩家就是在日心系里飞的，"行星会动 ⇒ 得有轨道指示"，保持 true。
+	 */
+	orbitRings?: boolean;
+	/**
 	 * **倍速档位**（B3）：速率 = 10^pow ÷ SecPerGameSec 游戏秒/真实秒。
 	 *
 	 * pow = 0 就是 **1× = 现实 1 秒**（用户口径：挂机一天，地球自转一圈）；档位按 ×10 走。
@@ -242,6 +306,24 @@ export interface LevelRuntime {
 	speedDefaultPow?: number;
 	speedMaxPow?: number;
 	flightSpeedPow?: number;
+	// ---- 裁剪面（B 修复①，2026-09-28）----
+	/**
+	 * 3D **近裁剪面**距离（世界单位）。省略 = `CLIP_NEAR_DEFAULT`（0.1，引擎默认）。
+	 *
+	 * 为什么必须按关卡给（用户实测「切到 3D 啥也看不到」，2026-09-28）：
+	 * 近平面是**全局**的，而六关的世界尺度跨 5 个数量级。L1 的贴地球机位里相机离地球只有
+	 * **~0.0089 单位**（取景要装下视觉半径 0.0034 的地球），而引擎默认的近平面是 **0.1**
+	 * —— 比相机到目标的距离还大 11 倍 ⇒ **整个地月系被裁掉**，屏幕上只剩天球上的星点
+	 * （实测截图：3D 画面里除了星星一无所有）。
+	 *
+	 * 取值口径 = 「比这一关**最近可能出现**的相机距离再小一个数量级」：
+	 * L1 的相机距离区间是 [cameraMin 0.002, cameraMax 1.0]，捏合缩放最多再 ×0.4 ⇒ 最近 8e-4；
+	 * 取 2e-4（4 倍余量）。深度精度：24 位深度缓冲在 d = 0.002 处的分辨率约
+	 * d² / (near × 2²⁴) ≈ 1e-9，比地球半径 0.0034 小 6 个数量级，不会 z-fighting。
+	 */
+	cameraNear?: number;
+	/** 3D **远裁剪面**距离（世界单位）。省略 = `CLIP_FAR_DEFAULT`（10000）。 */
+	cameraFar?: number;
 }
 
 /**
@@ -251,59 +333,32 @@ export interface LevelRuntime {
  * L1 转移飞行 0.40 游戏秒 ⇒ 0.05× 播放 = 8 真实秒；L6 飞行 513 秒 ⇒ 16× = 32 真实秒。
  */
 export const LEVEL_RUNTIME: LevelRuntime[] = [
-	{ // L1 月球：**真实阿波罗剖面**（200 km 停泊轨 + TLI），见 docs/L1重构设计案.md
-		// 时间跨度：停泊一圈 88.4 分钟 ↔ 转移到月球 4.978 天（1 : 81）。
-		// ⚠️ physicsStep 必须按这一关给：dt = **26.5 真实秒 = 1.406967e-5 游戏秒**（= 26.5 / 1.8835e6）。
-		//    它同时决定停泊轨的精度与转移段的步数：**200 步/圈、转移 21,000 步**。
-		//    Node 实测（同一份 Gravity，2026-09-28）：200 步/圈形状误差 ±1.5%、一圈漂 0.55%；
-		//    100 步/圈漂 1.9%；**50 步/圈直接崩**（与项目旧数据一致）。
-		// 飞行窗口：maxSteps = 8000（0.1126 游戏秒 = 2.46 天）—— 可行解是**快转移 ≈ 0.9 天**，
-		//    不是霍曼的 4.978 天（见 LevelData.level1 的说明）。
-		// sampleEvery 4：8000 步 ⇒ 2,000 个采样点（与旧版 2,400 同量级）。
-		// 档位口径（B3 落地）：**瞄准 1,000×（停泊轨 5.3 秒一圈）/ 飞行 10,000×（8.6 秒打完）**，
-		//    两者只差一档 —— 这是 B 剖面比 A 更好的地方（A 是 1 : 82 的跨度）。
-		physicsStep: 1.406967e-5, maxStepsPerFrame: 16, sampleEvery: 4, predictSteps: 8000,
-		// ⚠️ playback / aimClockRate 这三个字段在 **B3** 会被「倍速档位」取代
-		//    （默认 1×、×10 阶梯、可暂停）。B0 先留原值，保证每一步构建都是绿的。
-		playback: 0.25, playbackSpeeds: [0.1, 0.25, 0.5],
-		// 相机：世界缩小了 28 倍（0.6 → 0.021 单位宽），夹紧区间同步缩小。
-		cameraMin: 0.002, cameraMax: 1.0, aimMin: 3.0, introCloseDist: 0.004,
-		// slowMoFloor 0.01 = 18,700 km ≈ 到达容差 0.02 的一半：进到达区就进慢动作。
-		aimClockRate: 0, slowMoFloor: 0.01, probeVisualRadius: 0.00015,
-		// B2/B3：贴地球机位 + 近平面俯角 + ×10 档位（默认 1×，上限 1000 万×，发射自动提到 10,000×）
-		aimFraming: 'local', tiltDeg: 22, orbitFlowDots: false,
-		speedDefaultPow: 0, speedMaxPow: 7, flightSpeedPow: 4,
+	{ // L1 地月弯道 (Moon Curve)
+		physicsStep: 0.016, maxStepsPerFrame: 4, sampleEvery: 1, predictSteps: 800,
+		playback: 1.0, playbackSpeeds: [0.5, 1.0, 2.0],
+		cameraMin: 200, cameraMax: 1200, aimMin: 60, introCloseDist: 100,
+		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 10,
+		aimFraming: 'local', tiltDeg: 0, orbitFlowDots: false, orbitRings: false,
+		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
+		cameraNear: 0.1, cameraFar: 5000,
 	},
-	{ // L2 金星：飞行 6.7 秒
-		physicsStep: 1 / 240, maxStepsPerFrame: 8, sampleEvery: 1, predictSteps: 2400,
-		playback: 2, playbackSpeeds: [1, 2, 4],
-		cameraMin: 20, cameraMax: 200, aimMin: 0.2, introCloseDist: 26, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
-		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：默认 1e6×（≈ 原 aimClockRate 1 = 1.88e6×），飞行 1e6×（原 playback 2）
+	{ // L2 金星逆向漂移 (Venus Drift)
+		physicsStep: 0.016, maxStepsPerFrame: 4, sampleEvery: 1, predictSteps: 800,
+		playback: 1.0, playbackSpeeds: [0.5, 1.0, 2.0],
+		cameraMin: 200, cameraMax: 1200, aimMin: 60, introCloseDist: 100,
+		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 10,
+		aimFraming: 'local', tiltDeg: 0, orbitFlowDots: false, orbitRings: false,
+		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
+		cameraNear: 0.1, cameraFar: 5000,
 	},
-	{ // L3 木星：飞行 45.8 秒
-		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 4, predictSteps: 2400,
-		playback: 4, playbackSpeeds: [2, 4, 8],
-		cameraMin: 60, cameraMax: 900, aimMin: 0.5, introCloseDist: 60, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
-		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：飞行 45.8 游戏秒 ÷ 10 秒 ≈ 4.6 游戏秒/秒 ⇒ 飞行 1e7×
-	},
-	{ // L4 土星：飞行 ~101 秒
-		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 8, predictSteps: 2400,
-		playback: 8, playbackSpeeds: [4, 8, 16],
-		cameraMin: 100, cameraMax: 1800, aimMin: 0.5, introCloseDist: 120, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
-		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：飞行 ~101 游戏秒 ÷ 10 秒 ≈ 10 游戏秒/秒 ⇒ 飞行 1e7×（≈ 原 playback 8）
-	},
-	{ // L5 天王星：飞行 ~269 秒
-		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16, predictSteps: 2400,
-		playback: 16, playbackSpeeds: [8, 16, 32],
-		cameraMin: 200, cameraMax: 3600, aimMin: 0.5, introCloseDist: 240, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
-		// B3 档位化（等价换算，尽量贴近原来的 aimClockRate / playback）：飞行 ~269 游戏秒 ÷ 10 秒 ≈ 27 游戏秒/秒 ⇒ 飞行 1e8×
-	},
-	{ // L6 海王星：飞行 ~513 秒
-		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16, predictSteps: 2400,
-		playback: 16, playbackSpeeds: [8, 16, 32],
-		cameraMin: 300, cameraMax: 5600, aimMin: 0.5, introCloseDist: 400, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
-		// B3 档位化：飞行 ~513 游戏秒 ÷ 10 秒 ≈ 51 游戏秒/秒 ⇒ 飞行 1e8×
-		speedDefaultPow: 6, speedMaxPow: 9, flightSpeedPow: 8,
+	{ // L3 双星大甩尾 (Grand Slingshot)
+		physicsStep: 0.016, maxStepsPerFrame: 4, sampleEvery: 1, predictSteps: 800,
+		playback: 1.0, playbackSpeeds: [0.5, 1.0, 2.0],
+		cameraMin: 200, cameraMax: 1200, aimMin: 60, introCloseDist: 100,
+		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 10,
+		aimFraming: 'local', tiltDeg: 0, orbitFlowDots: false, orbitRings: false,
+		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
+		cameraNear: 0.1, cameraFar: 5000,
 	},
 ];
 

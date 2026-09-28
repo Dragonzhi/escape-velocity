@@ -58,7 +58,12 @@ export interface Body {
 	 * ⚠️ 这份参数必须与宿主天体自己**逐字段一致**；`applyScales` 会一起缩放它。
 	 * 关卡数据里用 `satellite(...)` 构造（直接把宿主对象传进去），单测守着。
 	 */
+	/** 宿主的轨道（卫星用）。 */
 	host?: Body;
+	/** 障碍物标识（街机模式：纯碰撞体，gm=0）。 */
+	isObstacle?: boolean;
+	/** 天体/障碍物名称。 */
+	name?: string;
 }
 
 /** 探测器状态。 */
@@ -383,4 +388,40 @@ export function applyScales(bodies: Body[], gravityScale: number, orbitScale: nu
 		});
 	}
 	return out;
+}
+
+/** 街机模式星尘收集结果。 */
+export interface StarCollectResult {
+	collected: boolean[];
+	count: number;
+}
+
+/**
+ * 评估轨迹收集到的星尘。
+ * 纯函数，预测线计算与实时飞行判定共用。
+ */
+export function evaluateCollectedStars(
+	points: P2[],
+	stars: P2[],
+	collectRadius = 30
+): StarCollectResult {
+	const collected: boolean[] = [];
+	for (let i = 0; i < stars.length; i++) {
+		collected.push(false);
+	}
+	let count = 0;
+	const r2 = collectRadius * collectRadius;
+	for (const p of points) {
+		for (let i = 0; i < stars.length; i++) {
+			if (!collected[i]) {
+				const dx = p.x - stars[i].x;
+				const dy = p.y - stars[i].y;
+				if (dx * dx + dy * dy <= r2) {
+					collected[i] = true;
+					count++;
+				}
+			}
+		}
+	}
+	return { collected, count };
 }

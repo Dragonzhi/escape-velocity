@@ -11,23 +11,18 @@
 
 ## 当前阶段
 
-**S8/S9 影视化入场运镜、2D规划增强与逐关全要素校准**（用户 2026-09-28 定稿方案：关卡入场 3D 倒叙/溯源运镜、2D 缩放与全局图标化按钮、目标雷达与三火箭实时抽屉、一关一关打磨校准）——
-见 [`docs/单程_游戏设计案.md`](../../docs/单程_游戏设计案.md) 第七与八章。
-当前聚焦：**L1 · 月球 · 启蒙 (Apollo & Chang'e) 全要素精细化打磨与校准**。
-包含：地月系溯源运镜（月球特写 ➔ 飞掠 ➔ 地球探测器 ➔ 切 2D）、2D 多级缩放控制组（`+` / `-` / `⌖`）与图标化改造、目标雷达指示与常驻三火箭实时判定、近月点擦过手感与数值验收。
-
-> 新对话从这里开始：[**`交接_下一步.md`**](./交接_下一步.md)。
-> AGENTS.md 第 13–22 条是物理归正新踩的坑。
-
-**2026-09-28 追加 · L1 剖面重做（B 方案）+ 时间档位**：用户拍板 L1 换成**真实阿波罗停泊轨**
-（200 km 高度 / 88.4 分钟一圈 / TLI 3.133 km/s / 转移到月球），并按「1× = 现实 1 秒 + ×10 倍速档位 + 暂停」
-重做时间与操控。设计事实来源 = [`docs/L1重构设计案.md`](../../docs/L1重构设计案.md)。
-**B0 / B1 / B2 / B3 已完成并全绿**（B4 运镜待做）。B2 呈现：贴地球机位（`aimFraming: 'local'` + 22° 仰角）、
-探测器停泊轨环（3D 投影折线远侧压暗 / 2D 细圆）、地球自转与月球潮汐锁定、2D 缩放上限 6× → **60×**、
-L1 关掉轨道流动光点（那颗 1.92 单位宽的面片就是"3D 全屏米色"的元凶）。B3 时间与操控：
-**×10 档位**（pow 0 = 1× = 现实 1 秒）、暂停、瞄准即暂停、发射自动提到 1e4×、HUD 时间控制组（`◀ 慢 / ⏸ / 快 ▶` + 档位读数 + 任务时钟 T+）。
-截图证据 `.agent/test-results/shot-l1-2d-plan-default.png`（时间控制组 + 两组按钮不再抢行）、`shot-l1-tour-moon.png`（米色消失）。
-
+**全面重构为街机引力弹弓玩法（2026-09-28 用户拍板完成）**：
+- 核心愿景：全面推翻原本过于复杂硬核的真实天文 AU 尺度、8000 步慢推演与容易崩溃的轨道偏心率包袱，转向**“类似《愤怒的小鸟：太空版》/太空保龄球”**的纯同屏街机引力弹弓；
+- 玩法要素：
+  1. **重力转弯与加减速**：同屏所见即所得的引力弹弓弧线，拖拽实时物理预测；
+  2. **障碍阻挡**：新增太空陨石阻挡直射路径（`Asteroid_Rock.glb`），逼出引力弹弓动机；
+  3. **金色星尘收集**：沿途布设 3 颗金色星尘晶体（`Star_Crystal.glb`），触碰即吃，驱动三星评价；
+  4. **终点靶心星门**：穿透即通关（`Target_Gate.glb`）；
+  5. **极速秒重开**：右上角常驻 `[↺ 重试]` 按钮，0 延迟秒速重开。
+- **关卡落地与求解**：
+  - **L1 地月弯道**：地球引力转弯 60° 绕过陨石墙，吃 3 星滑入月球星门（9条可行解，完美三星 spd=175, deg=51°）；
+  - **L2 金星逆向漂移**：迎头切入金星引力井逆向减速并拐入水星（23条可行解，完美三星 spd=190, deg=267°）；
+  - **L3 双星大甩尾**：木星 90° 甩尾变向抛向土星，土星二次加速飞越深空陨石墙冲入海王星（6条可行解，完美三星 spd=175, deg=36°）。
 
 ---
 
@@ -35,14 +30,10 @@ L1 关掉轨道流动光点（那颗 1.92 单位宽的面片就是"3D 全屏米�
 
 | 项 | 值 | 怎么复现 |
 |---|---|---|
-| 构建 | **51 文件 51 成功 0 失败**（2026-09-28 20:20 实测；新增 `Test/ClipPlaneProbe.ts`） | `node tools/dora-build/build.mjs --all` |
-| 单测 | **12 模块全绿（GameTest 82 检查点全绿，含飞行中实时逆喷制动、偏心率闭合判定、防重复触发守卫）** | 先 `Stop-Process -Name Dora -Force`，再 `pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt` |
-| 单测分布 | Gravity 37 / **Game 82** / LevelData 116 / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 48 / Opening 33 / PlanView 19 / OrbitFlow 25 / Scale 53 / SolarHub 27 ⇒ **合计 488 断言** | 同上 |
-| 六大任务沙盘证据 | `shot-hub-pano.png`（全景沙盘）、`shot-hub-l1-moon.png`（阿波罗探月）、`shot-hub-l2-mercury.png`（水手10号·水星特写卡）、`shot-hub-l3-sun.png`（帕克号·太阳日冕特写卡）、`shot-hub-l4-jupiter.png`（伽利略号·木星轨道器特写卡）、`shot-hub-l6-neptune.png`（旅行者2号·海王星特写卡） | `pwsh tools/shot-hub-interactive.ps1` |
-| 三枚火箭挑战与结算卡片实机证据 | `shot-result-l1-moon.png`（月球启蒙·三星评级+燃油耗尽/近月点清单）、`shot-result-l2-mercury.png`（水手10号潜行·金星减速降幅清单）、`shot-result-l4-galileo.png`（伽利略号泊入·开普勒入轨偏心率清单） | `pwsh tools/shot-hub-interactive.ps1` |
-| L4 伽利略号实时制动与慢动作透镜实机证据 | `shot-l4-brake-window.png`（木星引力井慢动作0.25x透镜下激活琥珀金色 `BRAKE 逆喷` 按钮与醒目通知横幅）、`shot-l4-braked-orbit.png`（实时逆喷减速完成闭合入轨，按钮变更为青绿色 `已捕获入轨` 状态） | `pwsh tools/shot-hub-interactive.ps1` |
-
-**断言数会随新模块增长，以引擎跑出来的合计为准，别照抄。**
+| 构建 | **51 文件 51 成功 0 失败**（2026-09-28 实测） | `node tools/dora-build/build.mjs --all` |
+| 单测 | **12 模块 404 断言 100% 全绿（0 失败）** | 先 `Stop-Process -Name Dora -Force`，再 `pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt` |
+| 单测分布 | Gravity 37 / Game 89 / LevelData 81 / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 48 / Opening 33 / PlanView 18 / OrbitFlow 25 / Scale 53 / SolarHub 27 ⇒ **合计 404 断言** | 同上 |
+| 逐关实机截图证据 | `level-1.png`（地月弯道·地球/月球星门/陨石/三星尘图钉）、`level-2.png`（金星漂移·金星/水星/陨石）、`level-3.png`（双星甩尾·木星/土星/海王星/陨石） | `pwsh tools/level-shots.ps1 -Levels 1,2,3` |
 
 ### L1 的验收证据（2026-09-27）
 

@@ -25,12 +25,12 @@
  */
 import { Camera3D, Vec3 } from 'Dora';
 import { AimInput, AimResult } from 'game/Hud';
-import { Body, BrakeThrust, Outcome, P2, SimResult, bodyPositionAt, distance, simulate, sub } from 'game/Gravity';
+import { Body, BrakeThrust, Outcome, P2, SimResult, bodyPositionAt, distance, evaluateCollectedStars, simulate, sub } from 'game/Gravity';
 import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
-import { GameSecondsPerRealSecond, GoalSpec, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
@@ -128,6 +128,10 @@ export interface GameLevel {
 	 * 用全局的 5 会让静止态读数显示 5.0、一出手就飞出地月系。
 	 */
 	aimMin?: number;
+	/** 任务专属元数据（S7）。 */
+	mission?: MissionMeta;
+	/** 街机模式：沿途 3 颗金色星尘坐标。 */
+	stars?: P2[];
 }
 
 /**
@@ -180,6 +184,12 @@ export interface GameCore {
 	hasBraked: boolean;
 	/** 逆喷制动生效时的采样点索引（-1 = 未制动）。 */
 	brakePointIndex: number;
+	/** 街机模式：沿途星尘坐标。 */
+	stars: P2[];
+	/** 街机模式：各星尘是否已收集。 */
+	collectedStars: boolean[];
+	/** 街机模式：当前瞄准预览下能吃到的星数。 */
+	previewStarsCount: number;
 }
 
 /** 飞行遥测数据（S7：用于任务结算与三枚火箭挑战判定）。 */
@@ -189,6 +199,8 @@ export interface FlightTelemetry {
 	closestDist: number;
 	maxSpeed: number;
 	eccentricity?: number;
+	/** 街机模式：收集到的星尘数 (0~3) */
+	starsCollected?: number;
 }
 
 /** 中性瞄准（没拖过时的姿态）：朝目标、力度取这一关的下限。 */
@@ -222,7 +234,10 @@ function levelAimMin(aimMin: number | undefined): number {
 	return aimMin !== undefined && aimMin >= 0 ? aimMin : AimMinSpeed;
 }
 
-export function createCore(dt?: number): GameCore {
+export function createCore(dt?: number, stars?: P2[]): GameCore {
+	const stList = stars !== undefined ? stars : [];
+	const colList: boolean[] = [];
+	for (let i = 0; i < stList.length; i++) colList.push(false);
 	return {
 		phase: 'Aiming',
 		aim: neutralAim(AimMinSpeed),
@@ -241,6 +256,9 @@ export function createCore(dt?: number): GameCore {
 		slowmoBody: -1,
 		hasBraked: false,
 		brakePointIndex: -1,
+		stars: stList,
+		collectedStars: colList,
+		previewStarsCount: 0,
 	};
 }
 
@@ -488,6 +506,22 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 	// 基准（别算错）：默认手动档 2× ⇒ 慢动作期间 2 × 0.25 = 0.5× 实时
 	const speed = core.playback * (core.slowmo ? SlowMoFactor : 1);
 	core.flightTime += dt * speed;
+
+	// 街机模式：实时星尘收集判定
+	if (core.stars !== undefined && core.stars.length > 0) {
+		const curPos = core.flight.points[coreProbeIndex(core)];
+		for (let s = 0; s < core.stars.length; s++) {
+			if (!core.collectedStars[s]) {
+				const stPos = core.stars[s];
+				const dx = curPos.x - stPos.x;
+				const dy = curPos.y - stPos.y;
+				if (dx * dx + dy * dy <= 30 * 30) {
+					core.collectedStars[s] = true;
+				}
+			}
+		}
+	}
+
 	const naturalEnd = core.flight.points.length - 1;
 	const endIdx = core.goalIndex >= 0 && core.goalIndex < naturalEnd ? core.goalIndex : naturalEnd;
 	if (coreProbeIndex(core) >= endIdx) {
@@ -545,7 +579,7 @@ export function calcFlightTelemetry(
 			const vy = vels[end].y - tvEnd.y;
 			const r = Math.sqrt(rx * rx + ry * ry);
 			const v2 = vx * vx + vy * vy;
-			const mu = targetBody.gm;
+			const mu = goalBody.gm;
 			if (r > 0 && mu > 0) {
 				const energy = v2 / 2 - mu / r;
 				const h = rx * vy - ry * vx;
@@ -557,12 +591,18 @@ export function calcFlightTelemetry(
 		}
 	}
 
+	let starsCollectedCount = 0;
+	for (let i = 0; i < core.collectedStars.length; i++) {
+		if (core.collectedStars[i]) starsCollectedCount++;
+	}
+
 	return {
 		burnDv,
 		flightTime: core.flightTime,
 		closestDist: closestDist < 1e8 ? closestDist : 0,
 		maxSpeed,
 		eccentricity,
+		starsCollected: starsCollectedCount,
 	};
 }
 
@@ -579,6 +619,8 @@ export function coreRetry(core: GameCore, aimMin?: number): void {
 	core.slowmoBody = -1;
 	core.hasBraked = false;
 	core.brakePointIndex = -1;
+	for (let i = 0; i < core.collectedStars.length; i++) core.collectedStars[i] = false;
+	core.previewStarsCount = 0;
 	core.aim = neutralAim(levelAimMin(aimMin));
 }
 
@@ -925,7 +967,7 @@ export interface Game {
 
 /** 组装游戏（状态机 + 引擎驱动）。 */
 export function createGame(level: GameLevel, deps: GameDeps): Game {
-	const core = createCore(level.physicsStep);
+	const core = createCore(level.physicsStep, level.stars);
 
 	// ---- 时间档位（B3，2026-09-28）----
 	// `core.playback` 从此就是"**当前速率**"（游戏秒/真实秒），瞄准期与飞行期共用它 ——
@@ -938,6 +980,24 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	const speedUnit = level.speedUnit !== undefined && level.speedUnit > 0 ? level.speedUnit : GameSecondsPerRealSecond;
 	const applySpeedRate = (): void => {
 		core.playback = paused ? 0 : speedRateOf(speedPow, speedUnit);
+	};
+	/**
+	 * 发射瞬间把档位提到「飞行观赏档」（B3 + B 修复④，2026-09-28）。
+	 *
+	 * L1 = 10,000× ⇒ 0.9 天的快转移 8.6 秒打完；1× 下这一发要飞 ~22 小时，等不起。
+	 * 这是**唯一**一处替玩家改档位的地方。
+	 *
+	 * ⚠️ 必须**两条发射路径共用**：`launchArmed`（HUD 的「发射」按钮 —— 玩家真正走的那条）
+	 * 与 `launch`（开发钩子 / 回归脚本）。B3 当初只写进了 `launch`，于是自动提档
+	 * **只有脚本能触发、玩家按按钮永远停在 1×** —— 是 B5 的「合成鼠标证据」把它照出来的
+	 * （脚本走 launch、按钮走 launchArmed，两条路都跑一遍才看得见）。
+	 */
+	const applyFlightSpeed = (): void => {
+		if (level.flightSpeedPow === undefined || level.flightSpeedPow <= speedPow) return;
+		speedPow = level.flightSpeedPow;
+		paused = false;
+		applySpeedRate();
+		print('[escape-velocity] speed auto -> 1e' + speedPow.toFixed(0) + 'x (launch)');
 	};
 	// S5：飞行回放的默认倍速**按关卡**给。L1 的转移飞行只有 0.40 游戏秒，
 	// 2× 播放下是 0.2 真实秒 —— 玩家什么都看不见（这正是"每关一个播放速度"的理由）。
@@ -973,12 +1033,16 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		print('[escape-velocity] view -> ' + mode + ' (phase=' + core.phase + ')');
 	};
 
+	const tourDef = level.mission !== undefined ? level.mission.introTour : undefined;
+	const tourDuration = tourDef !== undefined ? tourDef.totalDuration : 3.2;
+
 	const finishIntroTour = (): void => {
 		if (!introTourActive) return;
 		introTourActive = false;
-		introTourT = IntroTourDuration;
+		introTourT = tourDuration;
 		core.viewMode = '2D';
 		applyView();
+		deps.aim.setIntroTourBannerVisible(false);
 		print('[escape-velocity] intro tour completed -> enter 2D');
 	};
 
@@ -1009,10 +1073,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let predAccum = 1;
 	let predForce = true;
 	let predPoints: P2[] = [];
-	// 进关影视化倒叙/溯源运镜（S8.1）：先在 3D 下目标特写 ➔ 飞掠 ➔ 地球探测器 ➔ 切入 2D
-	const IntroTourDuration = 3.2;
+	// 进关影视化倒叙/溯源运镜（S8.1 / L1-L3 重构）：先在 3D 下目标特写 ➔ 飞掠 ➔ 地球探测器 ➔ 切入 2D
 	let introTourActive = false;
-	let introTourT = IntroTourDuration;
+	let introTourT = tourDuration;
 	let introLogged = false;
 	/** 相机诊断行的打印计数（只打前几帧，别刷屏）。 */
 	let frameLogged = 0;
@@ -1309,10 +1372,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				+ ' slowmo=' + (core.slowmo ? 1 : 0)
 				+ ' pts=[' + fr.pts.map((p) => '(' + p.x.toFixed(3) + ',' + p.y.toFixed(3) + ')').join(' ') + ']');
 		}
-		// 进关影视化倒叙/溯源运镜（S8.1）：① 目标天体特写 ➔ ② 逆序飞掠路线 ➔ ③ 探测器特写 ➔ ④ 切入 2D
-		if (introTourActive && introTourT < IntroTourDuration) {
+		// 进关影视化倒叙/溯源运镜（S8.1 / L1-L3 重构）
+		if (introTourActive && introTourT < tourDuration) {
 			introTourT += dt;
-			let k = introTourT / IntroTourDuration;
+			let k = introTourT / tourDuration;
 			if (k >= 1) {
 				finishIntroTour();
 			} else {
@@ -1320,66 +1383,138 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 					introLogged = true;
 					print('[escape-velocity] intro camera finishing');
 				}
-				let targetBody: Body | undefined = undefined;
-				const wps = goalWaypoints(level.goal);
-				if (wps.length > 0) {
-					targetBody = level.bodies[wps[wps.length - 1].planetIndex];
-				} else if (level.goal.planetIndex >= 0 && level.goal.planetIndex < level.bodies.length) {
-					targetBody = level.bodies[level.goal.planetIndex];
-				}
-				if (targetBody === undefined && level.bodies.length > 0) {
-					targetBody = level.bodies[level.bodies.length - 1];
-				}
+				if (tourDef !== undefined && tourDef.segments.length > 0) {
+					// 关卡多航点倒叙长镜头
+					let elapsed = introTourT;
+					let segIndex = 0;
+					let segStart = 0;
+					for (let s = 0; s < tourDef.segments.length; s++) {
+						const seg = tourDef.segments[s];
+						if (elapsed <= seg.duration || s === tourDef.segments.length - 1) {
+							segIndex = s;
+							break;
+						}
+						elapsed -= seg.duration;
+						segStart += seg.duration;
+					}
+					const curSeg = tourDef.segments[segIndex];
+					const segK = Math.max(0, Math.min(1, (introTourT - segStart) / (curSeg.duration > 0 ? curSeg.duration : 1)));
 
-				if (targetBody !== undefined) {
-					const pwTarget = planeToWorld(bodyPositionAt(targetBody, tNow), 0);
+					deps.aim.setIntroTourBanner(curSeg.banner, '轻触屏幕任意位置跳过运镜');
+					deps.aim.setIntroTourBannerVisible(true);
+
 					const pwProbe = planeToWorld(probePos, 0);
-					const isMicroSystem = targetBody.orbitRadius < 2.0;
-					const distTarget = isMicroSystem ? Math.max(0.18, targetBody.radius * 180) : Math.max(8, targetBody.radius * 350);
-					const distProbe = isMicroSystem ? Math.max(0.015, deps.scene.probeRadius * 10) : Math.max(1.5, deps.scene.probeRadius * 6);
+					const getTargetPosAndDist = (targetIdx?: number, userDist?: number): { pos: Vec3.Type; dist: number } => {
+						if (targetIdx !== undefined && targetIdx >= 0 && targetIdx < level.bodies.length) {
+							const b = level.bodies[targetIdx];
+							const isMicro = b.orbitRadius < 2.0;
+							const p = planeToWorld(bodyPositionAt(b, tNow), 0);
+							const defaultD = isMicro ? Math.max(0.008, b.radius * 2.5) : Math.max(8, b.radius * 12);
+							return { pos: p, dist: userDist !== undefined ? userDist : defaultD };
+						}
+						const isMicro = level.bodies.length > 1 && level.bodies[1].orbitRadius < 2.0;
+						const defaultD = isMicro ? Math.max(0.0035, deps.scene.probeRadius * 6) : Math.max(2.5, deps.scene.probeRadius * 6);
+						return { pos: pwProbe, dist: userDist !== undefined ? userDist : defaultD };
+					};
 
-					if (k < 0.35) {
-						// 幕一：目标星球特写
-						const e1 = k / 0.35;
-						const az = (0.2 + e1 * 0.15) * Math.PI;
-						const tilt = 0.35 * Math.PI;
+					const curKey = getTargetPosAndDist(curSeg.targetPlanetIndex, curSeg.camDist);
+					const prevSeg = segIndex > 0 ? tourDef.segments[segIndex - 1] : curSeg;
+					const prevKey = segIndex > 0 ? getTargetPosAndDist(prevSeg.targetPlanetIndex, prevSeg.camDist) : curKey;
+
+					const prevAz = (prevSeg.azDeg !== undefined ? prevSeg.azDeg : 45) * Math.PI / 180;
+					const curAz = (curSeg.azDeg !== undefined ? curSeg.azDeg : 45) * Math.PI / 180;
+					const prevTilt = (prevSeg.tiltDeg !== undefined ? prevSeg.tiltDeg : 45) * Math.PI / 180;
+					const curTilt = (curSeg.tiltDeg !== undefined ? curSeg.tiltDeg : 45) * Math.PI / 180;
+
+					if (segIndex === 0) {
+						// 第一幕：目标星球特写环绕
+						const az = curAz + segK * (18 * Math.PI / 180);
+						const tilt = curTilt;
+						const d = curKey.dist;
 						const eye = Vec3(
-							pwTarget.x + Math.sin(az) * Math.cos(tilt) * distTarget,
-							pwTarget.y + Math.sin(tilt) * distTarget,
-							pwTarget.z + Math.cos(az) * Math.cos(tilt) * distTarget,
+							curKey.pos.x + Math.sin(az) * Math.cos(tilt) * d,
+							curKey.pos.y + Math.sin(tilt) * d,
+							curKey.pos.z + Math.cos(az) * Math.cos(tilt) * d,
 						);
-						frame = { target: pwTarget, eye };
-					} else if (k < 0.72) {
-						// 幕二：溯源拉升与飞掠
-						const e2 = (k - 0.35) / 0.37;
-						const ease2 = e2 * e2 * (3 - 2 * e2);
-						const az = (0.35 + (1 - ease2) * 0.1) * Math.PI;
-						const peakDist = isMicroSystem ? 1.2 : Math.max(distTarget * 2.2, 45);
-						const curDist = distTarget + (peakDist - distTarget) * Math.sin(ease2 * Math.PI) + (distProbe - distTarget) * ease2;
-						const targetCenter = Vec3(
-							pwTarget.x + (pwProbe.x - pwTarget.x) * ease2,
-							pwTarget.y + (pwProbe.y - pwTarget.y) * ease2,
-							pwTarget.z + (pwProbe.z - pwTarget.z) * ease2,
-						);
-						const eye = Vec3(
-							targetCenter.x + Math.sin(az) * 0.5 * curDist,
-							targetCenter.y + curDist * 0.8,
-							targetCenter.z + Math.cos(az) * 0.5 * curDist,
-						);
-						frame = { target: targetCenter, eye };
+						frame = { target: curKey.pos, eye };
 					} else {
-						// 幕三：归巢探测器特写
-						const e3 = (k - 0.72) / 0.28;
-						const ease3 = 1 - (1 - e3) * (1 - e3);
-						const az = 0.25 * Math.PI;
-						const tilt = 0.36 * Math.PI;
-						const curDist = (distTarget * 0.4) * (1 - ease3) + distProbe * ease3;
-						const eye = Vec3(
-							pwProbe.x + Math.sin(az) * Math.cos(tilt) * curDist,
-							pwProbe.y + Math.sin(tilt) * curDist,
-							pwProbe.z + Math.cos(az) * Math.cos(tilt) * curDist,
+						// 跨行星飞掠跃迁过渡
+						const ease = segK * segK * (3 - 2 * segK);
+						const target = Vec3(
+							prevKey.pos.x + (curKey.pos.x - prevKey.pos.x) * ease,
+							prevKey.pos.y + (curKey.pos.y - prevKey.pos.y) * ease,
+							prevKey.pos.z + (curKey.pos.z - prevKey.pos.z) * ease,
 						);
-						frame = { target: pwProbe, eye };
+						const az = prevAz + (curAz - prevAz) * ease;
+						const tilt = prevTilt + (curTilt - prevTilt) * ease;
+						const peakBonus = Math.sin(ease * Math.PI) * Math.max(prevKey.dist, curKey.dist) * 0.35;
+						const d = prevKey.dist + (curKey.dist - prevKey.dist) * ease + peakBonus;
+						const eye = Vec3(
+							target.x + Math.sin(az) * Math.cos(tilt) * d,
+							target.y + Math.sin(tilt) * d,
+							target.z + Math.cos(az) * Math.cos(tilt) * d,
+						);
+						frame = { target, eye };
+					}
+				} else {
+					let targetBody: Body | undefined = undefined;
+					const wps = goalWaypoints(level.goal);
+					if (wps.length > 0) {
+						targetBody = level.bodies[wps[wps.length - 1].planetIndex];
+					} else if (level.goal.planetIndex >= 0 && level.goal.planetIndex < level.bodies.length) {
+						targetBody = level.bodies[level.goal.planetIndex];
+					}
+					if (targetBody === undefined && level.bodies.length > 0) {
+						targetBody = level.bodies[level.bodies.length - 1];
+					}
+
+					if (targetBody !== undefined) {
+						const pwTarget = planeToWorld(bodyPositionAt(targetBody, tNow), 0);
+						const pwProbe = planeToWorld(probePos, 0);
+						const isMicroSystem = targetBody.orbitRadius < 2.0;
+						const distTarget = isMicroSystem ? Math.max(0.18, targetBody.radius * 180) : Math.max(8, targetBody.radius * 350);
+						const distProbe = isMicroSystem ? Math.max(0.015, deps.scene.probeRadius * 10) : Math.max(1.5, deps.scene.probeRadius * 6);
+
+						if (k < 0.35) {
+							const e1 = k / 0.35;
+							const az = (0.2 + e1 * 0.15) * Math.PI;
+							const tilt = 0.35 * Math.PI;
+							const eye = Vec3(
+								pwTarget.x + Math.sin(az) * Math.cos(tilt) * distTarget,
+								pwTarget.y + Math.sin(tilt) * distTarget,
+								pwTarget.z + Math.cos(az) * Math.cos(tilt) * distTarget,
+							);
+							frame = { target: pwTarget, eye };
+						} else if (k < 0.72) {
+							const e2 = (k - 0.35) / 0.37;
+							const ease2 = e2 * e2 * (3 - 2 * e2);
+							const az = (0.35 + (1 - ease2) * 0.1) * Math.PI;
+							const peakDist = isMicroSystem ? 1.2 : Math.max(distTarget * 2.2, 45);
+							const curDist = distTarget + (peakDist - distTarget) * Math.sin(ease2 * Math.PI) + (distProbe - distTarget) * ease2;
+							const targetCenter = Vec3(
+								pwTarget.x + (pwProbe.x - pwTarget.x) * ease2,
+								pwTarget.y + (pwProbe.y - pwTarget.y) * ease2,
+								pwTarget.z + (pwProbe.z - pwTarget.z) * ease2,
+							);
+							const eye = Vec3(
+								targetCenter.x + Math.sin(az) * 0.5 * curDist,
+								targetCenter.y + curDist * 0.8,
+								targetCenter.z + Math.cos(az) * 0.5 * curDist,
+							);
+							frame = { target: targetCenter, eye };
+						} else {
+							const e3 = (k - 0.72) / 0.28;
+							const ease3 = 1 - (1 - e3) * (1 - e3);
+							const az = 0.25 * Math.PI;
+							const tilt = 0.36 * Math.PI;
+							const curDist = (distTarget * 0.4) * (1 - ease3) + distProbe * ease3;
+							const eye = Vec3(
+								pwProbe.x + Math.sin(az) * Math.cos(tilt) * curDist,
+								pwProbe.y + Math.sin(tilt) * curDist,
+								pwProbe.z + Math.cos(az) * Math.cos(tilt) * curDist,
+							);
+							frame = { target: pwProbe, eye };
+						}
 					}
 				}
 			}
@@ -1440,6 +1575,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.trajectory.setPrediction(predPoints, basis);
 			// 2D 用的是**同一批采样点**（硬约束 5）：只换投影，不重跑 simulate
 			deps.plan.setPrediction(predPoints);
+			// 街机模式：预览收集的星尘
+			if (core.stars.length > 0) {
+				const stEval = evaluateCollectedStars(predPoints, core.stars, 30);
+				core.previewStarsCount = stEval.count;
+				deps.plan.setStars(core.stars, stEval.collected);
+			}
 		}
 		// 探测器停泊轨（B2）：3D 走投影折线（远侧压暗），2D 直接画圆 —— 同一份 (中心, 半径)
 		if (idleOrbit !== undefined) {
@@ -1540,6 +1681,23 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.scene.syncProbe(pos);
 		if (idx > 0) {
 			deps.scene.faceVelocity(sub(pos, core.flight.points[idx - 1]));
+		}
+
+		// 街机模式：实时检测星尘收集
+		for (let s = 0; s < core.stars.length; s++) {
+			if (!core.collectedStars[s]) {
+				const stPos = core.stars[s];
+				const dx = pos.x - stPos.x;
+				const dy = pos.y - stPos.y;
+				if (dx * dx + dy * dy <= 30 * 30) {
+					core.collectedStars[s] = true;
+					if (deps.scene.setStarCollected !== undefined) {
+						deps.scene.setStarCollected(s);
+					}
+					deps.plan.setStars(core.stars, core.collectedStars);
+					print('[escape-velocity] star collected: #' + (s + 1) + ' at t=' + core.flightTime.toFixed(2));
+				}
+			}
 		}
 
 		// 取景（S3.17）：慢动作期间**贴近被掠过的天体** —— 复用 CameraRig 的逐点半径求解，
@@ -1684,6 +1842,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		launchArmed: (): void => {
 			// 状态守卫：只有 Armed 才能打出去（连点/迟到的回调一律无效）
 			if (core.phase !== 'Armed') return;
+			applyFlightSpeed(); // B 修复④：玩家按的那颗「发射」按钮走的也是这条路，档位必须在这里提
 			handoffDate(true); // ⚠️ 必须在 coreLaunch 之前：飞行/结算只认 core.t0
 			coreLaunch(core, core.aim.velocity, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
@@ -1719,14 +1878,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (obsZoom > 1.8) obsZoom = 1.8;
 		},
 		launch: (v: P2): void => {
-			// B3：发射瞬间把档位提到"飞行观赏档"（L1 = 10,000× ⇒ 0.9 天的快转移 8.6 秒打完）。
-			// 这是**唯一**一处替玩家改档位的地方 —— 1× 下这一发要飞 ~22 小时，等不起。
-			if (level.flightSpeedPow !== undefined && level.flightSpeedPow > speedPow) {
-				speedPow = level.flightSpeedPow;
-				paused = false;
-				applySpeedRate();
-				print('[escape-velocity] speed auto -> 1e' + speedPow.toFixed(0) + 'x (launch)');
-			}
+			applyFlightSpeed(); // 与 launchArmed 共用同一条（B 修复④）
 			if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
 			handoffDate(true); // ⚠️ 同上：日期必须在 coreLaunch 之前交给 t0
 			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）
@@ -1737,11 +1889,14 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.onPhase('Flying');
 		},
 		retry: (): void => {
-			if (core.phase !== 'Result') return;
-			handoffDate(false); // 把日期从 t0 拿回 clock：重试保留玩家挑好的时机
+			handoffDate(false); // 把日期从 t0 拿回 clock
 			aimed = false;      // 重新瞄准：预测线回到"还没瞄过"的状态
-			introTourActive = false; // 重试不重放运镜
+			introTourActive = false;
 			coreRetry(core, level.aimMin);
+			if (deps.scene.resetStars !== undefined) {
+				deps.scene.resetStars();
+			}
+			deps.plan.setStars(core.stars, core.collectedStars);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
 			deps.trajectory.clearGoalRings();
@@ -1768,14 +1923,16 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		startLevel: (): void => {
 			aimed = false;
 			coreRetry(core, level.aimMin);
+			if (deps.scene.resetStars !== undefined) {
+				deps.scene.resetStars();
+			}
+			deps.plan.setStars(core.stars, core.collectedStars);
 			deps.rig.reset();
-			// 进关开启 3D 倒叙溯源运镜：特写目标 ➔ 飞掠 ➔ 探测器 ➔ 切入 2D
-			introTourActive = true;
-			introTourT = 0;
-			introLogged = false;
-			core.viewMode = '3D';
+			// 街机模式：直接在 2D 规划层进入拖拽瞄准（零等待秒开局）
+			introTourActive = false;
+			core.viewMode = '2D';
 			appliedMode = '';
-			applyView(); // 进关先展示 3D 世界
+			applyView();
 			prepareIdle();
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();

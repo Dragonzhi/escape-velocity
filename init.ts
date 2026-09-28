@@ -30,7 +30,8 @@ import { Progress, advanceUnlocked, getMissionRockets, getTotalRockets, loadProg
 // 只为主循环推进 UI 时钟：按钮防抖不能依赖引擎那个冻结的 App.elapsedTime（见 game/Ui.ts）
 import { advanceUiClock } from 'game/Ui';
 // S5：每关的物理步长 / 播放倍速 / 相机夹紧 / 瞄准区间（"想调就调"的值都在那里）
-import { levelRuntime } from 'game/Tuning';
+// B 修复①：裁剪面（近/远平面）也在那里 —— 它是全局的，必须按关卡的世界尺度切
+import { CLIP_NEAR_DEFAULT, levelRuntime } from 'game/Tuning';
 import { Opening, createOpening, loadIntroSeen, saveIntroSeen } from 'game/Opening';
 import { SolarHub, createSolarHub } from 'game/SolarHub';
 
@@ -55,6 +56,57 @@ interface LevelRuntime {
 	/** 时间流量程（秒）；没有时间轴时为 0。 */
 	dateSpan: number;
 }
+
+/**
+ * 把 `View` 的 3D 裁剪面切到某一关的世界尺度（B 修复①：3D 近裁剪面）。
+ *
+ * 为什么需要它：`Camera3D` 的 d.ts 只有 position/target/up/lookAt，**没有 near/far** ——
+ * 裁剪面是 `View`（应用级单例）的，默认 `near = 0.1 / far = 10000`（引擎 `Script/Dev/Entry.yue`）。
+ * 而 L1 的贴地球机位里相机离地球只有 **~0.0089 单位**（取景要装下视觉半径 0.0034 的地球），
+ * 0.1 的近平面比这个距离还大 11 倍 ⇒ **整个地月系被裁掉**，屏幕上只剩天球上的星点
+ * （用户实测「切到 3D 啥也看不到」；2026-09-28 截图复现：3D 帧里除星星一无所有）。
+ *
+ * 口径：**没有 near 覆盖的关卡就是引擎默认值**，所以切沙盘/开场时也走这里（`index < 0`）——
+ * 否则从 L1 回到沙盘会留着 2e-4 的近平面（沙盘的世界是 80 单位级，2e-4 会让深度精度白白变差）。
+ * **远平面只在关卡点名时才写**（`cameraFar`）：默认的 10000 谁都够用，
+ * 而去动一个全局值就要有理由 —— 改之前先问"这一关真的需要吗"。
+ *
+ * 幂等：值没变就一个字节都不写、一行都不打。
+ * ⚠️ 比较必须带**容差**：引擎那边存的是 **float32**，写进去的 0.1 读回来是
+ * 0.10000000149011612（探针实测）—— 用 `!==` 比会让"没变"永远判成"变了"，
+ * 于是每次切相机都白写一次、白打一行日志。
+ *
+ * @param index 关卡下标（0 起）；**负值 = 非关卡场景**（太阳系沙盘 / 开场），用引擎默认值。
+ */
+const applyClipPlanes = (index: number): void => {
+	let near = CLIP_NEAR_DEFAULT;
+	// 0 = **不指定** ⇒ 远平面保持引擎当前值（关卡没点名就不要去动它，见 Tuning.LevelRuntime.cameraFar）
+	let far = 0;
+	if (index >= 0) {
+		const rt = levelRuntime(index);
+		if (rt.cameraNear !== undefined && rt.cameraNear > 0) near = rt.cameraNear;
+		if (rt.cameraFar !== undefined && rt.cameraFar > 0) far = rt.cameraFar;
+	}
+	const prevNear = View.nearPlaneDistance;
+	const prevFar = View.farPlaneDistance;
+	// float32 容差（见上面注释）：相对 1e-6 足以区分"同一档"与"真的要换"
+	let changed = Math.abs(prevNear - near) > near * 1e-6;
+	if (changed) View.nearPlaneDistance = near;
+	if (far > 0 && Math.abs(prevFar - far) > far * 1e-6) {
+		View.farPlaneDistance = far;
+		changed = true;
+	}
+	if (!changed) return;
+	print('[escape-velocity] clip planes near=' + prevNear.toFixed(6) + '->' + View.nearPlaneDistance.toFixed(6)
+		+ ' far=' + prevFar.toFixed(0) + '->' + View.farPlaneDistance.toFixed(0)
+		+ ' (' + (index >= 0 ? 'L' + (index + 1).toFixed(0) : 'hub/opening') + ')');
+};
+
+/** 切相机：先同步裁剪面再推栈（两者必须一起切，否则下一关的近平面是上一关的）。 */
+const useCamera = (camera: Camera3D.Type, levelIndex: number): void => {
+	applyClipPlanes(levelIndex);
+	Director.pushCamera(camera);
+};
 
 let debugTriggerResultFn: ((levelIndex: number, outcome?: ResultKind) => void) | undefined = undefined;
 let debugTriggerBrakeWindowFn: ((levelIndex: number) => void) | undefined = undefined;
@@ -218,6 +270,8 @@ if (levelTotal <= 0) {
 			aimMin: levelRuntime(index).aimMin,
 			maxSteps: def.maxSteps,
 			predictSteps: levelRuntime(index).predictSteps,
+			mission: def.mission,
+			stars: def.stars,
 		};
 
 		const world = Node3D();
@@ -230,6 +284,7 @@ if (levelTotal <= 0) {
 			bodies,
 			visuals: def.visuals,
 			probeStart: level.probeStart,
+			stars: def.stars,
 			// S3.14 建模交付：探测器分成**两版**（太阳能板 / RTG 核电池），见 LevelDef.probeVariant。
 			// 每版都是「机体 + 天线」两个文件（引擎拿不到 glTF 子节点 ⇒ 不拆文件就没法转天线）。
 			// S5.1：scale 来自 Tuning 的每关探测器视觉半径（L1 = 0.0015，别处 2.2）。
@@ -252,6 +307,9 @@ if (levelTotal <= 0) {
 			// 两版共用同一张细节图集（UV 已按分区排好，材质色与它相乘）
 			probeAtlasPath: 'Assets/Image/probe_atlas.jpg',
 			orbitFlowDots: levelRuntime(index).orbitFlowDots,
+			// B 修复②（2026-09-28）：L1 关掉行星轨道圈 —— 相机站在地球的日心轨道圈上
+			// （半径 80.000009 vs 相机离原点 80.0117），那张环网面会横贯全屏
+			orbitRings: levelRuntime(index).orbitRings,
 		});
 		if (scene === undefined) {
 			print('[escape-velocity] FATAL: scene build failed for L' + (index + 1).toFixed(0));
@@ -270,6 +328,9 @@ if (levelTotal <= 0) {
 		// B2：L1 关掉流动光点（见 Tuning.orbitFlowDots）—— 2D 与 3D 一起关
 		const planOpts = defaultPlanOptions();
 		if (levelRuntime(index).orbitFlowDots === false) planOpts.flowDotRadius = 0;
+		// B 修复⑤：图钉的"真实大小"那一路也要用**本关**的探测器视觉半径
+		// （全局的 0.0015 在 L1 是 10 倍夸大，60× 放大下会把图钉吹到上限）
+		planOpts.probeVisualRadius = levelRuntime(index).probeVisualRadius;
 		const plan = createPlanView(levelLayers[index], viewW, viewH, planOpts, def.planCenter);
 		const planTolerance = arrivalRingRadius(def.goal);
 		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter));
@@ -408,6 +469,11 @@ if (levelTotal <= 0) {
 			finale: index === levelTotal - 1,
 		});
 
+		aim.onQuickRetry((): void => {
+			print('[escape-velocity] quick retry tapped (L' + (index + 1).toFixed(0) + ')');
+			game.retry();
+		});
+
 		// ⚠️ 把瞄准层接到状态机上（S2.2 重写 init.ts 时漏掉这两行，真机表现为
 		// “进关卡拖不动飞行器”：触摸收到了，但 aim 的拖动/松手回调没人接，
 		// 于是预测线不跟手、松手也不发射。旧版 init.ts(7cb72b0) 里就是这两行。）
@@ -433,6 +499,11 @@ if (levelTotal <= 0) {
 		aim.onZoom((deltaDist: number): void => {
 			game.observeZoom(deltaDist);
 		});
+		aim.onSkipTour((): void => {
+			print('[escape-velocity] tap to skip tour (L' + (index + 1).toFixed(0) + ')');
+			game.skipIntroTour();
+		});
+		aim.setTourActiveChecker((): boolean => game.isIntroTourActive());
 		// 「2D / 3D」手动切换（S3.15）：按钮只表达意图，翻转与节点切换都在 Game 里（状态驱动）
 		aim.onViewToggle((): void => {
 			game.toggleViewMode();
@@ -499,6 +570,8 @@ if (levelTotal <= 0) {
 		if (solarHub !== undefined) solarHub.hide();
 		activeIndex = index;
 		showOnlyLevel(index);
+		// 裁剪面必须跟着关卡走：从沙盘回到**同一关**时相机栈不动（wasActive），但近平面要切回来
+		applyClipPlanes(index);
 		if (!wasActive) Director.pushCamera(runtime.camera);
 		runtime.game.startLevel();
 		print('[escape-velocity] enter ' + runtime.name);
@@ -562,7 +635,7 @@ if (levelTotal <= 0) {
 		// 以存档为准刷新：成功那一局已经写过盘了
 		progress = loadProgress(levelTotal);
 		const hub = ensureSolarHub();
-		Director.pushCamera(hubCamera);
+		useCamera(hubCamera, -1);
 		hub.show(progress);
 		print('[escape-velocity] back to solarHub: total rockets=' + getTotalRockets(progress, levelTotal).toFixed(0));
 	};
@@ -670,7 +743,7 @@ if (levelTotal <= 0) {
 			enterLevel(keep);
 		} else {
 			const hub = ensureSolarHub();
-			Director.pushCamera(hubCamera);
+			useCamera(hubCamera, -1);
 			hub.show(progress);
 		}
 		print('[escape-velocity] viewport rebuilt: ' + viewW.toFixed(0) + 'x' + viewH.toFixed(0));
@@ -715,14 +788,14 @@ if (levelTotal <= 0) {
 					if (opening !== undefined) opening.hide();
 					if (select !== undefined) select.hide();
 					const hub = ensureSolarHub();
-					Director.pushCamera(hubCamera);
+					useCamera(hubCamera, -1);
 					hub.show(progress);
 					print('[escape-velocity] opening finished -> show solarHub: frame=' + (opening !== undefined ? opening.frameIndex().toFixed(0) : '?'));
 				},
 			});
 		}
 		if (opening === undefined) return;
-		Director.pushCamera(openingCamera);
+		useCamera(openingCamera, -1);
 		opening.start();
 		print('[escape-velocity] opening start (first launch)');
 	};
@@ -832,7 +905,7 @@ if (levelTotal <= 0) {
 		startOpening();
 	} else {
 		const hub = ensureSolarHub();
-		Director.pushCamera(hubCamera);
+		useCamera(hubCamera, -1);
 		hub.show(progress);
 		print('[escape-velocity] entered solarHub (already seen)');
 	}

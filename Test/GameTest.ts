@@ -533,6 +533,45 @@ function testInFlightBrake(): void {
 	check('brake-retry-reset', !core.hasBraked && core.brakePointIndex === -1, '重试后制动标记应恢复初值');
 }
 
+/** 15) 街机星尘收集与重置（纯函数 / 状态机判定）。 */
+function testArcadeStars(): void {
+	const stars: P2[] = [
+		{ x: 0, y: 10 },
+		{ x: 0, y: 5 },
+		{ x: 100, y: 100 }, // 远处的星
+	];
+	const level: GameLevel = {
+		bodies: [{ gm: 0, radius: 1, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 }],
+		probeStart: { x: 0, y: 15 },
+		goal: { kind: 'planet', planetIndex: 0, tolerance: 2 },
+		escapeRadius: 200,
+		maxSteps: 1000,
+		stars,
+	};
+
+	const core = createCore(0.016, stars);
+	check('arcade-stars-initial-uncollected', core.collectedStars.length === 3 && !core.collectedStars[0] && !core.collectedStars[1], '开局所有星尘未收集');
+
+	// 发射：直线下落穿过 (0,10) 与 (0,5)
+	coreLaunch(core, { x: 0, y: -10 }, level);
+	check('arcade-launch-flying', core.phase === 'Flying', '进入飞行相态');
+
+	// 推进几步飞过前两颗星
+	for (let i = 0; i < 40; i++) {
+		coreUpdate(core, 0.016, level);
+	}
+	check('arcade-star-0-collected', core.collectedStars[0] === true, '第1颗星尘应被收集');
+	check('arcade-star-1-collected', core.collectedStars[1] === true, '第2颗星尘应被收集');
+	check('arcade-star-2-missed', core.collectedStars[2] === false, '第3颗远处的星不应被收集');
+
+	const telem = calcFlightTelemetry(core, level);
+	check('arcade-telemetry-stars', telem.starsCollected === 2, `遥测星数应为 2，实际为 ${telem.starsCollected}`);
+
+	// 秒重开重置
+	coreRetry(core);
+	check('arcade-retry-stars-reset', !core.collectedStars[0] && !core.collectedStars[1] && !core.collectedStars[2], '重试后星尘必须全重置');
+}
+
 export function runTests(): string {
 	testResolveResult();
 	testTimeWarpGuard();
@@ -548,6 +587,7 @@ export function runTests(): string {
 	testSlowMotion();
 	testPlaybackSpeed();
 	testInFlightBrake();
+	testArcadeStars();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

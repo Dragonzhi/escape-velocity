@@ -326,6 +326,8 @@ export interface PlanView {
 	/** 探测器停泊轨（B2）：以宿主天体为圆心的细环（半径 = 相对宿主的轨道半径）。 */
 	setProbeOrbit(center: P2, radius: number): void;
 	clearProbeOrbit(): void;
+	/** 街机模式：更新星尘收集状态。 */
+	setStars(stars: P2[], collected: boolean[]): void;
 	/** 把本帧的改动一次性画出来（每帧由 Game 在所有 set* 之后调用一次）。 */
 	flush(): void;
 	/** 清空全部绘制（隐藏 / 视口重建 / 离开关卡时调用）。 */
@@ -423,6 +425,8 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	let pred: P2[] = [];
 	let trail: P2[] = [];
 	let rings: GoalRing[] = [];
+	let stars: P2[] = [];
+	let collectedStars: boolean[] = [];
 
 	/**
 	 * 标签贴边时别被切掉。
@@ -511,6 +515,19 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			}
 		}
 
+		// ①d 街机引力场呼吸圈（引力影响范围）
+		const gravityRingColor = Color(100, 180, 255, 70);
+		for (const b of bodies) {
+			if (b.gm > 0 && !b.isObstacle) {
+				const center = b.host !== undefined ? bodyPositionAt(b.host, tWorld) : b.orbitCenter;
+				const s = planeToScreen(center, map);
+				const gravR = (b.radius * 3.6 + Math.sin(tWorld * 3) * 4) * map.scale;
+				if (gravR >= 5) {
+					orbitDraw.drawPolygon(circleVerts(s.x, s.y, gravR, 48), noFill, 1.5, gravityRingColor);
+				}
+			}
+		}
+
 		// ② 到达圈：半径 = 该航点的容差 **按平面单位换算**（圈的像素大小就是"够不够得着"的信息）
 		for (const ring of rings) {
 			const s = planeToScreen(ring.center, map);
@@ -584,6 +601,19 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 				2,
 				probeColor,
 			);
+		}
+
+		// ⑤c 街机金色星尘（🌟）
+		for (let i = 0; i < stars.length; i++) {
+			const st = stars[i];
+			const isCol = i < collectedStars.length && collectedStars[i];
+			const ss = planeToScreen(st, map);
+			if (!isCol) {
+				pinDraw.drawDot(Vec2(ss.x, ss.y), 8, Color(255, 215, 0, 255));
+				pinDraw.drawPolygon(circleVerts(ss.x, ss.y, 14, 16), noFill, 1.5, Color(255, 230, 100, 200));
+			} else {
+				pinDraw.drawDot(Vec2(ss.x, ss.y), 5, Color(120, 120, 120, 100));
+			}
 		}
 
 		// ⑤b 探测器读数（B 修复③）：贴在图钉**下方**（它在 L1 里与地球几乎重叠，写在上方会打架）
@@ -734,6 +764,11 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		},
 		clearGoalRings(): void {
 			rings = [];
+			dirty = true;
+		},
+		setStars(s: P2[], c: boolean[]): void {
+			stars = s;
+			collectedStars = c;
 			dirty = true;
 		},
 		flush(): void {

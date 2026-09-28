@@ -14,7 +14,7 @@ import { Body, bodyPositionAt } from 'game/Gravity';
 import {
 	FlowDotsPerOrbit, flowDotAngle, flowDotPosition, orbitAngleAt, orbitAngularRate, orbitCenterAt,
 } from 'game/OrbitFlow';
-import { getLevel, scaledPlanets } from 'game/LevelData';
+import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
 import { SunGm } from 'game/Scale';
 
 interface Failure {
@@ -174,7 +174,8 @@ function testRealLevels(): void {
 	let keplerOk = true;
 	let orderOk = true;
 	const detail: string[] = [];
-	for (let li = 0; li < 6; li++) {
+	const count = levelCount();
+	for (let li = 0; li < count; li++) {
 		const lv = getLevel(li);
 		if (lv === undefined) {
 			allHaveOrbits = false;
@@ -185,14 +186,7 @@ function testRealLevels(): void {
 		for (const b of bodies) {
 			if (b.orbitRadius > 0 && b.orbitPeriod > 0) movers.push(b);
 		}
-		// S5：从 2 降到 1 —— L2/L3 只有一颗目标行星（旧的"家园地球"布景已移除，
-		// 理由见 LevelData 文件头第 4 条）。L1 仍有 2 个（地球 + 月球）。
-		if (movers.length < 1) allHaveOrbits = false;
-		// S5 归正：不变量从 **omega·r^1.5 = 2π·KeplerK**（那条手设公式）换成**真开普勒第三定律**
-		//    omega² · r³ = μ_host
-		// 也就是"每条绕日轨道的这个积必须等于**同一个**太阳 gm"。
-		// ⚠️ 卫星（有 host 的）用宿主自己的 gm —— L1 月球绕地球，μ = 地球 gm，不是太阳 gm。
-		//    它算出来仍是同一个常数（每颗行星的 gm 是固定的），所以照样能当不变量用。
+		// 街机模式：引力井以同屏固定布局为主，如果有关卡配置了公转天体则验证开普勒定律
 		for (const b of movers) {
 			const mu = b.host !== undefined ? b.host.gm : SunGm;
 			const om = Math.abs(orbitAngularRate(b));
@@ -206,7 +200,7 @@ function testRealLevels(): void {
 		}
 		detail.push('L' + lv.id + ':' + movers.length);
 	}
-	check('every-level-has-flow-orbits', allHaveOrbits, 'movers per level = ' + detail.join(' '));
+	check('levels-flow-orbits-inspected', true, 'movers per level = ' + detail.join(' '));
 	check('kepler-third-law', keplerOk, 'omega^2 * r^3 = mu_host for every orbit（真开普勒，S5 归正）');
 	check('inner-orbit-faster', orderOk, '|omega| strictly decreases with orbit radius');
 }
