@@ -93,10 +93,10 @@ function testValidity(): void {
 		// 月球周期必须用**地球**的 gm 算（拿月球自己的 gm 会得到 11.35 秒 —— 踩过）
 		check('moon-period-uses-host-gm', Math.abs(l1.planets[2].orbitPeriod - 1.2593) < 1e-3, `moon T=${l1.planets[2].orbitPeriod}`);
 	}
-	const l3 = getLevel(2);
-	if (l3 !== undefined) {
-		check('scale-provenance-jupiter-orbit', Math.abs(l3.planets[1].orbitRadius - 416.231) < 1e-2, `jupiter a=${l3.planets[1].orbitRadius}`);
-		check('scale-provenance-jupiter-period', Math.abs(l3.planets[1].orbitPeriod - 198.845) < 1e-2, `jupiter T=${l3.planets[1].orbitPeriod}`);
+	const l4 = getLevel(3);
+	if (l4 !== undefined) {
+		check('scale-provenance-jupiter-orbit', Math.abs(l4.planets[1].orbitRadius - 416.231) < 1e-2, `jupiter a=${l4.planets[1].orbitRadius}`);
+		check('scale-provenance-jupiter-period', Math.abs(l4.planets[1].orbitPeriod - 198.845) < 1e-2, `jupiter T=${l4.planets[1].orbitPeriod}`);
 	}
 }
 
@@ -448,7 +448,7 @@ function testEvaluateRockets(): void {
 
 	const l3 = getLevel(2);
 	if (l3 !== undefined) {
-		check('rockets-l3-speed-3', evaluateRockets(l3, 'success', l3.dvBudget * 0.7, { maxSpeed: 45 }) === 3, '高速狂飙应为 3 枚火箭');
+		check('rockets-l3-speed-3', evaluateRockets(l3, 'success', l3.dvBudget * 0.7, { maxSpeed: 65 }) === 3, '高速狂飙应为 3 枚火箭');
 	}
 }
 

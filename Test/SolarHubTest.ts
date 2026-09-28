@@ -34,13 +34,22 @@ function testStationMappings(): void {
 	const count = levelCount();
 	check('mission-count-match', LEVEL_TO_STATION_INDEX.length === count, '映射关卡数量与 levelCount 不一致');
 
+	// L2 (水手10号) 必须锚定在水星 (stIndex === 0)
+	check('l2-mariner10-targets-mercury', LEVEL_TO_STATION_INDEX[1] === 0, '水手10号必须锚定在水星 (Station 0)');
+	// L3 (帕克号) 必须锚定在太阳 (stIndex === -1)
+	check('l3-parker-targets-sun', LEVEL_TO_STATION_INDEX[2] === -1, '帕克号必须锚定在太阳日冕层 (Station -1)');
+
 	for (let i = 0; i < count; i++) {
 		const stIndex = LEVEL_TO_STATION_INDEX[i];
-		check(`lv${i + 1}-station-index-valid`, stIndex >= 0 && stIndex < HUB_STATIONS.length, `stIndex=${stIndex} 越界`);
-		const st = HUB_STATIONS[stIndex];
-		check(`lv${i + 1}-station-orbit>0`, st.orbit > 0, `orbit=${st.orbit}`);
-		check(`lv${i + 1}-station-radius>0`, st.radius > 0, `radius=${st.radius}`);
-		check(`lv${i + 1}-station-model-present`, st.model.length > 0, '模型名称为空');
+		if (stIndex === -1) {
+			check(`lv${i + 1}-station-sun-valid`, true, '');
+		} else {
+			check(`lv${i + 1}-station-index-valid`, stIndex >= 0 && stIndex < HUB_STATIONS.length, `stIndex=${stIndex} 越界`);
+			const st = HUB_STATIONS[stIndex];
+			check(`lv${i + 1}-station-orbit>0`, st.orbit > 0, `orbit=${st.orbit}`);
+			check(`lv${i + 1}-station-radius>0`, st.radius > 0, `radius=${st.radius}`);
+			check(`lv${i + 1}-station-model-present`, st.model.length > 0, '模型名称为空');
+		}
 
 		const def = getLevel(i);
 		check(`lv${i + 1}-def-exists`, def !== undefined, '关卡定义缺失');

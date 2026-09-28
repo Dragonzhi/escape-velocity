@@ -52,62 +52,72 @@ end -- 24
 local function testStationMappings() -- 33
 	local count = levelCount() -- 34
 	check("mission-count-match", #LEVEL_TO_STATION_INDEX == count, "映射关卡数量与 levelCount 不一致") -- 35
-	do -- 35
-		local i = 0 -- 37
-		while i < count do -- 37
-			local stIndex = LEVEL_TO_STATION_INDEX[i + 1] -- 38
-			check( -- 39
-				("lv" .. tostring(i + 1)) .. "-station-index-valid", -- 39
-				stIndex >= 0 and stIndex < #HUB_STATIONS, -- 39
-				("stIndex=" .. tostring(stIndex)) .. " 越界" -- 39
-			) -- 39
-			local st = HUB_STATIONS[stIndex + 1] -- 40
-			check( -- 41
-				("lv" .. tostring(i + 1)) .. "-station-orbit>0", -- 41
-				st.orbit > 0, -- 41
-				"orbit=" .. tostring(st.orbit) -- 41
-			) -- 41
-			check( -- 42
-				("lv" .. tostring(i + 1)) .. "-station-radius>0", -- 42
-				st.radius > 0, -- 42
-				"radius=" .. tostring(st.radius) -- 42
-			) -- 42
-			check( -- 43
-				("lv" .. tostring(i + 1)) .. "-station-model-present", -- 43
-				#st.model > 0, -- 43
-				"模型名称为空" -- 43
-			) -- 43
-			local def = getLevel(i) -- 45
-			check( -- 46
-				("lv" .. tostring(i + 1)) .. "-def-exists", -- 46
-				def ~= nil, -- 46
-				"关卡定义缺失" -- 46
-			) -- 46
-			if def ~= nil and def.mission ~= nil then -- 46
-				check( -- 48
-					("lv" .. tostring(i + 1)) .. "-mission-matches", -- 48
-					def.mission.id == "L" .. __TS__NumberToFixed(i + 1, 0), -- 48
-					"mission.id=" .. def.mission.id -- 48
-				) -- 48
-			end -- 48
-			i = i + 1 -- 37
-		end -- 37
-	end -- 37
+	check("l2-mariner10-targets-mercury", LEVEL_TO_STATION_INDEX[2] == 0, "水手10号必须锚定在水星 (Station 0)") -- 38
+	check("l3-parker-targets-sun", LEVEL_TO_STATION_INDEX[3] == -1, "帕克号必须锚定在太阳日冕层 (Station -1)") -- 40
+	do -- 40
+		local i = 0 -- 42
+		while i < count do -- 42
+			local stIndex = LEVEL_TO_STATION_INDEX[i + 1] -- 43
+			if stIndex == -1 then -- 43
+				check( -- 45
+					("lv" .. tostring(i + 1)) .. "-station-sun-valid", -- 45
+					true, -- 45
+					"" -- 45
+				) -- 45
+			else -- 45
+				check( -- 47
+					("lv" .. tostring(i + 1)) .. "-station-index-valid", -- 47
+					stIndex >= 0 and stIndex < #HUB_STATIONS, -- 47
+					("stIndex=" .. tostring(stIndex)) .. " 越界" -- 47
+				) -- 47
+				local st = HUB_STATIONS[stIndex + 1] -- 48
+				check( -- 49
+					("lv" .. tostring(i + 1)) .. "-station-orbit>0", -- 49
+					st.orbit > 0, -- 49
+					"orbit=" .. tostring(st.orbit) -- 49
+				) -- 49
+				check( -- 50
+					("lv" .. tostring(i + 1)) .. "-station-radius>0", -- 50
+					st.radius > 0, -- 50
+					"radius=" .. tostring(st.radius) -- 50
+				) -- 50
+				check( -- 51
+					("lv" .. tostring(i + 1)) .. "-station-model-present", -- 51
+					#st.model > 0, -- 51
+					"模型名称为空" -- 51
+				) -- 51
+			end -- 51
+			local def = getLevel(i) -- 54
+			check( -- 55
+				("lv" .. tostring(i + 1)) .. "-def-exists", -- 55
+				def ~= nil, -- 55
+				"关卡定义缺失" -- 55
+			) -- 55
+			if def ~= nil and def.mission ~= nil then -- 55
+				check( -- 57
+					("lv" .. tostring(i + 1)) .. "-mission-matches", -- 57
+					def.mission.id == "L" .. __TS__NumberToFixed(i + 1, 0), -- 57
+					"mission.id=" .. def.mission.id -- 57
+				) -- 57
+			end -- 57
+			i = i + 1 -- 42
+		end -- 42
+	end -- 42
 end -- 33
-function ____exports.runTests() -- 53
-	testFormatRockets() -- 54
-	testStationMappings() -- 55
-	local lines = {} -- 57
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 58
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 59
-	local limit = #failures < 12 and #failures or 12 -- 60
-	do -- 60
-		local i = 0 -- 61
-		while i < limit do -- 61
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 62
-			i = i + 1 -- 61
-		end -- 61
-	end -- 61
-	return table.concat(lines, "\n") -- 64
-end -- 53
-return ____exports -- 53
+function ____exports.runTests() -- 62
+	testFormatRockets() -- 63
+	testStationMappings() -- 64
+	local lines = {} -- 66
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 67
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 68
+	local limit = #failures < 12 and #failures or 12 -- 69
+	do -- 69
+		local i = 0 -- 70
+		while i < limit do -- 70
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 71
+			i = i + 1 -- 70
+		end -- 70
+	end -- 70
+	return table.concat(lines, "\n") -- 73
+end -- 62
+return ____exports -- 62

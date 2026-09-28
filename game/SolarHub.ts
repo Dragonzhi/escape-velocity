@@ -74,26 +74,26 @@ export interface HubPlanetStation {
 
 /** 太阳系沙盘中的天体排布。 */
 export const HUB_STATIONS: HubPlanetStation[] = [
-	// 水星（无关卡，作点缀）
-	{ model: 'Sphere', radius: 0.85, orbit: 7.5, baseAngleDeg: 340, orbitSpeedDegPerSec: 4.2, rotSpeedDegPerSec: 5.0, colorHex: 0x9a8f86, emissiveHex: 0 },
-	// 金星 -> L2 水手10号
-	{ model: 'Planet_Venus', radius: 1.60, orbit: 11.5, baseAngleDeg: 300, orbitSpeedDegPerSec: 2.8, rotSpeedDegPerSec: -2.0, colorHex: 0xf0dcae, emissiveHex: 0, levelIndex: 1 },
+	// 水星 -> L2 水手10号（终点站：水星）
+	{ model: 'Sphere', radius: 0.85, orbit: 7.5, baseAngleDeg: 340, orbitSpeedDegPerSec: 4.2, rotSpeedDegPerSec: 5.0, colorHex: 0x9a8f86, emissiveHex: 0, levelIndex: 1 },
+	// 金星（点缀 / 引力弹弓中继天体）
+	{ model: 'Planet_Venus', radius: 1.60, orbit: 11.5, baseAngleDeg: 300, orbitSpeedDegPerSec: 2.8, rotSpeedDegPerSec: -2.0, colorHex: 0xf0dcae, emissiveHex: 0 },
 	// 地球 -> L1 阿波罗/嫦娥探月
 	{ model: 'Planet_Earth', radius: 2.20, orbit: 17.0, baseAngleDeg: 262, orbitSpeedDegPerSec: 1.8, rotSpeedDegPerSec: 15.0, colorHex: 0x5b9be0, emissiveHex: 0, levelIndex: 0 },
 	// 火星（点缀）
 	{ model: 'Planet_Mars', radius: 1.50, orbit: 22.5, baseAngleDeg: 318, orbitSpeedDegPerSec: 1.3, rotSpeedDegPerSec: 14.0, colorHex: 0xd07f4a, emissiveHex: 0 },
-	// 木星 -> L3 帕克号
-	{ model: 'Planet_Jupiter', radius: 4.60, orbit: 30.0, baseAngleDeg: 12, orbitSpeedDegPerSec: 0.8, rotSpeedDegPerSec: 25.0, colorHex: 0xe0c092, emissiveHex: 0, levelIndex: 2 },
-	// 土星 -> L4 伽利略号
-	{ model: 'Planet_Saturn', radius: 3.20, orbit: 38.5, baseAngleDeg: 68, orbitSpeedDegPerSec: 0.5, rotSpeedDegPerSec: 22.0, colorHex: 0xd3c49a, emissiveHex: 0, levelIndex: 3 },
-	// 天王星 -> L5 新视野号
+	// 木星 -> L4 伽利略号
+	{ model: 'Planet_Jupiter', radius: 4.60, orbit: 30.0, baseAngleDeg: 12, orbitSpeedDegPerSec: 0.8, rotSpeedDegPerSec: 25.0, colorHex: 0xe0c092, emissiveHex: 0, levelIndex: 3 },
+	// 土星（点缀 / 旅行者2号大巡游中继站）
+	{ model: 'Planet_Saturn', radius: 3.20, orbit: 38.5, baseAngleDeg: 68, orbitSpeedDegPerSec: 0.5, rotSpeedDegPerSec: 22.0, colorHex: 0xd3c49a, emissiveHex: 0 },
+	// 天王星 / 柯伊伯深空外界 -> L5 新视野号
 	{ model: 'Planet_Uranus', radius: 2.00, orbit: 47.0, baseAngleDeg: 124, orbitSpeedDegPerSec: 0.35, rotSpeedDegPerSec: 12.0, colorHex: 0xa8dde4, emissiveHex: 0, levelIndex: 4 },
 	// 海王星 -> L6 旅行者2号
 	{ model: 'Planet_Neptune', radius: 1.90, orbit: 55.0, baseAngleDeg: 180, orbitSpeedDegPerSec: 0.25, rotSpeedDegPerSec: 11.0, colorHex: 0x7b95f0, emissiveHex: 0, levelIndex: 5 },
 ];
 
-/** 关卡索引 -> HUB_STATIONS 下标的映射。 */
-export const LEVEL_TO_STATION_INDEX: number[] = [2, 1, 4, 5, 6, 7];
+/** 关卡索引 -> HUB_STATIONS 下标的映射（L3 为太阳，用 -1 表示）。 */
+export const LEVEL_TO_STATION_INDEX: number[] = [2, 0, -1, 4, 6, 7];
 
 /** 视觉配置常量。 */
 const SunRadius = 4.8;
@@ -289,6 +289,11 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 
 	/** 计算特写模式下的相机机位。 */
 	const calcFocusPose = (stIndex: number): { eye: Vec3.Type; target: Vec3.Type } => {
+		if (stIndex === -1) {
+			// L3 帕克号：聚焦太阳日冕层
+			const dist = 22;
+			return { eye: Vec3(0, dist * 0.42, dist * 0.9), target: Vec3(0, 0, 0) };
+		}
 		const h = planets[stIndex];
 		if (h === undefined) return { eye: calcPanoEye(), target: Vec3(0, 0, 0) };
 		const p = h.currentPos;
@@ -694,10 +699,20 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 
 			for (let i = 0; i < pins.length; i++) {
 				const p = pins[i];
-				const planetHandle = planets[p.stIndex];
-				if (planetHandle === undefined) continue;
+				let worldPos: Vec3.Type;
+				let yOffset = 24;
+				if (p.stIndex === -1) {
+					// 太阳日冕层 (L3 帕克号)
+					worldPos = planeToWorld({ x: 0, y: 0 }, 0);
+					yOffset = 48;
+				} else {
+					const planetHandle = planets[p.stIndex];
+					if (planetHandle === undefined) continue;
+					worldPos = planeToWorld(planetHandle.currentPos, 0);
+					// 交错高低差：内圈水星(0)/地球(2)稍高，其它外圈标准
+					yOffset = p.stIndex === 2 ? 40 : (p.stIndex === 0 ? 32 : 24);
+				}
 
-				const worldPos = planeToWorld(planetHandle.currentPos, 0);
 				const proj = projectPrepared({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, basis);
 
 				if (proj !== undefined && proj.vz > 1.0) {
@@ -706,8 +721,6 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 					// 转换为左下原点系统的屏幕坐标
 					const screenX = viewW / 2 + over.x;
 					const screenY = viewH / 2 + over.y;
-					// 交错高低差：内圈地球/月球(stIndex=2)稍高，金星(stIndex=1)居中偏低，其它外圈标准
-					const yOffset = p.stIndex === 2 ? 40 : (p.stIndex === 1 ? 16 : 24);
 					p.root.position = Vec2(screenX - PinW / 2, screenY + yOffset);
 				} else {
 					p.root.visible = false;

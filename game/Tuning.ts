@@ -67,6 +67,7 @@ const BODY_VISUAL_L1: { [key: string]: number } = {
 
 export const BODY_VISUAL_RADIUS: { [key: string]: number } = {
 	sun: 1.6,
+	mercury: 0.018,
 	venus: 0.03,
 	earth: 0.025,
 	moon: 0.012,

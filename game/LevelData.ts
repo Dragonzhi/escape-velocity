@@ -432,6 +432,7 @@ export const EarthOrbitSpeed = circularSpeed(SunGm, EarthOrbitRadius);
  * 每一行后面的注释就是它的出处（工具输出），改数值必须重跑工具。
  */
 const PH = {
+	mercury: 45.0,
 	// node tools/level-phases.mjs 2 --dirs 240 --dvs 31 --tmax 40
 	venus: 79.6,
 	// node tools/level-phases.mjs 3 --dirs 180 --dvs 21  → 186.1°
@@ -540,164 +541,179 @@ function departure(): { pos: P2; vel: P2 } {
 	};
 }
 
-/** L2 金星：唯一一次**向内**飞（太阳一路加速你，难点是"收"）。 */
+/** L2 水手10号：地球 ➔ 金星 ➔ 水星（人类首次行星引力借力）。 */
 function level2(): LevelDef {
 	const venus = orbiter('venus', PH.venus);
+	const mercury = orbiter('mercury', PH.mercury);
 	const d = departure();
 	return {
 		id: 2,
-		title: '金星',
+		title: '水手10号',
 		probeVariant: 'solar',
-		brief: '金星任务 · 1 AU 出发：向内飞，太阳会一路把你拽快。金星在 0.72 AU 的内圈上等着 —— 挑对它经过你航线的那一天。',
+		brief: '水手10号 · 1 AU 出发：人类首次行星引力辅助。向内俯冲，利用金星前向借力大幅削减轨道动能，深潜入水星轨道！',
 		probeStart: d.pos,
 		probeVel0: d.vel,
-		planets: [sun(), venus],
-		visuals: [sunVisual(), planetVisual('venus', venus, 0.90, 0.78, 0.55, 'Planet_Venus', false)],
-		goal: { kind: 'planet', planetIndex: 1, tolerance: 3 },
+		planets: [sun(), venus, mercury],
+		visuals: [
+			sunVisual(),
+			planetVisual('venus', venus, 0.90, 0.78, 0.55, 'Planet_Venus', false),
+			planetVisual('mercury', mercury, 0.65, 0.65, 0.65, 'Sphere', false),
+		],
+		goal: {
+			kind: 'planet',
+			planetIndex: 2,
+			tolerance: 6,
+			chain: [
+				{ planetIndex: 1, tolerance: 15, label: '金星' },
+				{ planetIndex: 2, tolerance: 6, label: '水星' },
+			],
+		},
 		dvBudget: 4.0,
 		escapeRadius: 3600,
 		maxSteps: 4000,
 		timeWindow: { span: 27 }, // ≥ 金星会合周期 26.8 秒
 		mission: {
 			id: 'L2',
-			codeName: 'Mariner10',
-			historicalRef: '水手10号 (Mariner 10)',
+			codeName: 'Mariner 10',
+			historicalRef: '水手10号 (1973)',
 			subtitle: '潜行',
 			vehicle: 'flyby',
 			challenges: [
-				{ desc: '借力金星并成功抵达金星轨道', type: 'success' },
+				{ desc: '借力金星并成功抵达水星', type: 'success' },
 				{ desc: '初始点火消耗 Δv ≤ 75% 预算', type: 'fuel', threshold: 0.75 },
-				{ desc: '近星距离 ≤ 2.0 单位', type: 'distance', threshold: 2.0 },
+				{ desc: '金星交会时相对速度降幅 ≥ 12 单位', type: 'speed', threshold: 12.0 },
 			],
 		},
 	};
 }
 
-/** L3 木星：第一次真正的行星际飞行，也是本作的"核心瞬间"（被木星掰弯）。 */
+/** L3 帕克号：地球 ➔ 金星 ➔ 太阳日冕区（触碰太阳极热地狱）。 */
 function level3(): LevelDef {
-	const jupiter = orbiter('jupiter', PH.jupiter3);
+	const venus = orbiter('venus', PH.venus);
 	const d = departure();
 	return {
 		id: 3,
-		title: '木星',
+		title: '帕克号',
 		probeVariant: 'solar',
-		brief: '木星任务 · 1 AU 出发：5.2 AU 之外，真正的行星际飞行。出发角度要压在木星到达航线的那一天上。',
+		brief: '帕克号 · 1 AU 出发：人类制造的最狂暴“触日者”。利用金星大幅削减日心角动量，近距离俯冲入太阳日冕危险带且未撞毁！',
 		probeStart: d.pos,
 		probeVel0: d.vel,
-		planets: [sun(), jupiter],
-		visuals: [sunVisual(), planetVisual('jupiter', jupiter, 0.85, 0.72, 0.50, 'Planet_Jupiter', false)],
-		goal: { kind: 'planet', planetIndex: 1, tolerance: 25 },
-		dvBudget: 12.0,
+		planets: [sun(), venus],
+		visuals: [
+			sunVisual(),
+			planetVisual('venus', venus, 0.90, 0.78, 0.55, 'Planet_Venus', false),
+		],
+		goal: {
+			kind: 'planet',
+			planetIndex: 0, // 太阳
+			tolerance: 15,  // 日冕危险带半径 R_corona = 15
+		},
+		dvBudget: 6.0,
 		escapeRadius: 3600,
-		maxSteps: 20000,
-		timeWindow: { span: 19 }, // ≥ 木星会合周期 18.3 秒
+		maxSteps: 6000,
+		timeWindow: { span: 27 },
 		mission: {
 			id: 'L3',
 			codeName: 'Parker',
-			historicalRef: '帕克太阳探测器 (Parker Solar Probe)',
+			historicalRef: '帕克太阳探测器 (2018)',
 			subtitle: '烈日',
 			vehicle: 'flyby',
 			challenges: [
-				{ desc: '成功抵达木星引力范围', type: 'success' },
+				{ desc: '近日点深入太阳日冕观测带 (r_peri ≤ 15) 且未撞毁', type: 'success' },
 				{ desc: '初始点火消耗 Δv ≤ 80% 预算', type: 'fuel', threshold: 0.8 },
-				{ desc: '航行最高速度 vmax ≥ 40', type: 'speed', threshold: 40.0 },
+				{ desc: '近日点最高日心速度突破 vmax ≥ 60 单位', type: 'speed', threshold: 60.0 },
 			],
 		},
 	};
 }
 
-/** L4 土星：先掠过木星，再被土星接住（一次点火，两个环都要穿对）。 */
+/** L4 伽利略号：地球 ➔ 木星泊入（轨道器模式正式登场）。 */
 function level4(): LevelDef {
 	const jupiter = orbiter('jupiter', PH.jupiter4);
-	const saturn = orbiter('saturn', PH.saturn4);
 	const d = departure();
 	return {
 		id: 4,
-		title: '土星',
+		title: '伽利略号',
 		probeVariant: 'rtg',
-		brief: '土星任务 · 1 AU 出发：9.5 AU，先穿过木星轨道，再到土星。一次点火，两个环都要穿对。',
+		brief: '伽利略号 · 1 AU 出发：人类第一艘长期驻留环绕木星的轨道器。抵达木星巨型引力井，在慢动作特写中捕捉制动窗口，按下 [ BRAKE ] 优雅泊入闭合环绕轨！',
 		probeStart: d.pos,
 		probeVel0: d.vel,
-		planets: [sun(), jupiter, saturn],
+		planets: [sun(), jupiter],
 		visuals: [
 			sunVisual(),
 			planetVisual('jupiter', jupiter, 0.85, 0.72, 0.50, 'Planet_Jupiter', false),
-			planetVisual('saturn', saturn, 0.75, 0.70, 0.60, 'Planet_Saturn', true),
 		],
 		goal: {
-			kind: 'planet', planetIndex: 2, tolerance: 45,
+			kind: 'planet',
+			planetIndex: 1, // 木星
+			tolerance: 40,
 			chain: [
-				{ planetIndex: 1, tolerance: 40, label: '木星' },
-				{ planetIndex: 2, tolerance: 45, label: '土星' },
+				{ planetIndex: 1, tolerance: 40, label: '木星', capture: true },
 			],
 		},
 		dvBudget: 14.0,
 		escapeRadius: 3600,
-		maxSteps: 30000,
+		maxSteps: 25000,
 		timeWindow: { span: 18 },
 		mission: {
 			id: 'L4',
 			codeName: 'Galileo',
-			historicalRef: '伽利略号 (Galileo)',
+			historicalRef: '伽利略号 (1989)',
 			subtitle: '泊入',
 			vehicle: 'orbiter',
 			challenges: [
-				{ desc: '连续飞掠木星并抵达土星', type: 'success' },
+				{ desc: '在制动窗口内成功按下刹车闭合入轨', type: 'success' },
 				{ desc: '地面发射点火 Δv ≤ 70% 预算', type: 'fuel', threshold: 0.7 },
-				{ desc: '闭合轨道偏心率 e ≤ 0.35', type: 'eccentricity', threshold: 0.35 },
+				{ desc: '入轨偏心率 e ≤ 0.25', type: 'eccentricity', threshold: 0.25 },
 			],
 		},
 	};
 }
 
-/** L5 天王星：木星、土星两次借力，越飞越远。 */
+/** L5 新视野号：地球 ➔ 木星狂暴加速 ➔ 柯伊伯带深空。 */
 function level5(): LevelDef {
 	const jupiter = orbiter('jupiter', PH.jupiter5);
-	const saturn = orbiter('saturn', PH.saturn5);
-	const uranus = orbiter('uranus', PH.uranus5);
 	const d = departure();
 	return {
 		id: 5,
-		title: '天王星',
+		title: '新视野号',
 		probeVariant: 'rtg',
-		brief: '天王星任务 · 1 AU 出发：19 AU。木星、土星，一路向外 —— 一次点火要串起三个节点。',
+		brief: '新视野号 · 1 AU 出发：人类有史以来最狂暴的深空信使。寻找木星后向加速最佳切角，利用太阳系最强引力弹弓把探测器甩向柯伊伯带深空外边界！',
 		probeStart: d.pos,
 		probeVel0: d.vel,
-		planets: [sun(), jupiter, saturn, uranus],
+		planets: [sun(), jupiter],
 		visuals: [
 			sunVisual(),
 			planetVisual('jupiter', jupiter, 0.85, 0.72, 0.50, 'Planet_Jupiter', false),
-			planetVisual('saturn', saturn, 0.75, 0.70, 0.60, 'Planet_Saturn', true),
-			planetVisual('uranus', uranus, 0.62, 0.82, 0.86, 'Planet_Uranus', false),
 		],
 		goal: {
-			kind: 'planet', planetIndex: 3, tolerance: 70,
+			kind: 'escape',
+			planetIndex: 1,
+			tolerance: 40,
 			chain: [
 				{ planetIndex: 1, tolerance: 40, label: '木星' },
-				{ planetIndex: 2, tolerance: 55, label: '土星' },
-				{ planetIndex: 3, tolerance: 70, label: '天王星' },
 			],
 		},
 		dvBudget: 15.0,
 		escapeRadius: 3600,
-		maxSteps: 40000,
+		maxSteps: 35000,
 		timeWindow: { span: 17.5 },
 		mission: {
 			id: 'L5',
-			codeName: 'NewHorizons',
-			historicalRef: '新视野号 (New Horizons)',
+			codeName: 'New Horizons',
+			historicalRef: '新视野号 (2006)',
 			subtitle: '狂飙',
 			vehicle: 'flyby',
 			challenges: [
-				{ desc: '借力木星与土星抵达天王星', type: 'success' },
+				{ desc: '借力木星获得逃逸能量抵达外边界', type: 'success' },
 				{ desc: '地面发射初速消耗 Δv ≤ 75% 预算', type: 'fuel', threshold: 0.75 },
-				{ desc: '航行最高速度 vmax ≥ 45', type: 'speed', threshold: 45.0 },
+				{ desc: '速度增幅 ≥ 15 且逃逸末速度 vend ≥ 40', type: 'speed', threshold: 40.0 },
 			],
 		},
 	};
 }
 
-/** L6 海王星：四颗巨行星连成一条线的那一天，一次点火串到底。 */
+/** L6 旅行者2号：地球 ➔ 木星 ➔ 土星 ➔ 天王星 ➔ 海王星 ➔ 星际空间。 */
 function level6(): LevelDef {
 	const jupiter = orbiter('jupiter', PH.jupiter6);
 	const saturn = orbiter('saturn', PH.saturn6);
@@ -706,9 +722,9 @@ function level6(): LevelDef {
 	const d = departure();
 	return {
 		id: 6,
-		title: '海王星',
+		title: '旅行者2号',
 		probeVariant: 'rtg',
-		brief: '海王星任务 · 1 AU 出发：30 AU。四颗巨行星排到一条线上的那一天 —— 一次点火串到底。',
+		brief: '旅行者2号 · 1 AU 出发：175 年一遇的行星连珠奇迹！对准发射窗口，连续四星接力借力飞出海王星轨道，冲入星际空间，触发暗淡蓝点终章！',
 		probeStart: d.pos,
 		probeVel0: d.vel,
 		planets: [sun(), jupiter, saturn, uranus, neptune],
@@ -720,7 +736,9 @@ function level6(): LevelDef {
 			planetVisual('neptune', neptune, 0.34, 0.50, 0.86, 'Planet_Neptune', false),
 		],
 		goal: {
-			kind: 'planet', planetIndex: 4, tolerance: 120,
+			kind: 'planet',
+			planetIndex: 4,
+			tolerance: 120,
 			chain: [
 				{ planetIndex: 1, tolerance: 40, label: '木星' },
 				{ planetIndex: 2, tolerance: 60, label: '土星' },
@@ -734,14 +752,14 @@ function level6(): LevelDef {
 		timeWindow: { span: 17.5 },
 		mission: {
 			id: 'L6',
-			codeName: 'Voyager2',
-			historicalRef: '旅行者2号 (Voyager 2)',
+			codeName: 'Voyager 2',
+			historicalRef: '旅行者2号 (1977)',
 			subtitle: '奇迹',
 			vehicle: 'flyby',
 			challenges: [
-				{ desc: '四星连珠大巡游抵达海王星', type: 'success' },
+				{ desc: '成功四星连续借力并飞出海王星轨道', type: 'success' },
 				{ desc: '初始发射点火 Δv ≤ 80% 预算', type: 'fuel', threshold: 0.8 },
-				{ desc: '航行最高速度 vmax ≥ 50', type: 'speed', threshold: 50.0 },
+				{ desc: '四星交会无碰撞且近心点精度 ≤ 5%', type: 'distance', threshold: 0.05 },
 			],
 		},
 	};

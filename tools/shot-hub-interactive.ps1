@@ -72,16 +72,28 @@ function RequestShot([string]$cmd, [string]$outPng) {
 }
 
 # 1) 全景沙盘
-RequestShot "pano" "shot-hub-v5-pano.png"
+RequestShot "pano" "shot-hub-pano.png"
 Start-Sleep -Milliseconds 500
 
-# 2) 特写 L1 月球
-RequestShot "focus:0" "shot-hub-v5-l1.png"
-Start-Sleep -Milliseconds 500
+# 2) 特写 L1 月球 (阿波罗/嫦娥)
+RequestShot "focus:0" "shot-hub-l1-moon.png"
+Start-Sleep -Milliseconds 600
 
-# 3) 启动 L1 任务进入关卡
-RequestShot "launch" "shot-hub-v5-l1-launched.png"
-Start-Sleep -Milliseconds 500
+# 3) 特写 L2 水星 (水手10号)
+RequestShot "focus:1" "shot-hub-l2-mercury.png"
+Start-Sleep -Milliseconds 600
+
+# 4) 特写 L3 太阳 (帕克号)
+RequestShot "focus:2" "shot-hub-l3-sun.png"
+Start-Sleep -Milliseconds 600
+
+# 5) 特写 L4 木星 (伽利略号)
+RequestShot "focus:3" "shot-hub-l4-jupiter.png"
+Start-Sleep -Milliseconds 600
+
+# 6) 特写 L6 海王星 (旅行者2号)
+RequestShot "focus:5" "shot-hub-l6-neptune.png"
+Start-Sleep -Milliseconds 600
 
 # 停掉引擎
 try { $null = Api "stop" } catch {}

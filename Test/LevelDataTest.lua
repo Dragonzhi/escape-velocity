@@ -152,17 +152,17 @@ local function testValidity() -- 30
 			"moon T=" .. tostring(l1.planets[3].orbitPeriod) -- 94
 		) -- 94
 	end -- 94
-	local l3 = getLevel(2) -- 96
-	if l3 ~= nil then -- 96
+	local l4 = getLevel(3) -- 96
+	if l4 ~= nil then -- 96
 		check( -- 98
 			"scale-provenance-jupiter-orbit", -- 98
-			math.abs(l3.planets[2].orbitRadius - 416.231) < 0.01, -- 98
-			"jupiter a=" .. tostring(l3.planets[2].orbitRadius) -- 98
+			math.abs(l4.planets[2].orbitRadius - 416.231) < 0.01, -- 98
+			"jupiter a=" .. tostring(l4.planets[2].orbitRadius) -- 98
 		) -- 98
 		check( -- 99
 			"scale-provenance-jupiter-period", -- 99
-			math.abs(l3.planets[2].orbitPeriod - 198.845) < 0.01, -- 99
-			"jupiter T=" .. tostring(l3.planets[2].orbitPeriod) -- 99
+			math.abs(l4.planets[2].orbitPeriod - 198.845) < 0.01, -- 99
+			"jupiter T=" .. tostring(l4.planets[2].orbitPeriod) -- 99
 		) -- 99
 	end -- 99
 end -- 30
@@ -670,7 +670,7 @@ local function testEvaluateRockets() -- 433
 	if l3 ~= nil then -- 449
 		check( -- 451
 			"rockets-l3-speed-3", -- 451
-			evaluateRockets(l3, "success", l3.dvBudget * 0.7, {maxSpeed = 45}) == 3, -- 451
+			evaluateRockets(l3, "success", l3.dvBudget * 0.7, {maxSpeed = 65}) == 3, -- 451
 			"高速狂飙应为 3 枚火箭" -- 451
 		) -- 451
 	end -- 451

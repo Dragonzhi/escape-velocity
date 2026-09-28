@@ -76,3 +76,4 @@ if (-not $captured -or -not (Test-Path $tgaFile)) {
 # 转 PNG
 python -c "from PIL import Image; Image.open(r'$tgaFile').save(r'$pngFile')"
 Write-Output "Captured $pngFile successfully"
+
