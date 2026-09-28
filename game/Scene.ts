@@ -716,7 +716,8 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 	if (Content.exist(FlowDotModelPath)) {
 		for (let i = 0; i < bodies.length; i++) {
 			const def = bodies[i];
-			if (def.orbitRadius <= 0 || def.orbitPeriod === 0) continue;
+			// 卫星微观轨道（如月球 orbitRadius=0.2056）公转极快（1.25s），不加 3D 大面片，避免特写穿模贴脸遮挡
+			if (def.orbitRadius < 2.0 || def.orbitPeriod === 0) continue;
 			const dots: Node3D.Type[] = [];
 			for (let k = 0; k < FlowDotsPerOrbit; k++) {
 				const dot = Model3D(FlowDotModelPath);

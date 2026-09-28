@@ -90,6 +90,11 @@ export interface GameLevel {
 	escapeRadius: number;
 	maxSteps: number;
 	/**
+	 * 预测线的推演步数（B1，来自 Tuning.predictSteps）；省略 = 全局 Config.PredictSteps（2400）。
+	 * L1 现在是 8000（= maxSteps）：真实阿波罗剖面下这一发要飞 0.9 天，2400 步只画得到 1/3 路程。
+	 */
+	predictSteps?: number;
+	/**
 	 * 物理步长（S5，来自 Tuning.levelRuntime）。
 	 * 省略 = 全局 Config.PhysicsStep。**必须按关卡给**：L1 的探测器日心速度 30、
 	 * 绕地轨道半径 0.1 ⇒ 全局的 1/120 一步走 0.25，比整条轨道还大（实测把 0.1 算成 0.139~0.361）。
@@ -858,6 +863,10 @@ export interface Game {
 	applyInFlightBrake: () => boolean;
 	/** 是否已经执行过实时制动。 */
 	hasBraked: () => boolean;
+	/** 跳过 3D 入场倒叙运镜。 */
+	skipIntroTour: () => void;
+	/** 当前是否正在进行 3D 入场倒叙运镜。 */
+	isIntroTourActive: () => boolean;
 	/** 每帧调用一次。 */
 	update: (dt: number) => void;
 }
@@ -897,6 +906,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		print('[escape-velocity] view -> ' + mode + ' (phase=' + core.phase + ')');
 	};
 
+	const finishIntroTour = (): void => {
+		if (!introTourActive) return;
+		introTourActive = false;
+		introTourT = IntroTourDuration;
+		core.viewMode = '2D';
+		applyView();
+		print('[escape-velocity] intro tour completed -> enter 2D');
+	};
+
 	const makeBasis = (frame: { eye: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } }): CameraBasis => {
 		return prepareCamera(
 			{
@@ -915,10 +933,19 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	// 预测线的缓存（S3.7）：PredictSteps 提到 2400（覆盖整段飞行）之后，**每帧重算**会吃掉整帧预算
 	// （引擎启动时实测把主线程堵到 API 都超时）。所以只在"瞄准或日期变了"时重算，其余帧只重投影。
-	let predKey = '';
+	// 预测线重算的节流（B1，2026-09-28）：L1 的预测是 8000 步 ≈ 20–40 ms（Lua），
+	// 每帧重算会把拖动掉到 25 fps。口径：**瞄准/位置任一变化**才重算，且两次之间至少隔
+	// PredMinIntervalSec；松手（Armed）时 predForce 强制算一次 —— 保证"最后那一下"精确。
+	const PredMinIntervalSec = 0.08;
+	let predAimKey = '';
+	let predPosKey = '';
+	let predAccum = 1;
+	let predForce = true;
 	let predPoints: P2[] = [];
-	// 进关镜头（S3.9）：从"贴着探测器"缓动到"自动取景"（能看见下一站），1.4 秒；一拖就跳过。
-	let introT = IntroDurationSec;
+	// 进关影视化倒叙/溯源运镜（S8.1）：先在 3D 下目标特写 ➔ 飞掠 ➔ 地球探测器 ➔ 切入 2D
+	const IntroTourDuration = 3.2;
+	let introTourActive = false;
+	let introTourT = IntroTourDuration;
 	let introLogged = false;
 	/** 相机诊断行的打印计数（只打前几帧，别刷屏）。 */
 	let frameLogged = 0;
@@ -940,7 +967,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let obsZoom = 1;
 	/** 时间流量程（秒）：世界时钟夹在 [0, span]；0 = 不限制。 */
 	let warpSpan = 0;
-	let idlePath: SimResult | undefined = undefined;
+	// 待机轨道的解析模型（B1，见 prepareIdle）：宿主索引 + 相对圆轨的半径/初相/角速度。
+	let idleOrbit: { hostIndex: number; r: number; phase0: number; omega: number } | undefined = undefined;
 	/**
 	 * 玩家**是否已经瞄过**（S3.12）。
 	 *
@@ -959,51 +987,74 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	/** 探测器**此刻**在哪 / 以什么速度前进（待机会绕着地球走，所以不能写死 probeStart）。 */
 	let probePos: P2 = { x: level.probeStart.x, y: level.probeStart.y };
 	let probeVel: P2 = level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 };
+	/**
+	 * 进关 / 重新进关：把待机轨道的**解析模型**算出来。
+	 *
+	 * 为什么必须是解析的（B1，2026-09-28）：待机轨是相对**宿主天体**（L1 = 地球）的圆轨，
+	 * 而宿主自己在动 —— 地球在一个停泊周期（88.4 分钟）里沿日心轨道走
+	 * `30 × 2.8145e-3 = 0.0844` 单位，是停泊轨半径（3.514e-3）的 **24 倍**。
+	 * 旧实现把"惯性系里的一段轨迹"按点数取模循环播放，于是每绕一圈探测器就相对地球跳一次；
+	 * 冻结时钟的时代（aimClockRate = 0）看不出来，时间一流动就现形。
+	 * 现在写成「宿主位置 + 相对圆轨」：接缝天然连续，且就是真实二体圆轨
+	 * （太阳潮汐在 L1 只是地球引力的 0.004%，忽略 —— 正是用户说的「能感受到就行」）。
+	 *
+	 * ⚠️ 圆轨速度取的是**相对宿主**的速度，不是含地球公转的总速度（旧代码拿错了总速度，
+	 *    推出来的周期是错的）。
+	 */
 	const prepareIdle = (): void => {
 		// 进关 / 重新进关 = 全新的一天（日期、待机时钟都归零）
 		clock = 0;
 		core.t0 = 0;
-		if (level.probeVel0 === undefined) {
-			idlePath = undefined;
-			return;
-		}
-		// ⚠️ 待机轨迹是**循环播放**的（idleIndex 对点数取模），所以仿真时长最好正好**一个周期**，
-		//    否则绕回去的瞬间探测器会瞬移（L1 的周期 = 2π·30/9.31 ≈ 20.2 秒，而 maxSteps 只有 10 秒）。
-		//    周期用"最近的那颗有引力的天体"和出发速度估：T = 2πr/v —— 只有 L1 走这条路径，
-		//    而它的 v0 就是圆轨道速度，估出来正好闭合。
-		// ⚠️ 这里用 Math.sqrt 而不是 Math.hypot：**tstl 不支持 Math.hypot**
-		//    （编译期报 TS100029 "Math.hypot is unsupported"，产物不会更新 —— 2026-09-27 踩过）
-		let idleSteps = level.maxSteps;
-		const v0x = level.probeVel0.x;
-		const v0y = level.probeVel0.y;
-		const v0 = Math.sqrt(v0x * v0x + v0y * v0y);
-		if (v0 > 1e-6) {
-			let bestD = 1e9;
-			for (const b of level.bodies) {
-				if (b.gm <= 0) continue;
-				const dx = b.orbitCenter.x - level.probeStart.x;
-				const dy = b.orbitCenter.y - level.probeStart.y;
-				const d = Math.sqrt(dx * dx + dy * dy);
-				if (d < bestD) bestD = d;
-			}
-			if (bestD > 1e-6 && bestD < 1e8) {
-				const n = Math.round((2 * Math.PI * bestD) / v0 / core.dt);
-				if (n > 60 && n < 40000) idleSteps = n;
+		idleOrbit = undefined;
+		if (level.probeVel0 === undefined) return;
+		// ① 宿主 = 离出发点最近的、有引力的天体（L1 = 地球）
+		let hostIndex = -1;
+		let bestD = 1e9;
+		for (let i = 0; i < level.bodies.length; i++) {
+			const b = level.bodies[i];
+			if (b.gm <= 0) continue;
+			const d = distance(bodyPositionAt(b, 0), level.probeStart);
+			if (d < bestD) {
+				bestD = d;
+				hostIndex = i;
 			}
 		}
-		idlePath = simulate(
-			{ pos: { x: level.probeStart.x, y: level.probeStart.y }, vel: { x: level.probeVel0.x, y: level.probeVel0.y } },
-			level.bodies,
-			{ steps: idleSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0 },
-		);
+		if (hostIndex < 0 || bestD < 1e-9) return;
+		const host = level.bodies[hostIndex];
+		const hp = bodyPositionAt(host, 0);
+		const hv = bodyVelocityAt(host, 0);
+		// ② 相对位置 / 相对速度
+		const rx = level.probeStart.x - hp.x;
+		const ry = level.probeStart.y - hp.y;
+		const vx = level.probeVel0.x - hv.x;
+		const vy = level.probeVel0.y - hv.y;
+		const r = Math.sqrt(rx * rx + ry * ry);
+		if (r < 1e-12) return;
+		// ③ 圆轨角速度 ω = √(gm/r³)；方向 = r × v 的符号（顺行/逆行都支持，不写死）
+		const omega = Math.sqrt(host.gm / (r * r * r));
+		const dir = rx * vy - ry * vx >= 0 ? 1 : -1;
+		idleOrbit = { hostIndex, r, phase0: Math.atan2(ry, rx), omega: dir * omega };
 	};
-	const idleIndex = (): number => {
-		if (idlePath === undefined) return 0;
-		const n = idlePath.points.length;
-		if (n <= 1) return 0;
-		let i = Math.floor(orbitClock / core.dt) % n;
-		if (i < 0) i = 0;
-		return i;
+
+	/** 待机时探测器在 `tWorld` 时刻的状态（解析：宿主位置 + 相对圆轨）。 */
+	const idleProbeAt = (tWorld: number): { pos: P2; vel: P2 } => {
+		if (idleOrbit === undefined) {
+			return {
+				pos: { x: level.probeStart.x, y: level.probeStart.y },
+				vel: level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 },
+			};
+		}
+		const host = level.bodies[idleOrbit.hostIndex];
+		const hp = bodyPositionAt(host, tWorld);
+		const hv = bodyVelocityAt(host, tWorld);
+		const a = idleOrbit.phase0 + idleOrbit.omega * tWorld;
+		const ca = Math.cos(a);
+		const sa = Math.sin(a);
+		return {
+			pos: { x: hp.x + idleOrbit.r * ca, y: hp.y + idleOrbit.r * sa },
+			// 相对速度 = ω·r·(−sin a, cos a)（切向）；总速度 = 宿主速度 + 相对速度
+			vel: { x: hv.x - idleOrbit.omega * idleOrbit.r * sa, y: hv.y + idleOrbit.omega * idleOrbit.r * ca },
+		};
 	};
 
 	/**
@@ -1130,7 +1181,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// S3.9.4 待机时钟：**没在操控**时世界照常走（探测器沿自己的轨道绕地球转），一按下就冻结。
 		const dragging = deps.aim.isDragging();
 		// 只在**纯瞄准态**流时间：Armed（已瞄好等发射）时冻结 —— 否则目标会从瞄准线下面跑掉。
-		if (core.phase === 'Aiming' && !dragging && idlePath !== undefined) {
+		if (core.phase === 'Aiming' && !dragging && idleOrbit !== undefined) {
 			// ⚠️ 0 = **冻结**（不是"回退成 1"）：L1 是教学关，开局状态必须完全确定，
 			//    否则"进关那几十帧"就足以让探测器自己转掉十几度（实测 0.017 秒 = 14°），
 			//    而且玩家没有任何读数可以据此瞄准。
@@ -1143,16 +1194,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			clock += dt * aimRate;
 			orbitClock += dt * aimRate;
 		}
-		const idx = idleIndex();
-		probePos = idlePath !== undefined ? idlePath.points[idx] : level.probeStart;
-		probeVel = idlePath !== undefined
-			? idlePath.velocities[idx]
-			: (level.probeVel0 !== undefined ? level.probeVel0 : { x: 0, y: 0 });
 		const tNow = core.t0 + clock;
+		// 待机位置/速度：**解析求**（宿主位置 + 相对圆轨），不再查惯性轨迹表（B1）
+		const idleState = idleProbeAt(tNow);
+		probePos = idleState.pos;
+		probeVel = idleState.vel;
 
 		deps.scene.syncBodies(tNow);
 		deps.scene.syncProbe(probePos);
-		if (idlePath !== undefined && idx > 0) deps.scene.faceVelocity(sub(probePos, idlePath.points[idx - 1]));
+		if (idleOrbit !== undefined) deps.scene.faceVelocity(probeVel);
 		// 2D 规划视图：轨道圈与图钉按**同一个 tWorld**（硬约束 7：待机会绕地球走，日期也会动）
 		deps.plan.syncBodies(level.bodies, deps.visuals, tNow);
 		deps.plan.syncProbe(probePos, probeVel);
@@ -1177,76 +1227,80 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				+ ' slowmo=' + (core.slowmo ? 1 : 0)
 				+ ' pts=[' + fr.pts.map((p) => '(' + p.x.toFixed(3) + ',' + p.y.toFixed(3) + ')').join(' ') + ']');
 		}
-		// 进关镜头（S3.10 三段，用户：「先聚焦飞行器，然后摄像头放大到需要前往的星球」）：
-		// ① 近景贴探测器 → ② 拉远看整条航线 → ③ 推向**下一站行星** → ④ 交还控制权。一拖就跳过（introT 被推到满）。
-		if (introT < IntroDurationSec) {
-			introT += dt;
-			let k = introT / IntroDurationSec;
-			if (k > 1) k = 1;
-			if (k >= 1 && !introLogged) {
-				introLogged = true;
-				print('[escape-velocity] intro camera done');
+		// 进关影视化倒叙/溯源运镜（S8.1）：① 目标天体特写 ➔ ② 逆序飞掠路线 ➔ ③ 探测器特写 ➔ ④ 切入 2D
+		if (introTourActive && introTourT < IntroTourDuration) {
+			introTourT += dt;
+			let k = introTourT / IntroTourDuration;
+			if (k >= 1) {
+				finishIntroTour();
+			} else {
+				if (k >= 0.95 && !introLogged) {
+					introLogged = true;
+					print('[escape-velocity] intro camera finishing');
+				}
+				let targetBody: Body | undefined = undefined;
+				const wps = goalWaypoints(level.goal);
+				if (wps.length > 0) {
+					targetBody = level.bodies[wps[wps.length - 1].planetIndex];
+				} else if (level.goal.planetIndex >= 0 && level.goal.planetIndex < level.bodies.length) {
+					targetBody = level.bodies[level.goal.planetIndex];
+				}
+				if (targetBody === undefined && level.bodies.length > 0) {
+					targetBody = level.bodies[level.bodies.length - 1];
+				}
+
+				if (targetBody !== undefined) {
+					const pwTarget = planeToWorld(bodyPositionAt(targetBody, tNow), 0);
+					const pwProbe = planeToWorld(probePos, 0);
+					const isMicroSystem = targetBody.orbitRadius < 2.0;
+					const distTarget = isMicroSystem ? Math.max(0.18, targetBody.radius * 180) : Math.max(8, targetBody.radius * 350);
+					const distProbe = isMicroSystem ? Math.max(0.015, deps.scene.probeRadius * 10) : Math.max(1.5, deps.scene.probeRadius * 6);
+
+					if (k < 0.35) {
+						// 幕一：目标星球特写
+						const e1 = k / 0.35;
+						const az = (0.2 + e1 * 0.15) * Math.PI;
+						const tilt = 0.35 * Math.PI;
+						const eye = Vec3(
+							pwTarget.x + Math.sin(az) * Math.cos(tilt) * distTarget,
+							pwTarget.y + Math.sin(tilt) * distTarget,
+							pwTarget.z + Math.cos(az) * Math.cos(tilt) * distTarget,
+						);
+						frame = { target: pwTarget, eye };
+					} else if (k < 0.72) {
+						// 幕二：溯源拉升与飞掠
+						const e2 = (k - 0.35) / 0.37;
+						const ease2 = e2 * e2 * (3 - 2 * e2);
+						const az = (0.35 + (1 - ease2) * 0.1) * Math.PI;
+						const peakDist = isMicroSystem ? 1.2 : Math.max(distTarget * 2.2, 45);
+						const curDist = distTarget + (peakDist - distTarget) * Math.sin(ease2 * Math.PI) + (distProbe - distTarget) * ease2;
+						const targetCenter = Vec3(
+							pwTarget.x + (pwProbe.x - pwTarget.x) * ease2,
+							pwTarget.y + (pwProbe.y - pwTarget.y) * ease2,
+							pwTarget.z + (pwProbe.z - pwTarget.z) * ease2,
+						);
+						const eye = Vec3(
+							targetCenter.x + Math.sin(az) * 0.5 * curDist,
+							targetCenter.y + curDist * 0.8,
+							targetCenter.z + Math.cos(az) * 0.5 * curDist,
+						);
+						frame = { target: targetCenter, eye };
+					} else {
+						// 幕三：归巢探测器特写
+						const e3 = (k - 0.72) / 0.28;
+						const ease3 = 1 - (1 - e3) * (1 - e3);
+						const az = 0.25 * Math.PI;
+						const tilt = 0.36 * Math.PI;
+						const curDist = (distTarget * 0.4) * (1 - ease3) + distProbe * ease3;
+						const eye = Vec3(
+							pwProbe.x + Math.sin(az) * Math.cos(tilt) * curDist,
+							pwProbe.y + Math.sin(tilt) * curDist,
+							pwProbe.z + Math.cos(az) * Math.cos(tilt) * curDist,
+						);
+						frame = { target: pwProbe, eye };
+					}
+				}
 			}
-			const wps0 = goalWaypoints(level.goal);
-			const wpBody = wps0.length > 0 ? level.bodies[wps0[0].planetIndex] : undefined;
-			const wide = frame;
-			let from: { eye: Vec3.Type; target: Vec3.Type } = wide;
-			let to: { eye: Vec3.Type; target: Vec3.Type } = wide;
-			let e = 0;
-			if (k < 0.35) {
-				const pw = planeToWorld(probePos, 0);
-				let dx = wide.eye.x - wide.target.x;
-				let dy = wide.eye.y - wide.target.y;
-				let dz = wide.eye.z - wide.target.z;
-				const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-				if (len > 1e-6) {
-					const s = IntroCloseDist / len;
-					dx *= s; dy *= s; dz *= s;
-				}
-				from = { target: Vec3(pw.x, pw.y, pw.z), eye: Vec3(pw.x + dx, pw.y + dy, pw.z + dz) };
-				e = k / 0.35;
-			} else if (k < 0.72 && wpBody !== undefined) {
-				// 推向下一站：目标 = 它的世界位置；机位沿当前视线方向拉近到「半径 × 6」
-				const c = planeToWorld(bodyPositionAt(wpBody, tNow), 0);
-				let dx = wide.eye.x - wide.target.x;
-				let dy = wide.eye.y - wide.target.y;
-				let dz = wide.eye.z - wide.target.z;
-				const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-				const want = Math.max(24, wpBody.radius * 6);
-				if (len > 1e-6) {
-					const s = want / len;
-					dx *= s; dy *= s; dz *= s;
-				}
-				to = { target: Vec3(c.x, c.y, c.z), eye: Vec3(c.x + dx, c.y + dy, c.z + dz) };
-				e = (k - 0.35) / 0.37;
-			} else if (wpBody !== undefined) {
-				// 交还：目标的特写缓动回全景
-				const c = planeToWorld(bodyPositionAt(wpBody, tNow), 0);
-				let dx = wide.eye.x - wide.target.x;
-				let dy = wide.eye.y - wide.target.y;
-				let dz = wide.eye.z - wide.target.z;
-				const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-				const want = Math.max(24, wpBody.radius * 6);
-				if (len > 1e-6) {
-					const s = want / len;
-					dx *= s; dy *= s; dz *= s;
-				}
-				from = { target: Vec3(c.x, c.y, c.z), eye: Vec3(c.x + dx, c.y + dy, c.z + dz) };
-				e = (k - 0.72) / 0.28;
-			}
-			const ease = 1 - (1 - e) * (1 - e) * (1 - e);
-			frame = {
-				target: Vec3(
-					from.target.x + (to.target.x - from.target.x) * ease,
-					from.target.y + (to.target.y - from.target.y) * ease,
-					from.target.z + (to.target.z - from.target.z) * ease,
-				),
-				eye: Vec3(
-					from.eye.x + (to.eye.x - from.eye.x) * ease,
-					from.eye.y + (to.eye.y - from.eye.y) * ease,
-					from.eye.z + (to.eye.z - from.eye.z) * ease,
-				),
-			};
 		}
 		// 自由观察的叠加（绕目标转 + 缩放）—— 转完相机依然跟着探测器走
 		frame = applyObserve(frame);
@@ -1277,22 +1331,28 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 又会在玩家松手后把他的线**覆盖**掉。
 			deps.trajectory.clearPrediction();
 			deps.plan.clearPrediction();
-			predKey = '';
+			predForce = true; // 下次需要画线时立刻重算（缓存键被清掉了）
 		} else {
 			// ⚠️ 缓存键必须带上**日期**与**探测器此刻的位置**：行星位置随日期变、L1 的探测器自己在动，
 			//    漏掉任何一项都会留下一条"对不上此刻物理"的旧线（看到的 ≠ 飞到的）。
-			const key = core.aim.velocity.x.toFixed(3) + '|' + core.aim.velocity.y.toFixed(3) + '|' + tNow.toFixed(2) +
-				'|' + probePos.x.toFixed(2) + ',' + probePos.y.toFixed(2) +
-				'|' + (core.brakeMode ? 'B' : 'C') + '|' + idx.toFixed(0);
-			if (key !== predKey) {
-				predKey = key;
+			// ⚠️ 位置精度从 toFixed(2) 提到 toFixed(7)：真实阿波罗剖面下停泊轨半径只有 3.514e-3，
+			//    两位小数会把整条轨道压成一个点 ⇒ 预测线永远不刷新（旧口径在 0.1 单位时代刚好够用）。
+			const aimKey = core.aim.velocity.x.toFixed(4) + '|' + core.aim.velocity.y.toFixed(4) + '|' + (core.brakeMode ? 'B' : 'C');
+			const posKey = tNow.toFixed(4) + '|' + probePos.x.toFixed(7) + ',' + probePos.y.toFixed(7);
+			predAccum += dt;
+			const needIt = predForce || ((aimKey !== predAimKey || posKey !== predPosKey) && predAccum >= PredMinIntervalSec);
+			if (needIt) {
+				predForce = false;
+				predAccum = 0;
+				predAimKey = aimKey;
+				predPosKey = posKey;
 				// ⚠️ 与 coreLaunch 共用 burnToMotion：预测线里必须带上反推段，否则"看到的 ≠ 飞到的"
 				// 基准是**此刻**的探测器状态（待机时它在动，不是 probeStart）。
 				const motion = burnToMotion(core.aim.velocity, probeVel, core.brakeMode, level.maxSteps);
 				predPoints = simulate(
 					{ pos: { x: probePos.x, y: probePos.y }, vel: motion.init },
 					level.bodies,
-					{ steps: PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: tNow, brake: motion.brake },
+					{ steps: level.predictSteps !== undefined ? level.predictSteps : PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: tNow, brake: motion.brake },
 				).points;
 			}
 			deps.trajectory.setPrediction(predPoints, basis);
@@ -1489,11 +1549,13 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		phase: (): GamePhase => core.phase,
 		result: (): ResultKind | undefined => core.result,
 		onAimDrag: (a: AimResult): void => {
+			if (introTourActive) finishIntroTour();
 			core.aim = a;
 			aimed = true; // 玩家动过手了 ⇒ 从他拖动的那一刻起，预测线才属于他（S3.12）
-			introT = IntroDurationSec; // 玩家一动手就跳过进关镜头（操作权优先）
 		},
 		aimReady: (): void => {
+			// B1：松手进 Armed 时**强制**重算一次预测线（拖动期间是节流的，最后那一下必须精确）
+			predForce = true;
 			if (!coreArm(core)) return;
 			applyView(); // Armed 仍是"瞄准期" ⇒ 留在 2D（除非玩家自己切过）
 			deps.onPhase('Armed');
@@ -1515,8 +1577,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			coreToggleView(core);
 			applyView();
 		},
+		skipIntroTour: (): void => {
+			finishIntroTour();
+		},
+		isIntroTourActive: (): boolean => introTourActive,
 		observeDrag: (dx: number, dy: number): void => {
-			introT = IntroDurationSec; // 一动手就跳过进关镜头（操作权优先）
+			if (introTourActive) {
+				finishIntroTour();
+				return;
+			}
 			print('[escape-velocity] observe drag dx=' + dx.toFixed(0) + ' dy=' + dy.toFixed(0) + ' yaw=' + obsYawDeg.toFixed(0));
 			obsYawDeg += dx * 0.35;
 			obsPitchDeg += dy * 0.25;
@@ -1542,6 +1611,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (core.phase !== 'Result') return;
 			handoffDate(false); // 把日期从 t0 拿回 clock：重试保留玩家挑好的时机
 			aimed = false;      // 重新瞄准：预测线回到"还没瞄过"的状态
+			introTourActive = false; // 重试不重放运镜
 			coreRetry(core, level.aimMin);
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
@@ -1567,15 +1637,16 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			return true;
 		},
 		startLevel: (): void => {
-			// 复用 coreRetry 的“清空一切回到 Aiming”：它对相态没有守卫，
-			// 正好当作“重置本关”用（coreRetry 本身不改）。
 			aimed = false;
 			coreRetry(core, level.aimMin);
-			// 机架的平滑状态也归零：终章（S3.18）的相机是**绕开机架**直接写到 1000 单位外的，
-			// 不清的话下一关的相机会从 1000 一路 lerp 回日常取景（半秒钟的“Zoom in”）。
 			deps.rig.reset();
-			introT = 0; // 从选关进来才放一遍进关镜头（重试不重放）
+			// 进关开启 3D 倒叙溯源运镜：特写目标 ➔ 飞掠 ➔ 探测器 ➔ 切入 2D
+			introTourActive = true;
+			introTourT = 0;
 			introLogged = false;
+			core.viewMode = '3D';
+			appliedMode = '';
+			applyView(); // 进关先展示 3D 世界
 			prepareIdle();
 			deps.trajectory.clearTrail();
 			deps.trajectory.clearPrediction();
@@ -1583,10 +1654,6 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.plan.clearTrail();
 			deps.plan.clearPrediction();
 			deps.plan.clearGoalRings();
-			// 强制重放一次视图：进关前 showOnlyLevel 刚把 3D 世界设成 visible=true，
-			// 而 appliedMode 可能还是"2D"⇒不强制的话这一关会漏出 3D 世界（硬约束 5 的同一个坑）
-			appliedMode = '';
-			applyView();
 			deps.onPhase('Aiming');
 		},
 		stepTime: (dir: number, span: number): void => {

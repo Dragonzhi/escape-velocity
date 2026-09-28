@@ -181,297 +181,376 @@ end -- 225
 -- @param layer 挂载的父节点，必须是**关卡 2D 层**（左下原点绝对像素空间，见文件头）
 -- @param viewW 视图逻辑宽（`View.size.width`）
 -- @param viewH 视图逻辑高
-function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) -- 295
-	local options = opts ~= nil and opts or ____exports.defaultPlanOptions() -- 296
-	local root = Node() -- 299
-	local orbitDraw = DrawNode() -- 300
-	local dotDraw = DrawNode() -- 301
-	local ringDraw = DrawNode() -- 302
-	local pathDraw = DrawNode() -- 303
-	local pinDraw = DrawNode() -- 304
-	root:addChild(orbitDraw) -- 305
-	root:addChild(dotDraw) -- 306
-	root:addChild(ringDraw) -- 307
-	root:addChild(pathDraw) -- 308
-	root:addChild(pinDraw) -- 309
-	layer:addChild(root) -- 310
-	local orbitColor = colorFromHex(options.orbitHex, 1) -- 312
-	local ringColor = colorFromHex(options.ringHex, 1) -- 313
-	local predictColor = colorFromHex(options.predictHex, 1) -- 314
-	local trailColor = colorFromHex(options.trailHex, 1) -- 315
-	local probeColor = colorFromHex(options.probeHex, 1) -- 316
-	local flowDotColor = colorFromHex(options.flowDotHex, 1) -- 317
+function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) -- 301
+	local options = opts ~= nil and opts or ____exports.defaultPlanOptions() -- 302
+	local root = Node() -- 305
+	local orbitDraw = DrawNode() -- 306
+	local dotDraw = DrawNode() -- 307
+	local ringDraw = DrawNode() -- 308
+	local pathDraw = DrawNode() -- 309
+	local pinDraw = DrawNode() -- 310
+	local beaconDraw = DrawNode() -- 311
+	root:addChild(orbitDraw) -- 312
+	root:addChild(dotDraw) -- 313
+	root:addChild(ringDraw) -- 314
+	root:addChild(pathDraw) -- 315
+	root:addChild(pinDraw) -- 316
+	root:addChild(beaconDraw) -- 317
+	layer:addChild(root) -- 318
+	local orbitColor = colorFromHex(options.orbitHex, 1) -- 320
+	local ringColor = colorFromHex(options.ringHex, 1) -- 321
+	local predictColor = colorFromHex(options.predictHex, 1) -- 322
+	local trailColor = colorFromHex(options.trailHex, 1) -- 323
+	local probeColor = colorFromHex(options.probeHex, 1) -- 324
+	local flowDotColor = colorFromHex(options.flowDotHex, 1) -- 325
 	--- 只描边不填充：`drawPolygon` 的填充用全透明色（与 Ui.createPanel 的手法一致）。
-	local noFill = colorFromHex(0, 0) -- 319
-	local isVisible = true -- 321
-	local map = ____exports.computePlanMapping(viewW, viewH, 1, options.marginFrac) -- 322
-	local dirty = true -- 323
-	local bodies = {} -- 326
-	local visuals = {} -- 327
-	local tWorld = 0 -- 328
-	local probe = {x = 0, y = 0} -- 329
-	local probeVel = {x = 0, y = 0} -- 330
-	local pred = {} -- 331
-	local trail = {} -- 332
-	local rings = {} -- 333
-	local function clearAll() -- 335
-		orbitDraw:clear() -- 336
-		dotDraw:clear() -- 337
-		ringDraw:clear() -- 338
-		pathDraw:clear() -- 339
-		pinDraw:clear() -- 340
-	end -- 335
+	local noFill = colorFromHex(0, 0) -- 327
+	local isVisible = true -- 329
+	local currentZoom = 1 -- 330
+	local panOffsetX = 0 -- 331
+	local panOffsetY = 0 -- 332
+	local baseFitRadius = 1 -- 333
+	local map = ____exports.computePlanMapping(viewW, viewH, 1, options.marginFrac) -- 334
+	local dirty = true -- 335
+	local function recomputeMap() -- 337
+		local effectiveR = baseFitRadius / currentZoom -- 338
+		local newMap = ____exports.computePlanMapping( -- 339
+			viewW, -- 339
+			viewH, -- 339
+			effectiveR, -- 339
+			options.marginFrac, -- 339
+			map.centerX, -- 339
+			map.centerY -- 339
+		) -- 339
+		newMap.originX = viewW / 2 + panOffsetX -- 340
+		newMap.originY = viewH / 2 + panOffsetY -- 341
+		map = newMap -- 342
+		dirty = true -- 343
+	end -- 337
+	local bodies = {} -- 347
+	local visuals = {} -- 348
+	local tWorld = 0 -- 349
+	local probe = {x = 0, y = 0} -- 350
+	local probeVel = {x = 0, y = 0} -- 351
+	local pred = {} -- 352
+	local trail = {} -- 353
+	local rings = {} -- 354
+	local function clearAll() -- 356
+		orbitDraw:clear() -- 357
+		dotDraw:clear() -- 358
+		ringDraw:clear() -- 359
+		pathDraw:clear() -- 360
+		pinDraw:clear() -- 361
+		beaconDraw:clear() -- 362
+	end -- 356
 	--- 圆周顶点（`n` 段；返回 Vec2 给 drawPolygon 描边用）。
-	local function circleVerts(cx, cy, rPx, n) -- 344
-		local seg = n > 8 and n or 8 -- 345
-		local out = {} -- 346
-		do -- 346
-			local i = 0 -- 347
-			while i < seg do -- 347
-				local a = i / seg * 2 * math.pi -- 348
-				out[#out + 1] = Vec2( -- 349
-					cx + rPx * math.cos(a), -- 349
-					cy + rPx * math.sin(a) -- 349
-				) -- 349
-				i = i + 1 -- 347
-			end -- 347
-		end -- 347
-		return out -- 351
-	end -- 344
-	--- 平面折线 → 屏幕折线（抽稀后逐段画）。
-	local function drawPolyline(pts, color, width) -- 355
-		if #pts < 2 then -- 355
-			return -- 356
-		end -- 356
-		local dec = decimate(pts, options.polylineMaxPoints) -- 357
-		local prev = nil -- 358
-		for ____, p in ipairs(dec) do -- 359
-			local s = ____exports.planeToScreen(p, map) -- 360
-			local cur = Vec2(s.x, s.y) -- 361
-			if prev ~= nil then -- 361
-				pathDraw:drawSegment(prev, cur, width, color) -- 362
-			end -- 362
-			prev = cur -- 363
-		end -- 363
-	end -- 355
-	local function redraw() -- 367
-		clearAll() -- 368
-		if not isVisible then -- 368
-			return -- 369
+	local function circleVerts(cx, cy, rPx, n) -- 366
+		local seg = n > 8 and n or 8 -- 367
+		local out = {} -- 368
+		do -- 368
+			local i = 0 -- 369
+			while i < seg do -- 369
+				local a = i / seg * 2 * math.pi -- 370
+				out[#out + 1] = Vec2( -- 371
+					cx + rPx * math.cos(a), -- 371
+					cy + rPx * math.sin(a) -- 371
+				) -- 371
+				i = i + 1 -- 369
+			end -- 369
 		end -- 369
-		for ____, b in ipairs(bodies) do -- 372
-			do -- 372
-				if b.orbitRadius <= 0 then -- 372
-					goto __continue42 -- 373
-				end -- 373
-				local center = b.host ~= nil and bodyPositionAt(b.host, tWorld) or b.orbitCenter -- 374
-				local s = ____exports.planeToScreen(center, map) -- 375
-				local rPx = b.orbitRadius * map.scale -- 376
-				if rPx < 1 then -- 376
-					goto __continue42 -- 377
-				end -- 377
-				orbitDraw:drawPolygon( -- 378
-					circleVerts(s.x, s.y, rPx, options.orbitSegments), -- 378
-					noFill, -- 378
-					options.orbitWidth, -- 378
-					orbitColor -- 378
-				) -- 378
-			end -- 378
-			::__continue42:: -- 378
+		return out -- 373
+	end -- 366
+	--- 平面折线 → 屏幕折线（抽稀后逐段画）。
+	local function drawPolyline(pts, color, width) -- 377
+		if #pts < 2 then -- 377
+			return -- 378
 		end -- 378
-		for ____, b in ipairs(bodies) do -- 385
-			do -- 385
-				if b.orbitRadius <= 0 or b.orbitPeriod == 0 then -- 385
-					goto __continue46 -- 386
-				end -- 386
-				local rPx = b.orbitRadius * map.scale -- 387
-				if rPx < 1 then -- 387
-					goto __continue46 -- 388
-				end -- 388
-				do -- 388
-					local k = 0 -- 389
-					while k < FlowDotsPerOrbit do -- 389
-						local s = ____exports.planeToScreen( -- 390
-							flowDotPosition(b, tWorld, k, FlowDotsPerOrbit), -- 390
-							map -- 390
-						) -- 390
-						dotDraw:drawDot( -- 391
-							Vec2(s.x, s.y), -- 391
-							options.flowDotRadius, -- 391
-							flowDotColor -- 391
-						) -- 391
-						k = k + 1 -- 389
-					end -- 389
-				end -- 389
-			end -- 389
-			::__continue46:: -- 389
-		end -- 389
-		for ____, ring in ipairs(rings) do -- 396
-			do -- 396
-				local s = ____exports.planeToScreen(ring.center, map) -- 397
-				local rPx = ring.radius * map.scale -- 398
+		local dec = decimate(pts, options.polylineMaxPoints) -- 379
+		local prev = nil -- 380
+		for ____, p in ipairs(dec) do -- 381
+			local s = ____exports.planeToScreen(p, map) -- 382
+			local cur = Vec2(s.x, s.y) -- 383
+			if prev ~= nil then -- 383
+				pathDraw:drawSegment(prev, cur, width, color) -- 384
+			end -- 384
+			prev = cur -- 385
+		end -- 385
+	end -- 377
+	local function redraw() -- 389
+		clearAll() -- 390
+		if not isVisible then -- 390
+			return -- 391
+		end -- 391
+		for ____, b in ipairs(bodies) do -- 394
+			do -- 394
+				if b.orbitRadius <= 0 then -- 394
+					goto __continue43 -- 395
+				end -- 395
+				local center = b.host ~= nil and bodyPositionAt(b.host, tWorld) or b.orbitCenter -- 396
+				local s = ____exports.planeToScreen(center, map) -- 397
+				local rPx = b.orbitRadius * map.scale -- 398
 				if rPx < 1 then -- 398
-					goto __continue52 -- 399
+					goto __continue43 -- 399
 				end -- 399
-				ringDraw:drawPolygon( -- 400
-					circleVerts(s.x, s.y, rPx, options.ringSegments), -- 400
+				orbitDraw:drawPolygon( -- 400
+					circleVerts(s.x, s.y, rPx, options.orbitSegments), -- 400
 					noFill, -- 400
-					options.ringWidth, -- 400
-					ringColor -- 400
+					options.orbitWidth, -- 400
+					orbitColor -- 400
 				) -- 400
 			end -- 400
-			::__continue52:: -- 400
+			::__continue43:: -- 400
 		end -- 400
-		drawPolyline(trail, trailColor, options.trailWidth) -- 404
-		drawPolyline(pred, predictColor, options.predictWidth) -- 405
-		do -- 405
-			local i = 0 -- 413
-			while i < #bodies do -- 413
-				local b = bodies[i + 1] -- 414
-				local s = ____exports.planeToScreen( -- 415
-					bodyPositionAt(b, tWorld), -- 415
-					map -- 415
-				) -- 415
-				local r = b.gm >= options.sunGmMin and options.sunPinRadius or options.pinRadius -- 416
-				if i < #visuals then -- 416
-					local v = visuals[i + 1] -- 418
-					local vr = v.displayRadius > 0 and v.displayRadius * map.scale or 0 -- 419
-					if vr > r then -- 419
-						r = vr -- 420
-					end -- 420
-					if r > options.maxPinRadius then -- 420
-						r = options.maxPinRadius -- 421
-					end -- 421
+		for ____, b in ipairs(bodies) do -- 407
+			do -- 407
+				if b.orbitRadius <= 0 or b.orbitPeriod == 0 then -- 407
+					goto __continue47 -- 408
+				end -- 408
+				local rPx = b.orbitRadius * map.scale -- 409
+				if rPx < 1 then -- 409
+					goto __continue47 -- 410
+				end -- 410
+				do -- 410
+					local k = 0 -- 411
+					while k < FlowDotsPerOrbit do -- 411
+						local s = ____exports.planeToScreen( -- 412
+							flowDotPosition(b, tWorld, k, FlowDotsPerOrbit), -- 412
+							map -- 412
+						) -- 412
+						dotDraw:drawDot( -- 413
+							Vec2(s.x, s.y), -- 413
+							options.flowDotRadius, -- 413
+							flowDotColor -- 413
+						) -- 413
+						k = k + 1 -- 411
+					end -- 411
+				end -- 411
+			end -- 411
+			::__continue47:: -- 411
+		end -- 411
+		for ____, ring in ipairs(rings) do -- 418
+			do -- 418
+				local s = ____exports.planeToScreen(ring.center, map) -- 419
+				local rPx = ring.radius * map.scale -- 420
+				if rPx < 1 then -- 420
+					goto __continue53 -- 421
 				end -- 421
-				local col = orbitColor -- 423
-				if i < #visuals then -- 423
-					local v = visuals[i + 1] -- 425
-					col = Color( -- 426
-						math.floor(v.r * 255), -- 426
-						math.floor(v.g * 255), -- 426
-						math.floor(v.b * 255), -- 426
-						255 -- 426
-					) -- 426
-				end -- 426
-				pinDraw:drawDot( -- 428
-					Vec2(s.x, s.y), -- 428
-					r, -- 428
-					col -- 428
-				) -- 428
-				i = i + 1 -- 413
-			end -- 413
-		end -- 413
-		local ps = ____exports.planeToScreen(probe, map) -- 432
-		local pr = options.probePinRadius -- 433
-		if PROBE_VISUAL_RADIUS > 0 and PROBE_VISUAL_RADIUS * map.scale > pr then -- 433
-			pr = PROBE_VISUAL_RADIUS * map.scale -- 434
-		end -- 434
-		if pr > options.maxPinRadius then -- 434
-			pr = options.maxPinRadius -- 435
+				ringDraw:drawPolygon( -- 422
+					circleVerts(s.x, s.y, rPx, options.ringSegments), -- 422
+					noFill, -- 422
+					options.ringWidth, -- 422
+					ringColor -- 422
+				) -- 422
+			end -- 422
+			::__continue53:: -- 422
+		end -- 422
+		drawPolyline(trail, trailColor, options.trailWidth) -- 426
+		drawPolyline(pred, predictColor, options.predictWidth) -- 427
+		do -- 427
+			local i = 0 -- 435
+			while i < #bodies do -- 435
+				local b = bodies[i + 1] -- 436
+				local s = ____exports.planeToScreen( -- 437
+					bodyPositionAt(b, tWorld), -- 437
+					map -- 437
+				) -- 437
+				local r = b.gm >= options.sunGmMin and options.sunPinRadius or options.pinRadius -- 438
+				if i < #visuals then -- 438
+					local v = visuals[i + 1] -- 440
+					local vr = v.displayRadius > 0 and v.displayRadius * map.scale or 0 -- 441
+					if vr > r then -- 441
+						r = vr -- 442
+					end -- 442
+					if r > options.maxPinRadius then -- 442
+						r = options.maxPinRadius -- 443
+					end -- 443
+				end -- 443
+				local col = orbitColor -- 445
+				if i < #visuals then -- 445
+					local v = visuals[i + 1] -- 447
+					col = Color( -- 448
+						math.floor(v.r * 255), -- 448
+						math.floor(v.g * 255), -- 448
+						math.floor(v.b * 255), -- 448
+						255 -- 448
+					) -- 448
+				end -- 448
+				pinDraw:drawDot( -- 450
+					Vec2(s.x, s.y), -- 450
+					r, -- 450
+					col -- 450
+				) -- 450
+				i = i + 1 -- 435
+			end -- 435
 		end -- 435
-		pinDraw:drawDot( -- 436
-			Vec2(ps.x, ps.y), -- 436
-			pr, -- 436
-			probeColor -- 436
-		) -- 436
-		pinDraw:drawPolygon( -- 437
-			circleVerts(ps.x, ps.y, pr + 5, 24), -- 437
-			noFill, -- 437
-			1.5, -- 437
-			probeColor -- 437
-		) -- 437
-		local vlen = math.sqrt(probeVel.x * probeVel.x + probeVel.y * probeVel.y) -- 438
-		if vlen > 0.000001 then -- 438
-			local dx = probeVel.x / vlen -- 440
-			local dy = probeVel.y / vlen -- 441
-			pinDraw:drawSegment( -- 442
-				Vec2(ps.x, ps.y), -- 443
-				Vec2(ps.x + dx * options.probeTickLen, ps.y - dy * options.probeTickLen), -- 444
-				2, -- 445
-				probeColor -- 446
-			) -- 446
-		end -- 446
-		dirty = false -- 449
-	end -- 367
-	return { -- 452
-		setVisible = function(self, on) -- 453
-			isVisible = on -- 454
-			root.visible = on -- 455
-			if not on then -- 455
-				clearAll() -- 458
-				dirty = false -- 459
-			else -- 459
-				dirty = true -- 461
-			end -- 461
-		end, -- 453
-		visible = function(self) -- 464
-			return isVisible -- 465
-		end, -- 464
-		fitTo = function(self, radius) -- 467
-			map = ____exports.computePlanMapping(viewW, viewH, radius, options.marginFrac) -- 468
-			dirty = true -- 469
-		end, -- 467
-		syncBodies = function(self, bs, vs, t) -- 471
-			bodies = bs -- 472
-			visuals = vs -- 473
-			tWorld = t -- 474
-			if centerBodyIndex ~= nil and centerBodyIndex >= 0 and centerBodyIndex < #bs then -- 474
-				local cp = bodyPositionAt(bs[centerBodyIndex + 1], t) -- 478
-				map.centerX = cp.x -- 479
-				map.centerY = cp.y -- 480
-				dirty = true -- 482
-			end -- 482
-			dirty = true -- 484
-		end, -- 471
-		syncProbe = function(self, p, v) -- 486
-			probe = p -- 487
-			probeVel = v -- 488
-			dirty = true -- 489
-		end, -- 486
-		setPrediction = function(self, points) -- 491
-			pred = points -- 492
-			dirty = true -- 493
-		end, -- 491
-		clearPrediction = function(self) -- 495
-			pred = {} -- 496
-			dirty = true -- 497
-		end, -- 495
-		setTrail = function(self, points) -- 499
-			trail = points -- 500
-			dirty = true -- 501
-		end, -- 499
-		clearTrail = function(self) -- 503
-			trail = {} -- 504
-			dirty = true -- 505
-		end, -- 503
-		setGoalRings = function(self, rs) -- 507
-			rings = rs -- 508
-			dirty = true -- 509
-		end, -- 507
-		clearGoalRings = function(self) -- 511
-			rings = {} -- 512
-			dirty = true -- 513
-		end, -- 511
-		flush = function(self) -- 515
-			if not isVisible then -- 515
-				return -- 517
-			end -- 517
-			if not dirty then -- 517
-				return -- 518
-			end -- 518
-			redraw() -- 519
-		end, -- 515
-		clear = function(self) -- 521
-			clearAll() -- 522
-			dirty = true -- 523
-		end, -- 521
-		probeScreen = function(self) -- 525
-			return ____exports.planeToScreen(probe, map) -- 526
-		end, -- 525
-		mapping = function(self) -- 528
-			return map -- 529
-		end, -- 528
-		root = root -- 531
-	} -- 531
-end -- 295
-return ____exports -- 295
+		local ps = ____exports.planeToScreen(probe, map) -- 454
+		local pr = options.probePinRadius -- 455
+		if PROBE_VISUAL_RADIUS > 0 and PROBE_VISUAL_RADIUS * map.scale > pr then -- 455
+			pr = PROBE_VISUAL_RADIUS * map.scale -- 456
+		end -- 456
+		if pr > options.maxPinRadius then -- 456
+			pr = options.maxPinRadius -- 457
+		end -- 457
+		pinDraw:drawDot( -- 458
+			Vec2(ps.x, ps.y), -- 458
+			pr, -- 458
+			probeColor -- 458
+		) -- 458
+		pinDraw:drawPolygon( -- 459
+			circleVerts(ps.x, ps.y, pr + 5, 24), -- 459
+			noFill, -- 459
+			1.5, -- 459
+			probeColor -- 459
+		) -- 459
+		local vlen = math.sqrt(probeVel.x * probeVel.x + probeVel.y * probeVel.y) -- 460
+		if vlen > 0.000001 then -- 460
+			local dx = probeVel.x / vlen -- 462
+			local dy = probeVel.y / vlen -- 463
+			pinDraw:drawSegment( -- 464
+				Vec2(ps.x, ps.y), -- 465
+				Vec2(ps.x + dx * options.probeTickLen, ps.y - dy * options.probeTickLen), -- 466
+				2, -- 467
+				probeColor -- 468
+			) -- 468
+		end -- 468
+		if #rings > 0 then -- 468
+			local targetScreen = ____exports.planeToScreen(rings[1].center, map) -- 474
+			local pad = 48 -- 475
+			local isOffscreen = targetScreen.x < pad or targetScreen.x > viewW - pad or targetScreen.y < pad or targetScreen.y > viewH - pad -- 476
+			if isOffscreen then -- 476
+				local cx = viewW / 2 -- 478
+				local cy = viewH / 2 -- 479
+				local dirX = targetScreen.x - cx -- 480
+				local dirY = targetScreen.y - cy -- 481
+				local len = math.sqrt(dirX * dirX + dirY * dirY) -- 482
+				if len > 0.0001 then -- 482
+					local ux = dirX / len -- 484
+					local uy = dirY / len -- 485
+					local halfW = viewW / 2 - pad -- 486
+					local halfH = viewH / 2 - pad -- 487
+					local scaleX = math.abs(ux) > 0.000001 and halfW / math.abs(ux) or 1000000000 -- 488
+					local scaleY = math.abs(uy) > 0.000001 and halfH / math.abs(uy) or 1000000000 -- 489
+					local tHit = math.min(scaleX, scaleY) -- 490
+					local hitX = cx + ux * tHit -- 491
+					local hitY = cy + uy * tHit -- 492
+					local arrowLen = 18 -- 493
+					local arrowHalf = 9 -- 494
+					local tip = Vec2(hitX + ux * 6, hitY + uy * 6) -- 495
+					local back = Vec2(hitX - ux * arrowLen, hitY - uy * arrowLen) -- 496
+					local left = Vec2(back.x - uy * arrowHalf, back.y + ux * arrowHalf) -- 497
+					local right = Vec2(back.x + uy * arrowHalf, back.y - ux * arrowHalf) -- 498
+					beaconDraw:drawPolygon({tip, left, right}, ringColor, 1.5, ringColor) -- 499
+					beaconDraw:drawDot( -- 500
+						Vec2(hitX, hitY), -- 500
+						4, -- 500
+						ringColor -- 500
+					) -- 500
+				end -- 500
+			end -- 500
+		end -- 500
+		dirty = false -- 504
+	end -- 389
+	return { -- 507
+		setVisible = function(self, on) -- 508
+			isVisible = on -- 509
+			root.visible = on -- 510
+			if not on then -- 510
+				clearAll() -- 513
+				dirty = false -- 514
+			else -- 514
+				dirty = true -- 516
+			end -- 516
+		end, -- 508
+		visible = function(self) -- 519
+			return isVisible -- 520
+		end, -- 519
+		fitTo = function(self, radius) -- 522
+			baseFitRadius = radius -- 523
+			recomputeMap() -- 524
+		end, -- 522
+		syncBodies = function(self, bs, vs, t) -- 526
+			bodies = bs -- 527
+			visuals = vs -- 528
+			tWorld = t -- 529
+			if centerBodyIndex ~= nil and centerBodyIndex >= 0 and centerBodyIndex < #bs then -- 529
+				local cp = bodyPositionAt(bs[centerBodyIndex + 1], t) -- 533
+				map.centerX = cp.x -- 534
+				map.centerY = cp.y -- 535
+				dirty = true -- 537
+			end -- 537
+			dirty = true -- 539
+		end, -- 526
+		syncProbe = function(self, p, v) -- 541
+			probe = p -- 542
+			probeVel = v -- 543
+			dirty = true -- 544
+		end, -- 541
+		setPrediction = function(self, points) -- 546
+			pred = points -- 547
+			dirty = true -- 548
+		end, -- 546
+		clearPrediction = function(self) -- 550
+			pred = {} -- 551
+			dirty = true -- 552
+		end, -- 550
+		setTrail = function(self, points) -- 554
+			trail = points -- 555
+			dirty = true -- 556
+		end, -- 554
+		clearTrail = function(self) -- 558
+			trail = {} -- 559
+			dirty = true -- 560
+		end, -- 558
+		setGoalRings = function(self, rs) -- 562
+			rings = rs -- 563
+			dirty = true -- 564
+		end, -- 562
+		clearGoalRings = function(self) -- 566
+			rings = {} -- 567
+			dirty = true -- 568
+		end, -- 566
+		flush = function(self) -- 570
+			if not isVisible then -- 570
+				return -- 572
+			end -- 572
+			if not dirty then -- 572
+				return -- 573
+			end -- 573
+			redraw() -- 574
+		end, -- 570
+		clear = function(self) -- 576
+			clearAll() -- 577
+			dirty = true -- 578
+		end, -- 576
+		probeScreen = function(self) -- 580
+			return ____exports.planeToScreen(probe, map) -- 581
+		end, -- 580
+		mapping = function(self) -- 583
+			return map -- 584
+		end, -- 583
+		zoomIn = function(self) -- 586
+			currentZoom = math.min(6, currentZoom * 1.35) -- 587
+			recomputeMap() -- 588
+		end, -- 586
+		zoomOut = function(self) -- 590
+			currentZoom = math.max(0.25, currentZoom / 1.35) -- 591
+			recomputeMap() -- 592
+		end, -- 590
+		resetView = function(self) -- 594
+			currentZoom = 1 -- 595
+			panOffsetX = 0 -- 596
+			panOffsetY = 0 -- 597
+			recomputeMap() -- 598
+		end, -- 594
+		pan = function(self, dx, dy) -- 600
+			panOffsetX = panOffsetX + dx -- 601
+			panOffsetY = panOffsetY + dy -- 602
+			recomputeMap() -- 603
+		end, -- 600
+		getZoom = function(self) -- 605
+			return currentZoom -- 606
+		end, -- 605
+		root = root -- 608
+	} -- 608
+end -- 301
+return ____exports -- 301

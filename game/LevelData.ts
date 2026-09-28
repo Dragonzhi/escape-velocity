@@ -48,7 +48,7 @@
 import { Body, P2, bodyPositionAt, distance } from 'game/Gravity';
 import { GravityScale, OrbitSpeedScale } from 'game/Config';
 import {
-	EarthGm, EarthRadius, MoonOrbitRadius, MoonRadius, REAL, SunGm, SunRadius,
+	EarthGm, EarthRadius, KmPerUnit, MoonOrbitRadius, MoonRadius, REAL, SunGm, SunRadius,
 	circularSpeed, period, trueGm, trueOrbit, trueRadius,
 } from 'game/Scale';
 import { visualRadius } from 'game/Tuning';
@@ -504,13 +504,18 @@ const PH = {
 	// L6 207.6°
 	neptune6: 207.6,
 	/**
-	 * L1 的月球（绕地球的卫星）相位。
+	 * L1 的月球（绕地球的卫星）相位 = **202°**（B 剖面重解，2026-09-28）。
 	 *
-	 * 解析推演：探测器在绕地 0.1 的圆轨上、出发点在地球外侧（+y），
-	 * 霍曼转移到月球轨道 0.2056 的**到达点在出发点对侧（270°）**，半程 0.4034 秒；
-	 * 月球角速度 285.88 °/s ⇒ 它必须在 t=0 时位于 270 − 285.88×0.4034 = **154.7°**。
+	 * 旧值 154.7° 是给「0.1 单位停泊轨 + 0.4034 游戏秒转移」算的；换成真实阿波罗剖面后
+	 * 停泊轨降到 6,571 km（3.514e-3 单位）、转移到月球要 **4.978 天**，月球在这期间走 **65°**，
+	 * 所以相位必须重解 —— 旧值下实测 **0/235 个候选能命中**（死关）。
+	 *
+	 * 解法：Node 侧用仓库同一份 `Gravity.simulate` + **游戏自己的 `findGoalIndex`** 扫
+	 * 「方向 × 力度 × 相位」，取粗网格（12 方向 × 4 档，与 Test/LevelDataTest 同一张网格）
+	 * 解数最多的那个相位。202° 下：粗网格 **4/48**、细网格（36×6）**6.0%**，
+	 * 命中样本的近月点 3,500–5,300 km（= 2–3 个月球半径，真实擦过）。
 	 */
-	moon: 154.7,
+	moon: 202,
 };
 
 /**
@@ -518,9 +523,12 @@ const PH = {
  *
  * - 地球是**真天体**：真 gm、真半径，自己在绕日公转（这是"物理统一"的试纸）；
  * - 月球绕地球，周期由开普勒第三定律算出 = 1.2593 秒（真实值）；
- * - 探测器在**绕地圆轨道**上，半径 0.1 单位（= 18.7 万 km = 月球距离的 49%）：
- *   初始速度 = 地球的公转速度 + 绕地圆轨速度（顺行），所以预测线一上来就是一条弧线；
- * - 点火目标：抬升到月球轨道 0.2056 做霍曼转移，半程 0.4034 秒。
+ * - 探测器在**真实的阿波罗停泊轨**上：200 km 高度（地心 6,571 km = **3.514e-3 单位**），
+ *   停泊周期 **88.4 分钟**、圆轨速度 7.788 km/s；初始速度 = 地球的公转速度 + 绕地圆轨速度（顺行）；
+ * - 点火目标：TLI —— 抬到月球轨道 0.2056，需要 **3.133 km/s（≈ 阿波罗实测 3.05–3.15）**，
+ *   转移到月球 **4.978 天**（一圈 : 转移 = 1 : 81，这一关的时间跨度就是它）。
+ *
+ * 数值出处与实测见 [`docs/L1重构设计案.md`](../docs/L1重构设计案.md) 第二节。
  */
 function level1(): LevelDef {
 	const earthOrbit = EarthOrbitRadius;
@@ -534,8 +542,10 @@ function level1(): LevelDef {
 		orbitDirection: 1,
 	};
 	const moon = satellite('moon', earth, MoonOrbitRadius, PH.moon);
-	const parking = 0.1;
-	// 地球在 90°：位置 (0, R)、速度 (-30, 0)。探测器在地球**外侧** 0.1（径向 +y），
+	// 停泊轨 = **真实阿波罗剖面**：200 km 高度 ⇒ 地心 6,571 km = 3.514e-3 单位。
+	// 半径由 Scale 的真半径 + 高度推出（**不手填**，与"Body.radius 只能由 Scale 算"同一条纪律）。
+	const parking = (REAL.earth.radiusKm + 200) / KmPerUnit;
+	// 地球在 90°：位置 (0, R)、速度 (-30, 0)。探测器在地球**外侧** parking（径向 +y），
 	// 顺行绕地的切向就是 -x ⇒ 相对速度 (-v_c, 0)。
 	const earthPos = bodyPositionAt(earth, 0);
 	const earthVel = bodyVelocityAt(earth, 0);
@@ -544,7 +554,7 @@ function level1(): LevelDef {
 		id: 1,
 		title: '月球',
 		probeVariant: 'solar',
-		brief: '月球任务 · 地球轨道：你已经在绕地球飞了 —— 月球也在走。别对着它现在的位置点火，要打提前量。',
+		brief: '月球任务 · 近地停泊轨 200 km：你正在绕地球飞，月球在 38 万 km 外。点火把它推向月球 —— 这一程要飞 5 天，别对着月球现在的位置点火。',
 		probeStart: { x: earthPos.x, y: earthPos.y + parking },
 		probeVel0: { x: earthVel.x - vCirc, y: earthVel.y },
 		planets: [sun(), earth, moon],
@@ -558,14 +568,16 @@ function level1(): LevelDef {
 		],
 		// 到达容差 0.02 = 月球物理半径的 21 倍，也是 2D 到达圈的半径（唯一判据）。
 		goal: { kind: 'planet', planetIndex: 2, tolerance: 0.02 },
-		dvBudget: 0.35,
+		// Δv 预算 4.6 单位（≈ 4.57 km/s）：TLI 需要 3.1556，实测可行解落在 3.56–4.6 之间（B0 扫掠）。
+		dvBudget: 4.6,
 		// ⚠️ escapeRadius 量的是**到太阳（原点）的距离**，不是"离地球多远"。
 		// 探测器出发时就在 (0, 80.1) ⇒ 写 3 会让它**第一帧就判"已逃逸"**
 		// （2026-09-27 实测：0/2880 条弧线可行，全是 outcome=escaped @t=0.001）。
 		escapeRadius: 400,
-		// 1.2 游戏秒（= 2400 步 @1/2000）：霍曼转移 0.4034 秒，实测命中窗口 0.35~0.62 秒，
-		// 留一倍余量即可 —— 再长只是让"没打中"的等待变久。
-		maxSteps: 2400,
+		// 0.1126 游戏秒（= 8000 步 @1.406967e-5，见 Tuning）= 2.46 天。
+		// ⚠️ 注意：**可行解不是霍曼转移**（3.1556 要 4.978 天），而是 3.56–4.6 的**快转移 ≈ 0.9 天**
+		//    —— B0 扫掠实测命中都在 0.85–0.94 天（第 694~767 个采样点）。8000 步 = 2.46 天留了 2.6 倍余量。
+		maxSteps: 8000,
 		planCenter: 1, // 以地球为中心（见 LevelDef.planCenter 的说明）
 		mission: {
 			id: 'L1',
@@ -575,8 +587,8 @@ function level1(): LevelDef {
 			vehicle: 'flyby',
 			challenges: [
 				{ desc: '成功抵达月球轨道或飞掠月球', type: 'success' },
-				{ desc: '发射点火消耗 Δv ≤ 0.28（节省 > 20%）', type: 'fuel', threshold: 0.8 },
-				{ desc: '近月点距离 r_peri ≤ 0.015', type: 'distance', threshold: 0.015 },
+				{ desc: '发射点火消耗 Δv ≤ 3.68（预算的 80%）', type: 'fuel', threshold: 0.8 },
+				{ desc: '近月点距离 r_peri ≤ 0.003（≈ 5,600 km）', type: 'distance', threshold: 0.003 },
 			],
 		},
 		// ⚠️ L1 **没有时间轴**：日期一变地球就转走，而 probeStart 是个固定点 ⇒

@@ -281,6 +281,12 @@ export interface PlanView {
 	probeScreen(): P2;
 	/** 当前映射（诊断与单测用）。 */
 	mapping(): PlanMapping;
+	/** 2D 规划视图多级缩放接口（S8.2）。 */
+	zoomIn(): void;
+	zoomOut(): void;
+	resetView(): void;
+	pan(dx: number, dy: number): void;
+	getZoom(): number;
 	/** 底层节点，调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
 }
@@ -295,18 +301,20 @@ export interface PlanView {
 export function createPlanView(layer: Node.Type, viewW: number, viewH: number, opts?: PlanOptions, centerBodyIndex?: number): PlanView {
 	const options = opts !== undefined ? opts : defaultPlanOptions();
 
-	// 五层 DrawNode，自下而上：轨道 → 光点 → 到达圈 → 轨迹 → 图钉
+	// 六层 DrawNode，自下而上：轨道 → 光点 → 到达圈 → 轨迹 → 图钉 → 屏幕外信标
 	const root = Node();
 	const orbitDraw = DrawNode();
 	const dotDraw = DrawNode();
 	const ringDraw = DrawNode();
 	const pathDraw = DrawNode();
 	const pinDraw = DrawNode();
+	const beaconDraw = DrawNode();
 	root.addChild(orbitDraw);
 	root.addChild(dotDraw);
 	root.addChild(ringDraw);
 	root.addChild(pathDraw);
 	root.addChild(pinDraw);
+	root.addChild(beaconDraw);
 	layer.addChild(root);
 
 	const orbitColor = colorFromHex(options.orbitHex, 1);
@@ -319,8 +327,21 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	const noFill = colorFromHex(0x000000, 0);
 
 	let isVisible = true;
+	let currentZoom = 1.0;
+	let panOffsetX = 0;
+	let panOffsetY = 0;
+	let baseFitRadius = 1.0;
 	let map = computePlanMapping(viewW, viewH, 1, options.marginFrac);
 	let dirty = true;
+
+	const recomputeMap = (): void => {
+		const effectiveR = baseFitRadius / currentZoom;
+		const newMap = computePlanMapping(viewW, viewH, effectiveR, options.marginFrac, map.centerX, map.centerY);
+		newMap.originX = viewW / 2 + panOffsetX;
+		newMap.originY = viewH / 2 + panOffsetY;
+		map = newMap;
+		dirty = true;
+	};
 
 	// 状态：隐藏时也照常存着 ⇒ 切回 2D 的下一帧立刻能画（不用等下一次 sync）
 	let bodies: Body[] = [];
@@ -338,6 +359,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		ringDraw.clear();
 		pathDraw.clear();
 		pinDraw.clear();
+		beaconDraw.clear();
 	};
 
 	/** 圆周顶点（`n` 段；返回 Vec2 给 drawPolygon 描边用）。 */
@@ -446,6 +468,39 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 				probeColor,
 			);
 		}
+
+		// ⑥ 屏幕外目标雷达指示指针（S8.4）
+		if (rings.length > 0) {
+			const targetScreen = planeToScreen(rings[0].center, map);
+			const pad = 48;
+			const isOffscreen = targetScreen.x < pad || targetScreen.x > viewW - pad || targetScreen.y < pad || targetScreen.y > viewH - pad;
+			if (isOffscreen) {
+				const cx = viewW / 2;
+				const cy = viewH / 2;
+				const dirX = targetScreen.x - cx;
+				const dirY = targetScreen.y - cy;
+				const len = Math.sqrt(dirX * dirX + dirY * dirY);
+				if (len > 1e-4) {
+					const ux = dirX / len;
+					const uy = dirY / len;
+					const halfW = viewW / 2 - pad;
+					const halfH = viewH / 2 - pad;
+					const scaleX = Math.abs(ux) > 1e-6 ? halfW / Math.abs(ux) : 1e9;
+					const scaleY = Math.abs(uy) > 1e-6 ? halfH / Math.abs(uy) : 1e9;
+					const tHit = Math.min(scaleX, scaleY);
+					const hitX = cx + ux * tHit;
+					const hitY = cy + uy * tHit;
+					const arrowLen = 18;
+					const arrowHalf = 9;
+					const tip = Vec2(hitX + ux * 6, hitY + uy * 6);
+					const back = Vec2(hitX - ux * arrowLen, hitY - uy * arrowLen);
+					const left = Vec2(back.x - uy * arrowHalf, back.y + ux * arrowHalf);
+					const right = Vec2(back.x + uy * arrowHalf, back.y - ux * arrowHalf);
+					beaconDraw.drawPolygon([tip, left, right], ringColor, 1.5, ringColor);
+					beaconDraw.drawDot(Vec2(hitX, hitY), 4, ringColor);
+				}
+			}
+		}
 		dirty = false;
 	};
 
@@ -465,8 +520,8 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			return isVisible;
 		},
 		fitTo(radius: number): void {
-			map = computePlanMapping(viewW, viewH, radius, options.marginFrac);
-			dirty = true;
+			baseFitRadius = radius;
+			recomputeMap();
 		},
 		syncBodies(bs: Body[], vs: PlanetVisualDef[], t: number): void {
 			bodies = bs;
@@ -527,6 +582,28 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		},
 		mapping(): PlanMapping {
 			return map;
+		},
+		zoomIn(): void {
+			currentZoom = Math.min(6.0, currentZoom * 1.35);
+			recomputeMap();
+		},
+		zoomOut(): void {
+			currentZoom = Math.max(0.25, currentZoom / 1.35);
+			recomputeMap();
+		},
+		resetView(): void {
+			currentZoom = 1.0;
+			panOffsetX = 0;
+			panOffsetY = 0;
+			recomputeMap();
+		},
+		pan(dx: number, dy: number): void {
+			panOffsetX += dx;
+			panOffsetY += dy;
+			recomputeMap();
+		},
+		getZoom(): number {
+			return currentZoom;
 		},
 		root,
 	};

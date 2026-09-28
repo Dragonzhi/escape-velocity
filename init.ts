@@ -26,7 +26,7 @@ import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptio
 import { PlanView, arrivalRingRadius, createPlanView, defaultPlanOptions, planFitRadius } from 'game/PlanView';
 import { AimInput, AimResult, FinaleMainText, FinalePanel, LevelSelect, ResultDetailParams, ResultPanel, createAimInput, createFinalePanel, createLevelSelect, createResultPanel, finaleSubtitle } from 'game/Hud';
 import { FlightTelemetry, Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
-import { Progress, advanceUnlocked, getTotalRockets, loadProgress, progressFilePath, recordMissionResult, saveProgress } from 'game/Progress';
+import { Progress, advanceUnlocked, getMissionRockets, getTotalRockets, loadProgress, progressFilePath, recordMissionResult, saveProgress } from 'game/Progress';
 // 只为主循环推进 UI 时钟：按钮防抖不能依赖引擎那个冻结的 App.elapsedTime（见 game/Ui.ts）
 import { advanceUiClock } from 'game/Ui';
 // S5：每关的物理步长 / 播放倍速 / 相机夹紧 / 瞄准区间（"想调就调"的值都在那里）
@@ -59,6 +59,9 @@ interface LevelRuntime {
 let debugTriggerResultFn: ((levelIndex: number, outcome?: ResultKind) => void) | undefined = undefined;
 let debugTriggerBrakeWindowFn: ((levelIndex: number) => void) | undefined = undefined;
 let debugTriggerBrakePressFn: (() => void) | undefined = undefined;
+let debugTriggerEnterLevelFn: ((levelIndex: number) => void) | undefined = undefined;
+let debugTriggerZoomInFn: (() => void) | undefined = undefined;
+let debugTriggerResetViewFn: (() => void) | undefined = undefined;
 let debugForceBrakeWindow = false;
 let debugForceBraked = false;
 let activeResultPanel: ResultPanel | undefined = undefined;
@@ -210,6 +213,7 @@ if (levelTotal <= 0) {
 			slowMoFloor: levelRuntime(index).slowMoFloor,
 			aimMin: levelRuntime(index).aimMin,
 			maxSteps: def.maxSteps,
+			predictSteps: levelRuntime(index).predictSteps,
 		};
 
 		const world = Node3D();
@@ -272,6 +276,28 @@ if (levelTotal <= 0) {
 			print('[escape-velocity] time warp dir=' + dir.toFixed(0) + ' (L' + (index + 1).toFixed(0) + ')');
 		});
 
+		// 2D 规划缩放控制按钮连接到 plan
+		aim.onZoomIn((): void => {
+			plan.zoomIn();
+		});
+		aim.onZoomOut((): void => {
+			plan.zoomOut();
+		});
+		aim.onFitView((): void => {
+			plan.resetView();
+		});
+
+		// 初始化顶部常驻任务抽屉
+		const challengesList: string[] = [];
+		if (def.mission !== undefined) {
+			for (let k = 0; k < def.mission.challenges.length; k++) {
+				challengesList.push(def.mission.challenges[k].desc);
+			}
+		}
+		const initialRockets = getMissionRockets(progress, index);
+		const drawerTitle = def.mission !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle : levelNames[index];
+		aim.setMissionDrawer(drawerTitle, challengesList, initialRockets);
+
 		const game = createGame(level, {
 			scene,
 			camera,
@@ -297,6 +323,9 @@ if (levelTotal <= 0) {
 				// 一旦离开 Result 态，面板必须消失（其余阶段都不该有结算面板）。
 				// S3.18 终章同理：进 Finale 才显示终章面板，离开就收（重进 / 视口重建都不会留下鬼面板）。
 				if (index === activeIndex) {
+					const inAim = (p === 'Aiming' || p === 'Armed') && !game.isIntroTourActive();
+					aim.setZoomControlsVisible(inAim && game.viewMode() === '2D');
+					aim.setMissionDrawerVisible(inAim);
 					if (p === 'Finale') {
 						if (resultPanel !== undefined) resultPanel.hide();
 						if (finalePanel !== undefined) finalePanel.show(finaleText.main, finaleText.sub);
@@ -830,7 +859,15 @@ if (levelTotal <= 0) {
 			// Armed 是状态，按钮显隐跟着状态走（AGENTS 硬约束 5）
 			runtime.aim.setArmed(runtime.game.armed());
 			// 视图也是状态：右下角那颗按钮的文字跟着 core.viewMode 走（别自己翻转局部变量）
+			const is2D = runtime.game.viewMode() === '2D';
 			runtime.aim.setViewMode(runtime.game.viewMode());
+			const inAim = (phaseNow === 'Aiming' || phaseNow === 'Armed') && !runtime.game.isIntroTourActive();
+			runtime.aim.setZoomControlsVisible(is2D && inAim);
+			runtime.aim.setMissionDrawerVisible(inAim);
+			// 实时燃料二星挑战反馈
+			const curBurn = runtime.game.burnNow();
+			const fuelLimit = (runtime.dvBudget * 0.75);
+			runtime.aim.setLiveFuelChallengeStatus(curBurn <= fuelLimit && curBurn >= 0.001);
 			// 倍速兜底按钮（S3.17）：只在飞行态出现（隐藏 + 断触摸），高亮跟着 core.playback 走
 			runtime.aim.setPlaybackVisible(phaseNow === 'Flying');
 			runtime.aim.setPlayback(runtime.game.playbackSpeed());
@@ -937,6 +974,26 @@ if (levelTotal <= 0) {
 			rt.aim.setLiveBraked(true);
 		}
 	};
+
+	debugTriggerEnterLevelFn = (levelIndex: number): void => {
+		if (solarHub !== undefined) solarHub.hide();
+		if (opening !== undefined) opening.hide();
+		enterLevel(levelIndex);
+	};
+
+	debugTriggerZoomInFn = (): void => {
+		const rt = activeRuntime();
+		if (rt !== undefined) {
+			rt.plan.zoomIn();
+		}
+	};
+
+	debugTriggerResetViewFn = (): void => {
+		const rt = activeRuntime();
+		if (rt !== undefined) {
+			rt.plan.resetView();
+		}
+	};
 }
 
 /** 获取当前处于激活状态的结算面板（调试/截图用）。 */
@@ -962,5 +1019,26 @@ export function triggerDebugBrakeWindow(levelIndex: number = 3): void {
 export function triggerDebugBrakePress(): void {
 	if (debugTriggerBrakePressFn !== undefined) {
 		debugTriggerBrakePressFn();
+	}
+}
+
+/** 触发进入关卡并启动入场 3D 运镜（调试/截图用）。 */
+export function triggerDebugEnterLevel(levelIndex: number): void {
+	if (debugTriggerEnterLevelFn !== undefined) {
+		debugTriggerEnterLevelFn(levelIndex);
+	}
+}
+
+/** 触发 2D 规划视口放大（调试/截图用）。 */
+export function triggerDebugZoomIn(): void {
+	if (debugTriggerZoomInFn !== undefined) {
+		debugTriggerZoomInFn();
+	}
+}
+
+/** 触发 2D 规划视口自适应重置（调试/截图用）。 */
+export function triggerDebugResetView(): void {
+	if (debugTriggerResetViewFn !== undefined) {
+		debugTriggerResetViewFn();
 	}
 }

@@ -57,12 +57,15 @@ export const PROBE_VISUAL_RADIUS = 0.0015;
  */
 const BODY_VISUAL_L1: { [key: string]: number } = {
 	sun: 0.8,       // 在 L1 里太阳远在 80 单位外，给它一个"亮星"的尺寸就够
-	// 地球 0.03 / 月球 0.012：真实比例里月球轨 = 10 个地球半径，把地球放到 0.06
-	// 会让它占满画面、月球被挤成边角料（实测截图）。0.03 ≈ 月球轨的 15%，
-	// 三个天体（地球 / 月球 / 探测器）能同框且都看得清。
-	earth: 0.03,
-	moon: 0.012,
-	probe: 0.0015,
+	// B0（2026-09-28，真实阿波罗剖面）：停泊轨降到 200 km 高度（3.514e-3 单位）之后，
+	// 旧的地球 0.03 会把探测器**整个包进地球的视觉球**里（0.03 > 0.003514）。
+	// 现在这组值的口径是「轨道 / 天体视觉半径」的倍数：
+	//   地球 0.0015（2,805 km）⇒ 停泊轨在它的 **2.34 倍**处（"卫星在绕地球"的观感）
+	//   月球 0.0004（748 km）⇒ 地球 : 月球 = 3.75（真实 3.67 ✓ 比例不失真）
+	//   探测器 0.00015 ⇒ 停泊轨在它的 23 倍处（模型不至于糊满轨道）
+	earth: 0.0015,
+	moon: 0.0004,
+	probe: 0.00015,
 };
 
 export const BODY_VISUAL_RADIUS: { [key: string]: number } = {
@@ -182,6 +185,15 @@ export interface LevelRuntime {
 	 * 整个屏幕被探测器占满」）。L1 取 0.05（= 月球轨 0.2056 的 1/4）：只有真正接近月球才特写。
 	 */
 	slowMoFloor: number;
+	/**
+	 * **预测线的推演步数**（B1，2026-09-28）。
+	 *
+	 * 以前是全项目一个 `Config.PredictSteps`（2400）：它在 L1/L2 够用，到外圈关就远不够
+	 * （L6 的飞行 513 游戏秒，而 2400 × 1/120 = 20 秒 —— 预测线只画了 4%，玩家看不到"够不够得着"）。
+	 * 现在按关卡给：**L1 = 8000（= maxSteps，与真实飞行同长）**；外圈五关保持 2400 不动，
+	 * 等各自校准轮再调（本轮不碰他们的手感）。
+	 */
+	predictSteps: number;
 }
 
 /**
@@ -191,39 +203,48 @@ export interface LevelRuntime {
  * L1 转移飞行 0.40 游戏秒 ⇒ 0.05× 播放 = 8 真实秒；L6 飞行 513 秒 ⇒ 16× = 32 真实秒。
  */
 export const LEVEL_RUNTIME: LevelRuntime[] = [
-	{ // L1 月球：地月系，整个世界只有 0.6 单位宽
-		// 播放倍速：转移飞行 0.40~0.62 秒游戏时间、整段上限 1.2 秒。
-		// ⚠️ 不能取太小：0.05× 会让一段飞行要 40 秒挂钟时间（实测验收脚本 6 秒就等不下去把它腰斩了）。
-		// 0.25× ⇒ 命中约 2 秒、整段最多 4.8 秒，"看得见"与"不拖沓"的平衡点。
-		// cameraMax 3 → 0.9：3 会让"装下整个地月系"的解偏大、地球缩得太小；
-		// 0.9 刚好覆盖月球轨 0.2056 + 容差 0.02 再加余量，地球在画面里是主体。
-		physicsStep: 1 / 2000, maxStepsPerFrame: 16, sampleEvery: 1,
+	{ // L1 月球：**真实阿波罗剖面**（200 km 停泊轨 + TLI），见 docs/L1重构设计案.md
+		// 时间跨度：停泊一圈 88.4 分钟 ↔ 转移到月球 4.978 天（1 : 81）。
+		// ⚠️ physicsStep 必须按这一关给：dt = **26.5 真实秒 = 1.406967e-5 游戏秒**（= 26.5 / 1.8835e6）。
+		//    它同时决定停泊轨的精度与转移段的步数：**200 步/圈、转移 21,000 步**。
+		//    Node 实测（同一份 Gravity，2026-09-28）：200 步/圈形状误差 ±1.5%、一圈漂 0.55%；
+		//    100 步/圈漂 1.9%；**50 步/圈直接崩**（与项目旧数据一致）。
+		// 飞行窗口：maxSteps = 8000（0.1126 游戏秒 = 2.46 天）—— 可行解是**快转移 ≈ 0.9 天**，
+		//    不是霍曼的 4.978 天（见 LevelData.level1 的说明）。
+		// sampleEvery 4：8000 步 ⇒ 2,000 个采样点（与旧版 2,400 同量级）。
+		// 档位口径（B3 落地）：**瞄准 1,000×（停泊轨 5.3 秒一圈）/ 飞行 10,000×（8.6 秒打完）**，
+		//    两者只差一档 —— 这是 B 剖面比 A 更好的地方（A 是 1 : 82 的跨度）。
+		physicsStep: 1.406967e-5, maxStepsPerFrame: 16, sampleEvery: 4, predictSteps: 8000,
+		// ⚠️ playback / aimClockRate 这三个字段在 **B3** 会被「倍速档位」取代
+		//    （默认 1×、×10 阶梯、可暂停）。B0 先留原值，保证每一步构建都是绿的。
 		playback: 0.25, playbackSpeeds: [0.1, 0.25, 0.5],
-		cameraMin: 0.02, cameraMax: 1.2, aimMin: 0.02, introCloseDist: 0.6,
-		aimClockRate: 0, slowMoFloor: 0.05, probeVisualRadius: 0.0015,
+		// 相机：世界缩小了 28 倍（0.6 → 0.021 单位宽），夹紧区间同步缩小。
+		cameraMin: 0.002, cameraMax: 1.0, aimMin: 3.0, introCloseDist: 0.004,
+		// slowMoFloor 0.01 = 18,700 km ≈ 到达容差 0.02 的一半：进到达区就进慢动作。
+		aimClockRate: 0, slowMoFloor: 0.01, probeVisualRadius: 0.00015,
 	},
 	{ // L2 金星：飞行 6.7 秒
-		physicsStep: 1 / 240, maxStepsPerFrame: 8, sampleEvery: 1,
+		physicsStep: 1 / 240, maxStepsPerFrame: 8, sampleEvery: 1, predictSteps: 2400,
 		playback: 2, playbackSpeeds: [1, 2, 4],
 		cameraMin: 20, cameraMax: 200, aimMin: 0.2, introCloseDist: 26, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L3 木星：飞行 45.8 秒
-		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 4,
+		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 4, predictSteps: 2400,
 		playback: 4, playbackSpeeds: [2, 4, 8],
 		cameraMin: 60, cameraMax: 900, aimMin: 0.5, introCloseDist: 60, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L4 土星：飞行 ~101 秒
-		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 8,
+		physicsStep: 1 / 240, maxStepsPerFrame: 16, sampleEvery: 8, predictSteps: 2400,
 		playback: 8, playbackSpeeds: [4, 8, 16],
 		cameraMin: 100, cameraMax: 1800, aimMin: 0.5, introCloseDist: 120, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L5 天王星：飞行 ~269 秒
-		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16,
+		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16, predictSteps: 2400,
 		playback: 16, playbackSpeeds: [8, 16, 32],
 		cameraMin: 200, cameraMax: 3600, aimMin: 0.5, introCloseDist: 240, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},
 	{ // L6 海王星：飞行 ~513 秒
-		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16,
+		physicsStep: 1 / 120, maxStepsPerFrame: 32, sampleEvery: 16, predictSteps: 2400,
 		playback: 16, playbackSpeeds: [8, 16, 32],
 		cameraMin: 300, cameraMax: 5600, aimMin: 0.5, introCloseDist: 400, aimClockRate: 1, slowMoFloor: 8, probeVisualRadius: 2.2,
 	},

@@ -72,6 +72,10 @@ const require2 = createRequire(import.meta.url);
 const { getLevel, levelCount, scaledPlanets, findGoalIndex } = require2(path.join(outDir, "LevelData.js"));
 const { simulate } = require2(path.join(outDir, "Gravity.js"));
 const { PhysicsStep, AimMinSpeed, AimMaxSpeed } = require2(path.join(outDir, "Config.js"));
+// ⚠️ 2026-09-28 修：本工具一直用**全局** PhysicsStep（1/120）扫掠，而游戏从 S5 起
+//    就是**按关卡**给 physicsStep / aimMin（Tuning.LEVEL_RUNTIME）—— 拿全局值扫 L1
+//    （真步长 1.406967e-5）会给出完全错误的结论。现在两边读同一份 Tuning。
+const { levelRuntime } = require2(path.join(outDir, "Tuning.js"));
 
 /** game/Game.ts resolveResult 的镜像（见文件头说明）。 */
 function resolveResult(outcome, goalIndex, goal) {
@@ -98,6 +102,10 @@ function powers() {
 
 function sweepLevel(lv) {
 	const bodies = scaledPlanets(lv);
+	// 每关的步长与力度下限：候选 JSON 可覆盖（调数值时先用它试），否则读 Tuning。
+	const rt = lv.id !== undefined ? levelRuntime(Number(lv.id) - 1) : levelRuntime(-1);
+	const stepDt = lv.physicsStep !== undefined ? lv.physicsStep : rt.physicsStep;
+	const aimMin = lv.aimMin !== undefined ? lv.aimMin : rt.aimMin;
 	const t0s = [];
 	if (lv.timeWindow) {
 		for (let i = 0; i < t0Samples; i++) t0s.push((lv.timeWindow.span * i) / t0Samples);
@@ -112,7 +120,7 @@ function sweepLevel(lv) {
 			for (const p of ps) {
 				// 上限 = 这一关的 Δv 预算（S3.9.2b）；没写就用全局上限
 				const dvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
-				const speed = AimMinSpeed + (dvTop - AimMinSpeed) * p;
+				const speed = aimMin + (dvTop - aimMin) * p;
 				// 总初速度 = 出发时已有的速度（L1 = 绕地球圆轨道）+ 这一次点火（S3.9.3）
 				const v0 = lv.probeVel0 !== undefined ? lv.probeVel0 : { x: 0, y: 0 };
 				// ⚠️ 与 Game.burnToMotion 同一套折算：刹车模式下点火只拿 BrakeShare，剩下的交给后半程反推
@@ -127,15 +135,15 @@ function sweepLevel(lv) {
 				const sim = simulate(
 					{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel },
 					bodies,
-					{ steps: lv.maxSteps, dt: PhysicsStep, sampleEvery: every, escapeRadius: lv.escapeRadius, t0, brake },
+					{ steps: lv.maxSteps, dt: stepDt, sampleEvery: every, escapeRadius: lv.escapeRadius, t0, brake },
 				);
-				const gi = findGoalIndex(sim.points, bodies, lv.goal, PhysicsStep * every, t0, sim.velocities);
+				const gi = findGoalIndex(sim.points, bodies, lv.goal, stepDt * every, t0, sim.velocities);
 				const kind = resolveResult(sim.outcome, gi, lv.goal);
 				const speedOut = Math.hypot(sim.state.vel.x, sim.state.vel.y);
 				let peak = Math.hypot(sim.state.pos.x, sim.state.pos.y);
 				for (const q of sim.points) { const s = Math.hypot(q.x, q.y); if (s > peak) peak = s; }
 				// tHit = 命中时刻（秒）；gi 是采样点索引 ⇒ 要乘采样间隔
-				const tHit = gi >= 0 ? (gi * every * PhysicsStep) : -1;
+				const tHit = gi >= 0 ? (gi * every * stepDt) : -1;
 				samples.push({ t0, dir: (angle * 180) / Math.PI, power: p, kind, outcome: sim.outcome, gi, speedOut, peak, steps: sim.stepsRun, tHit });
 			}
 		}

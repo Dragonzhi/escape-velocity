@@ -278,93 +278,93 @@ local function testHillAndEscape() -- 125
 		0.010004, -- 128
 		0.0001 -- 128
 	) -- 128
-	local parking = 0.1 -- 130
-	local frac = parking / hillRadius(earthA, EarthGm, SunGm) -- 131
-	check( -- 132
-		"parking-inside-hill", -- 132
-		frac > 0.05 and frac < 0.2, -- 132
-		("r/r_H=" .. __TS__NumberToFixed(frac, 4)) .. " (want 0.125)" -- 132
-	) -- 132
-	near( -- 133
-		"parking-period", -- 133
-		period(parking, EarthGm), -- 133
-		0.42727, -- 133
-		0.0001 -- 133
-	) -- 133
-	near( -- 134
-		"parking-v-circ", -- 134
-		circularSpeed(EarthGm, parking), -- 134
-		1.47055, -- 134
-		0.00001 -- 134
+	local parking = EarthRadius + 200 / KmPerUnit -- 132
+	local frac = parking / hillRadius(earthA, EarthGm, SunGm) -- 133
+	check( -- 134
+		"parking-inside-hill", -- 134
+		frac > 0.001 and frac < 0.01, -- 134
+		("r/r_H=" .. __TS__NumberToFixed(frac, 5)) .. " (want 0.0044)" -- 134
 	) -- 134
-	near( -- 135
-		"parking-v-escape", -- 135
-		escapeSpeed(EarthGm, parking), -- 135
-		2.07968, -- 135
-		0.00001 -- 135
-	) -- 135
 	near( -- 136
-		"escape-is-sqrt2-circular", -- 136
-		escapeSpeed(EarthGm, parking) / circularSpeed(EarthGm, parking), -- 136
-		1.4142135623730951, -- 136
-		1e-12 -- 136
+		"parking-period", -- 136
+		period(parking, EarthGm), -- 136
+		0.00281446, -- 136
+		0.00001 -- 136
 	) -- 136
+	near( -- 137
+		"parking-v-circ", -- 137
+		circularSpeed(EarthGm, parking), -- 137
+		7.8448, -- 137
+		0.001 -- 137
+	) -- 137
 	near( -- 138
-		"moon-orbit-v-circ", -- 138
-		circularSpeed(EarthGm, MoonOrbitRadius), -- 138
-		1.02566, -- 138
-		0.0001 -- 138
+		"parking-v-escape", -- 138
+		escapeSpeed(EarthGm, parking), -- 138
+		11.0942, -- 138
+		0.001 -- 138
 	) -- 138
-	check( -- 139
-		"degenerate-hill-zero", -- 139
-		hillRadius(80, 0, SunGm) == 0 and hillRadius(0, EarthGm, SunGm) == 0, -- 139
-		"hillRadius 退化输入必须为 0" -- 139
+	near( -- 139
+		"escape-is-sqrt2-circular", -- 139
+		escapeSpeed(EarthGm, parking) / circularSpeed(EarthGm, parking), -- 139
+		1.4142135623730951, -- 139
+		1e-12 -- 139
 	) -- 139
+	near( -- 141
+		"moon-orbit-v-circ", -- 141
+		circularSpeed(EarthGm, MoonOrbitRadius), -- 141
+		1.02566, -- 141
+		0.0001 -- 141
+	) -- 141
+	check( -- 142
+		"degenerate-hill-zero", -- 142
+		hillRadius(80, 0, SunGm) == 0 and hillRadius(0, EarthGm, SunGm) == 0, -- 142
+		"hillRadius 退化输入必须为 0" -- 142
+	) -- 142
 end -- 125
 --- 7) 派生常量与真实数据表一致（防止有人在表里改了数、派生值没跟着走）。
-local function testDerived() -- 143
-	near("earth-gm", EarthGm, 0.2162513, 0.000001) -- 144
-	near("earth-radius", EarthRadius, 0.003407, 0.00001) -- 145
-	near("moon-gm", MoonGm, 0.0026599, 0.00001) -- 146
-	near("moon-radius", MoonRadius, 0.0009291, 0.00001) -- 147
-	near("moon-orbit-radius", MoonOrbitRadius, 0.2055644, 0.000001) -- 148
-	near("moon-orbit-over-earth-radius", MoonOrbitRadius / EarthRadius, 60.34, 0.001) -- 150
-	near( -- 152
-		"jupiter-radius-over-earth", -- 152
-		trueRadius(69911) / EarthRadius, -- 152
-		10.97, -- 152
-		0.002 -- 152
-	) -- 152
-	near( -- 153
-		"saturn-radius-over-earth", -- 153
-		trueRadius(58232) / EarthRadius, -- 153
-		9.14, -- 153
-		0.002 -- 153
-	) -- 153
-	near("sun-radius-over-earth", SunRadius / EarthRadius, 109.2, 0.002) -- 154
-end -- 143
-function ____exports.runTests() -- 157
-	testConstants() -- 158
-	testConversions() -- 159
-	testSun() -- 160
-	testKepler() -- 161
-	testKeplerKIsGone() -- 162
-	testHillAndEscape() -- 163
-	testDerived() -- 164
-	local lines = {} -- 166
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 167
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 168
-	local limit = #failures < 12 and #failures or 12 -- 169
-	do -- 169
-		local i = 0 -- 170
-		while i < limit do -- 170
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 171
-			i = i + 1 -- 170
-		end -- 170
-	end -- 170
-	return table.concat( -- 173
-		lines, -- 173
-		string.char(10) or "," -- 173
-	) -- 173
-end -- 157
-return ____exports -- 157
+local function testDerived() -- 146
+	near("earth-gm", EarthGm, 0.2162513, 0.000001) -- 147
+	near("earth-radius", EarthRadius, 0.003407, 0.00001) -- 148
+	near("moon-gm", MoonGm, 0.0026599, 0.00001) -- 149
+	near("moon-radius", MoonRadius, 0.0009291, 0.00001) -- 150
+	near("moon-orbit-radius", MoonOrbitRadius, 0.2055644, 0.000001) -- 151
+	near("moon-orbit-over-earth-radius", MoonOrbitRadius / EarthRadius, 60.34, 0.001) -- 153
+	near( -- 155
+		"jupiter-radius-over-earth", -- 155
+		trueRadius(69911) / EarthRadius, -- 155
+		10.97, -- 155
+		0.002 -- 155
+	) -- 155
+	near( -- 156
+		"saturn-radius-over-earth", -- 156
+		trueRadius(58232) / EarthRadius, -- 156
+		9.14, -- 156
+		0.002 -- 156
+	) -- 156
+	near("sun-radius-over-earth", SunRadius / EarthRadius, 109.2, 0.002) -- 157
+end -- 146
+function ____exports.runTests() -- 160
+	testConstants() -- 161
+	testConversions() -- 162
+	testSun() -- 163
+	testKepler() -- 164
+	testKeplerKIsGone() -- 165
+	testHillAndEscape() -- 166
+	testDerived() -- 167
+	local lines = {} -- 169
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 170
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 171
+	local limit = #failures < 12 and #failures or 12 -- 172
+	do -- 172
+		local i = 0 -- 173
+		while i < limit do -- 173
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 174
+			i = i + 1 -- 173
+		end -- 173
+	end -- 173
+	return table.concat( -- 176
+		lines, -- 176
+		string.char(10) or "," -- 176
+	) -- 176
+end -- 160
+return ____exports -- 160

@@ -163,7 +163,7 @@ function testArrivalRingIsRealTolerance(): void {
 	if (l1 === undefined) { check('ring-l1', false, 'getLevel(0) undefined'); return; }
 	check('ring-l1-equals-tolerance', Math.abs(arrivalRingRadius(l1.goal) - l1.goal.tolerance) < 1e-12,
 		`ring=${arrivalRingRadius(l1.goal)} tol=${l1.goal.tolerance}`);
-	// ⚠️ 不能写成"两者必须不相等"：L1 的月球视觉半径（0.02）恰好与到达容差（0.02）同一个数，
+	// ⚠️ 不能写成"两者必须不相等"：视觉半径与到达容差在数值上可能撞车（S5 的 L1 就撞过），
 	//    数值相等会让这条断言误判成"画的是视觉半径"。改成**结构性**判据：把视觉半径改掉之后，
 	//    到达圈半径必须**不动** —— 动的就是拿视觉半径当圈了。
 	const ringBefore = arrivalRingRadius(l1.goal);

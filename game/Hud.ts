@@ -292,6 +292,17 @@ export interface AimInput {
 	setLiveBrakeVisible: (visible: boolean) => void;
 	/** 由主循环同步是否已执行制动（更新按钮文案与颜色）。 */
 	setLiveBraked: (braked: boolean) => void;
+	/** 2D 规划视口缩放按钮回调（S8.2）。 */
+	onZoomIn: (callback: () => void) => void;
+	onZoomOut: (callback: () => void) => void;
+	onFitView: (callback: () => void) => void;
+	/** 显隐 2D 缩放控制组（仅在 2D 规划且非飞行态时显示）。 */
+	setZoomControlsVisible: (on: boolean) => void;
+	/** 顶部常驻三火箭任务抽屉（S8.4）。 */
+	setMissionDrawer: (levelName: string, challenges: string[], currentRockets: number) => void;
+	setMissionDrawerVisible: (visible: boolean) => void;
+	/** 瞄准时实时反馈二星燃料达标状态。 */
+	setLiveFuelChallengeStatus: (achieved: boolean) => void;
 	/** 根节点：调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
 }
@@ -577,22 +588,19 @@ export function createAimInput(
 	}
 
 	// ---- 「发射」按钮（S3.10，右下角拇指区；只在 Armed 态出现）----
-	// ⚠️ 用户已定：按钮之后都要换成**图标**（竖屏文字太占地方）。这里是文字占位。
-	// S3.12：命中区 200×96 → **220×112**（触屏目标只许变大）；并且 \`fireOn: 'press'\` ——
-	// 「发射」是一次性动作，挂在"松手"上时，手指划出按钮的那一下会整个丢掉（用户反馈"点了没反应"）。
+	// 命中区 220×112，`fireOn: 'press'` 按下即发射
 	const LaunchButtonW = 220;
 	const LaunchButtonH = 112;
 	const launchButton = createButton(root, {
 		w: LaunchButtonW,
 		h: LaunchButtonH,
-		text: '发射',
-		fontSize: 44,
+		text: '▲ 发射 ▲',
+		fontSize: 38,
 		bgHex: ResultButtonBgHex,
 		fgHex: ResultButtonFgHex,
 		borderHex: ResultButtonBorderHex,
 		fireOn: 'press',
 		onTap: (): void => {
-			// 防抖在 Ui.createButton 里（0.5 秒）；这里再加一道状态守卫（见 Game.launchArmed）
 			print('[escape-velocity] launch button fire (press)');
 			if (launchHandler !== undefined) launchHandler();
 		},
@@ -602,35 +610,109 @@ export function createAimInput(
 	launchButton.setEnabled(false); // 隐藏 + 断触摸（硬约束 4）
 
 	// ---- 「2D / 3D」手动切换（S3.15）----
-	// 位置：右下角、**发射按钮正下方**（发射按钮占 y 96..208，这里占 20..84，中间留 12 px）。
-	// 为什么选这里：设计稿第 4 条要"右下角保留手动切换按钮"，而右下角只有这块空着
-	// （顶部是刹车、右上角是时间流、左上角是 Δv 读数）。本轮**用文字标签**，图标化是后面的独立项。
-	// ⚠️ 按钮只把意图送出去（onViewToggle）；翻转状态的是 Game 里的 `coreToggleView` ——
-	//    局部变量翻转会让"按钮显示的"与"画出来的"分家（AGENTS 硬约束 5）。
+	// 位置：右下角「发射」按钮正上方
 	const ViewButtonW = 116;
 	const ViewButtonH = 64;
 	let viewHandler: (() => void) | undefined = undefined;
 	const viewButton = createButton(root, {
 		w: ViewButtonW,
 		h: ViewButtonH,
-		text: '2D',
-		fontSize: 30,
+		text: '[ 3D ]',
+		fontSize: 26,
 		bgHex: ResultButtonAltBgHex,
 		fgHex: ResultButtonFgHex,
 		borderHex: ResultButtonBorderHex,
-		// 一次性动作 ⇒ 按下即生效：与「发射」同一个理由（引擎会丢事件、也没有"触摸取消"回调）
 		fireOn: 'press',
 		onTap: (): void => {
 			print('[escape-velocity] view toggle fire (press)');
 			if (viewHandler !== undefined) viewHandler();
 		},
 	});
-	// ⚠️ y 不能贴屏幕底：桌面开发版引擎在**窗口底部有一条调试工具条**（退出/刷新/✓），
-	// 它会把落在那一带的鼠标事件整个吃掉（实测：按钮放 y=20 时点下去连 `view toggle fire` 都不打）。
-	// 所以摆在**「发射」按钮正上方**（同一列、右边缘对齐），仍在右下角拇指区，且完全避开工具条。
 	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 12);
 	/** 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。 */
 	let lastViewText = '2D';
+
+	// ---- 2D 规划缩放控制组（S8.2，左下角）----
+	const ZoomBtnSize = 58;
+	const zoomGap = 8;
+	const zoomButtons: UiButton[] = [];
+	let zoomInHandler: (() => void) | undefined = undefined;
+	let zoomOutHandler: (() => void) | undefined = undefined;
+	let fitViewHandler: (() => void) | undefined = undefined;
+
+	const makeZoomButton = (text: string, x: number, fontSize: number, onClick: () => void): UiButton => {
+		const btn = createButton(root, {
+			w: ZoomBtnSize,
+			h: ZoomBtnSize,
+			text,
+			fontSize,
+			bgHex: ResultButtonAltBgHex,
+			fgHex: ResultButtonFgHex,
+			borderHex: ResultButtonBorderHex,
+			fireOn: 'press',
+			onTap: (): void => {
+				print('[escape-velocity] zoom btn ' + text + ' fire');
+				onClick();
+			},
+		});
+		btn.root.position = Vec2(x, 96);
+		btn.root.visible = false;
+		btn.setEnabled(false);
+		zoomButtons.push(btn);
+		return btn;
+	};
+	makeZoomButton('−', 24, 32, (): void => {
+		if (zoomOutHandler !== undefined) zoomOutHandler();
+	});
+	makeZoomButton('FIT', 24 + ZoomBtnSize + zoomGap, 20, (): void => {
+		if (fitViewHandler !== undefined) fitViewHandler();
+	});
+	makeZoomButton('+', 24 + (ZoomBtnSize + zoomGap) * 2, 32, (): void => {
+		if (zoomInHandler !== undefined) zoomInHandler();
+	});
+	let zoomControlsVisible: boolean | undefined = undefined;
+	const setZoomVisible = (on: boolean): void => {
+		if (zoomControlsVisible === on) return;
+		zoomControlsVisible = on;
+		for (const b of zoomButtons) {
+			b.root.visible = on;
+			b.setEnabled(on);
+		}
+	};
+	setZoomVisible(false); // 初始隐藏
+
+	// ---- 顶部常驻三火箭任务抽屉（S8.4）----
+	const DrawerW = 380;
+	const DrawerH = 46;
+	const missionDrawerPlate = createPanel(root, DrawerW, DrawerH, 0x0a0e14, { alpha: 0.65, borderHex: 0x46586d });
+	missionDrawerPlate.position = Vec2((viewW - DrawerW) / 2, viewH - 56);
+	const missionTitleLabel = createLabel(missionDrawerPlate, '', 19, 0xccddee);
+	if (missionTitleLabel !== undefined) {
+		missionTitleLabel.anchor = Vec2(0, 0.5);
+		missionTitleLabel.position = Vec2(14, DrawerH / 2);
+	}
+	const missionRocketsLabel = createLabel(missionDrawerPlate, '☆  ☆  ☆', 22, 0xffd700);
+	if (missionRocketsLabel !== undefined) {
+		missionRocketsLabel.anchor = Vec2(1, 0.5);
+		missionRocketsLabel.position = Vec2(DrawerW - 14, DrawerH / 2);
+	}
+	missionDrawerPlate.visible = false;
+	let drawerVisible = false;
+	let drawerLevelTitle = '';
+	let drawerRockets = 0;
+	let liveFuelBonus = false;
+
+	const updateDrawerDisplay = (): void => {
+		if (missionTitleLabel !== undefined) {
+			setLabelText(missionTitleLabel, drawerLevelTitle);
+		}
+		if (missionRocketsLabel !== undefined) {
+			const r1 = drawerRockets >= 1 ? '★' : '☆';
+			const r2 = (drawerRockets >= 2 || liveFuelBonus) ? '★' : '☆';
+			const r3 = drawerRockets >= 3 ? '★' : '☆';
+			setLabelText(missionRocketsLabel, r1 + '  ' + r2 + '  ' + r3);
+		}
+	};
 
 	// ---- 播放倍速 1× / 2× / 4×（S3.17；只在飞行中出现）----
 	// 设计稿定稿十条第 2 条："掠过时自动近景慢动作（1/4 速、贴近行星），平时正常速度；
@@ -778,7 +860,9 @@ export function createAimInput(
 		setViewMode: (mode: PlanViewMode): void => {
 			if (mode === lastViewText) return;
 			lastViewText = mode;
-			viewButton.setText(mode);
+			// 2D 状态时按钮提示切去「[ 3D ]」，3D 状态时按钮提示切去「[ 2D ]」
+			const btnText = mode === '2D' ? '[ 3D ]' : '[ 2D ]';
+			viewButton.setText(btnText);
 		},
 		onPlayback: (callback: (speed: number) => void): void => {
 			playbackHandler = callback;
@@ -875,6 +959,33 @@ export function createAimInput(
 					setLabelColor(brakeHintLabel, 0xffc83b);
 				}
 			}
+		},
+		onZoomIn: (callback: () => void): void => {
+			zoomInHandler = callback;
+		},
+		onZoomOut: (callback: () => void): void => {
+			zoomOutHandler = callback;
+		},
+		onFitView: (callback: () => void): void => {
+			fitViewHandler = callback;
+		},
+		setZoomControlsVisible: (on: boolean): void => {
+			setZoomVisible(on);
+		},
+		setMissionDrawer: (levelName: string, _challenges: string[], currentRockets: number): void => {
+			drawerLevelTitle = levelName;
+			drawerRockets = currentRockets;
+			updateDrawerDisplay();
+		},
+		setMissionDrawerVisible: (visible: boolean): void => {
+			if (drawerVisible === visible) return;
+			drawerVisible = visible;
+			missionDrawerPlate.visible = visible;
+		},
+		setLiveFuelChallengeStatus: (achieved: boolean): void => {
+			if (liveFuelBonus === achieved) return;
+			liveFuelBonus = achieved;
+			updateDrawerDisplay();
 		},
 		root,
 	};

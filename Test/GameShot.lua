@@ -126,6 +126,7 @@ threadLoop(function()
 
       local resIdx = string.match(want, "showResult:(%d+)")
       local focusIdx = string.match(want, "focus:(%d+)")
+      local enterIdx = string.match(want, "enterLevel:(%d+)")
       if resIdx ~= nil then
         local idx = tonumber(resIdx)
         local initMod = package.loaded["init"]
@@ -136,6 +137,29 @@ threadLoop(function()
           log("triggerDebugResult failed: initMod=" .. tostring(initMod))
         end
         pendingDelay = 20
+      elseif enterIdx ~= nil then
+        local idx = tonumber(enterIdx)
+        local initMod = package.loaded["init"]
+        if initMod ~= nil and initMod.triggerDebugEnterLevel ~= nil then
+          initMod.triggerDebugEnterLevel(idx)
+          log("invoked triggerDebugEnterLevel(" .. tostring(idx) .. ")")
+        end
+        local waitFrames = string.match(want, "wait:(%d+)")
+        pendingDelay = waitFrames ~= nil and tonumber(waitFrames) or 20
+      elseif want == "zoomIn" then
+        local initMod = package.loaded["init"]
+        if initMod ~= nil and initMod.triggerDebugZoomIn ~= nil then
+          initMod.triggerDebugZoomIn()
+          log("invoked triggerDebugZoomIn()")
+        end
+        pendingDelay = 15
+      elseif want == "resetView" then
+        local initMod = package.loaded["init"]
+        if initMod ~= nil and initMod.triggerDebugResetView ~= nil then
+          initMod.triggerDebugResetView()
+          log("invoked triggerDebugResetView()")
+        end
+        pendingDelay = 15
       elseif string.match(want, "brakeWindow:(%d+)") ~= nil then
         local idx = tonumber(string.match(want, "brakeWindow:(%d+)"))
         local initMod = package.loaded["init"]
@@ -171,7 +195,8 @@ threadLoop(function()
         end
         pendingDelay = 40
       else
-        pendingDelay = 2
+        local waitFrames = string.match(want, "wait:(%d+)")
+        pendingDelay = waitFrames ~= nil and tonumber(waitFrames) or 2
       end
     end
   end

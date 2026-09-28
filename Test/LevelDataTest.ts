@@ -221,7 +221,7 @@ const REACH_GATE_LEVELS = 1;
  *
  * 关掉的两个理由，都写明白：
  *   ① 用户把范围收窄到 L1，而 **L1 没有日期轴** —— 探测器出发点是个固定点（地球外侧 0.1 的圆轨），
- *      日期一变地球就转走、探测器不动，所以 L1 的"时机"是**月球自己的相位**；
+ *      日期一变地球就转走、探测器不动（停泊轨 200 km，周期 88.4 分钟），所以 L1 的"时机"是**月球自己的相位**；
  *      要让 L1 也有日期轴，得让出发点跟着地球走（probeHost），那是后续轮次的事。
  *   ② 扫掠的 t0 采样为了控耗时从 24 档降到 4 档，「峰值 ≥ 2× 起点」这种统计在 1~3 个解上不可信。
  *
@@ -230,7 +230,7 @@ const REACH_GATE_LEVELS = 1;
 const WINDOW_GATE = false;
 
 let levelDvTop = AimMaxSpeed;
-/** 这一关的力度**下限**（S5：L1 的 Δv 预算只有 0.35，全局下限 5 比整关预算还大）。 */
+/** 这一关的力度**下限**（B0：L1 的真实阿波罗剖面用 [3.0, 4.6]，TLI 需要 3.1556）。 */
 let levelDvMin = AimMinSpeed;
 /** 这一遍扫掠用的物理步长与步数（S5 起按关卡给，见 testReachability）。 */
 let sweepDt = PhysicsStep;
@@ -340,7 +340,7 @@ function testReachability(): SweepStat[] {
 		levelDvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
 		levelVel0 = lv.probeVel0 !== undefined ? lv.probeVel0 : { x: 0, y: 0 };
 		// ⚠️ 步长/步数按关卡给（S5）：
-		//   - L1 用**真步长** 1/2000 —— 它就是验收对象（0.1 单位的地心轨道在 1/120 下会被算成 0.14~0.36）；
+		//   - L1 用**真步长** 1.406967e-5（= 26.5 真实秒）—— 它就是验收对象（200 km 停泊轨在 1/120 下会被算成垃圾）；
 		//   - 外圈用粗步长 1/40 + 步数上限 32000 —— 否则 L6 一次扫掠是 70000 步 × 1152 样本
 		//     ≈ 8000 万步，批跑直接超时被杀（2026-09-27 实测：标记文件停在 phase=running）。
 		sweepDt = i === 0 ? rtLv.physicsStep : 1 / 40;
@@ -437,10 +437,11 @@ function testEvaluateRockets(): void {
 		check('rockets-escaped-0', evaluateRockets(l1, 'escaped', 0.1) === 0, '逃逸应为 0 枚火箭');
 		check('rockets-success-overburn-1', evaluateRockets(l1, 'success', l1.dvBudget * 0.95) === 1, '燃油超标应为 1 枚火箭');
 		check('rockets-fuel-ok-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5) === 2, '达成省油应为 2 枚火箭');
-		check('rockets-peri-ok-3', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.01 }) === 3, '达成近掠应为 3 枚火箭');
-		check('rockets-peri-fail-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.05 }) === 2, '未达成近掠应为 2 枚火箭');
+		// B0：三星的「近月点」阈值改到 0.003（≈5,600 km）—— 注入距离跟着改（0.002 达标 / 0.01 不达标）
+		check('rockets-peri-ok-3', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.002 }) === 3, '达成近掠应为 3 枚火箭');
+		check('rockets-peri-fail-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.01 }) === 2, '未达成近掠应为 2 枚火箭');
 
-		const det = evaluateRocketsDetailed(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.01 });
+		const det = evaluateRocketsDetailed(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.002 });
 		check('rockets-detailed-count', det.rockets === 3, '详细评价火箭数应为 3');
 		check('rockets-detailed-c1', det.achieved[0] === true, '挑战 1 应达成');
 		check('rockets-detailed-c2', det.achieved[1] === true, '挑战 2 应达成');

@@ -325,14 +325,14 @@ local REACH_GATE_LEVELS = 1 -- 217
 -- 
 -- 关掉的两个理由，都写明白：
 --   ① 用户把范围收窄到 L1，而 **L1 没有日期轴** —— 探测器出发点是个固定点（地球外侧 0.1 的圆轨），
---      日期一变地球就转走、探测器不动，所以 L1 的"时机"是**月球自己的相位**；
+--      日期一变地球就转走、探测器不动（停泊轨 200 km，周期 88.4 分钟），所以 L1 的"时机"是**月球自己的相位**；
 --      要让 L1 也有日期轴，得让出发点跟着地球走（probeHost），那是后续轮次的事。
 --   ② 扫掠的 t0 采样为了控耗时从 24 档降到 4 档，「峰值 ≥ 2× 起点」这种统计在 1~3 个解上不可信。
 -- 
 -- 关掉的是**判据**，不是**测量**：perT0 照算、细节照打，恢复只需把这里改成 true。
 local WINDOW_GATE = false -- 230
 local levelDvTop = AimMaxSpeed -- 232
---- 这一关的力度**下限**（S5：L1 的 Δv 预算只有 0.35，全局下限 5 比整关预算还大）。
+--- 这一关的力度**下限**（B0：L1 的真实阿波罗剖面用 [3.0, 4.6]，TLI 需要 3.1556）。
 local levelDvMin = AimMinSpeed -- 234
 --- 这一遍扫掠用的物理步长与步数（S5 起按关卡给，见 testReachability）。
 local sweepDt = PhysicsStep -- 236
@@ -648,58 +648,58 @@ local function testEvaluateRockets() -- 433
 			evaluateRockets(l1, "success", l1.dvBudget * 0.5) == 2, -- 439
 			"达成省油应为 2 枚火箭" -- 439
 		) -- 439
-		check( -- 440
-			"rockets-peri-ok-3", -- 440
-			evaluateRockets(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.01}) == 3, -- 440
-			"达成近掠应为 3 枚火箭" -- 440
-		) -- 440
 		check( -- 441
-			"rockets-peri-fail-2", -- 441
-			evaluateRockets(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.05}) == 2, -- 441
-			"未达成近掠应为 2 枚火箭" -- 441
+			"rockets-peri-ok-3", -- 441
+			evaluateRockets(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.002}) == 3, -- 441
+			"达成近掠应为 3 枚火箭" -- 441
 		) -- 441
-		local det = evaluateRocketsDetailed(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.01}) -- 443
-		check("rockets-detailed-count", det.rockets == 3, "详细评价火箭数应为 3") -- 444
-		check("rockets-detailed-c1", det.achieved[1] == true, "挑战 1 应达成") -- 445
-		check("rockets-detailed-c2", det.achieved[2] == true, "挑战 2 应达成") -- 446
-		check("rockets-detailed-c3", det.achieved[3] == true, "挑战 3 应达成") -- 447
-	end -- 447
-	local l4 = getLevel(3) -- 450
-	if l4 ~= nil then -- 450
-		check( -- 452
-			"rockets-l4-eccentricity-3", -- 452
-			evaluateRockets(l4, "success", l4.dvBudget * 0.6, {eccentricity = 0.25}) == 3, -- 452
-			"低偏心率入轨应为 3 枚火箭" -- 452
-		) -- 452
-	end -- 452
-	local l3 = getLevel(2) -- 455
-	if l3 ~= nil then -- 455
-		check( -- 457
-			"rockets-l3-speed-3", -- 457
-			evaluateRockets(l3, "success", l3.dvBudget * 0.7, {maxSpeed = 65}) == 3, -- 457
-			"高速狂飙应为 3 枚火箭" -- 457
-		) -- 457
-	end -- 457
+		check( -- 442
+			"rockets-peri-fail-2", -- 442
+			evaluateRockets(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.01}) == 2, -- 442
+			"未达成近掠应为 2 枚火箭" -- 442
+		) -- 442
+		local det = evaluateRocketsDetailed(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.002}) -- 444
+		check("rockets-detailed-count", det.rockets == 3, "详细评价火箭数应为 3") -- 445
+		check("rockets-detailed-c1", det.achieved[1] == true, "挑战 1 应达成") -- 446
+		check("rockets-detailed-c2", det.achieved[2] == true, "挑战 2 应达成") -- 447
+		check("rockets-detailed-c3", det.achieved[3] == true, "挑战 3 应达成") -- 448
+	end -- 448
+	local l4 = getLevel(3) -- 451
+	if l4 ~= nil then -- 451
+		check( -- 453
+			"rockets-l4-eccentricity-3", -- 453
+			evaluateRockets(l4, "success", l4.dvBudget * 0.6, {eccentricity = 0.25}) == 3, -- 453
+			"低偏心率入轨应为 3 枚火箭" -- 453
+		) -- 453
+	end -- 453
+	local l3 = getLevel(2) -- 456
+	if l3 ~= nil then -- 456
+		check( -- 458
+			"rockets-l3-speed-3", -- 458
+			evaluateRockets(l3, "success", l3.dvBudget * 0.7, {maxSpeed = 65}) == 3, -- 458
+			"高速狂飙应为 3 枚火箭" -- 458
+		) -- 458
+	end -- 458
 end -- 433
-function ____exports.runTests() -- 461
-	testValidity() -- 462
-	testFindGoalIndex() -- 463
-	local stats = testReachability() -- 464
-	testTimeWindow(stats) -- 465
-	testCapture() -- 466
-	testMissionMeta() -- 467
-	testEvaluateRockets() -- 468
-	local lines = {} -- 470
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 471
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 472
-	local limit = #failures < 12 and #failures or 12 -- 473
-	do -- 473
-		local i = 0 -- 474
-		while i < limit do -- 474
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 475
-			i = i + 1 -- 474
-		end -- 474
-	end -- 474
-	return table.concat(lines, "\n") -- 477
-end -- 461
-return ____exports -- 461
+function ____exports.runTests() -- 462
+	testValidity() -- 463
+	testFindGoalIndex() -- 464
+	local stats = testReachability() -- 465
+	testTimeWindow(stats) -- 466
+	testCapture() -- 467
+	testMissionMeta() -- 468
+	testEvaluateRockets() -- 469
+	local lines = {} -- 471
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 472
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 473
+	local limit = #failures < 12 and #failures or 12 -- 474
+	do -- 474
+		local i = 0 -- 475
+		while i < limit do -- 475
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 476
+			i = i + 1 -- 475
+		end -- 475
+	end -- 475
+	return table.concat(lines, "\n") -- 478
+end -- 462
+return ____exports -- 462

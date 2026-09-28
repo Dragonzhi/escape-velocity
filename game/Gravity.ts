@@ -195,6 +195,49 @@ export function accelerationAt(bodies: Body[], p: P2, t: number): P2 {
 }
 
 /**
+ * 把全部天体在时刻 t 的位置写进 `out`（**预分配、原地覆盖**）。
+ *
+ * 为什么要有它（B1，2026-09-28）：L1 换成真实阿波罗剖面后，一次预测推演要 **8000 步**，
+ * 而每一步原本要算 **6 次** `bodyPositionAt`（加速度 3 次 + 碰撞检测 3 次，每次还带一次
+ * 宿主链递归的 sin/cos）。滚动缓存之后每步只算 **3 次**，预测线耗时直接减半。
+ * 结果与旧实现**逐位相同**（同一时刻、同一批位置、同一套算式，只是不再重复计算）。
+ */
+function fillPositions(bodies: Body[], t: number, out: P2[]): void {
+	for (let i = 0; i < bodies.length; i++) {
+		out[i] = bodyPositionAt(bodies[i], t);
+	}
+}
+
+/** 用**已算好的**天体位置求引力加速度（= `accelerationAt` 的缓存版，算式逐字相同）。 */
+function accelerationFrom(bodies: Body[], positions: P2[], p: P2): P2 {
+	let ax = 0;
+	let ay = 0;
+	for (let i = 0; i < bodies.length; i++) {
+		const q = positions[i];
+		const dx = q.x - p.x;
+		const dy = q.y - p.y;
+		const d2 = dx * dx + dy * dy;
+		if (d2 < MIN_DIST2) continue;
+		const invd = 1 / Math.sqrt(d2);
+		const invd3 = invd * invd * invd;
+		ax += bodies[i].gm * dx * invd3;
+		ay += bodies[i].gm * dy * invd3;
+	}
+	return { x: ax, y: ay };
+}
+
+/** 用**已算好的**天体位置做碰撞检测（= `collisionIndex` 的缓存版）。 */
+function collisionFrom(bodies: Body[], positions: P2[], p: P2): number {
+	for (let i = 0; i < bodies.length; i++) {
+		const q = positions[i];
+		const dx = q.x - p.x;
+		const dy = q.y - p.y;
+		if (Math.sqrt(dx * dx + dy * dy) < bodies[i].radius) return i;
+	}
+	return -1;
+}
+
+/**
  * 推进一步（半隐式欧拉 / 辛欧拉）。
  * 先更新速度、再用新速度更新位置 —— 对轨道运动足够稳定，且实现简单、完全确定。
  */
@@ -243,6 +286,14 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 
 	const escape2 = opts.escapeRadius > 0 ? opts.escapeRadius * opts.escapeRadius : 0;
 
+	// 天体位置的**滚动缓存**（见 fillPositions）：每步只更新一次，
+	// 加速度用「这一刻」的位置、碰撞检测用「推进之后」的位置 —— 与旧实现逐位一致。
+	const bufA: P2[] = [];
+	const bufB: P2[] = [];
+	fillPositions(bodies, t, bufA);
+	let curPositions: P2[] = bufA;
+	let nextPositions: P2[] = bufB;
+
 	// 反推段（见 SimOptions.brake）：总 Δv 均摊到剩余步数 ⇒ 每步固定的减速度。
 	const brake = opts.brake;
 	const brakeStart = brake !== undefined ? (brake.startStep !== undefined ? brake.startStep : Math.floor(opts.steps / 2)) : -1;
@@ -250,7 +301,11 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 	const brakeDvPerStep = brake !== undefined ? brake.dv / brakeSteps : 0;
 
 	for (let i = 0; i < opts.steps; i++) {
-		s = step(s, bodies, t, opts.dt);
+		// 半隐式欧拉（= step()，只是复用已缓存的天体位置）
+		const acc = accelerationFrom(bodies, curPositions, s.pos);
+		const nvx = s.vel.x + acc.x * opts.dt;
+		const nvy = s.vel.y + acc.y * opts.dt;
+		s = { pos: { x: s.pos.x + nvx * opts.dt, y: s.pos.y + nvy * opts.dt }, vel: { x: nvx, y: nvy } };
 		t += opts.dt;
 		stepsRun += 1;
 
@@ -266,7 +321,13 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 			}
 		}
 
-		const hit = collisionIndex(bodies, s.pos, t);
+		// 推进之后的位置（碰撞检测用），并把它留给下一步当"当前"位置 —— 一次计算两处用
+		const tmp = curPositions;
+		curPositions = nextPositions;
+		nextPositions = tmp;
+		fillPositions(bodies, t, curPositions);
+
+		const hit = collisionFrom(bodies, curPositions, s.pos);
 		if (hit >= 0) {
 			outcome = 'crashed';
 			hitIndex = hit;

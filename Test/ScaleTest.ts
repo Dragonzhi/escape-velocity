@@ -126,13 +126,16 @@ function testHillAndEscape(): void {
 	const earthA = trueOrbit(1.00000011);
 	near('hill-radius-earth', hillRadius(earthA, EarthGm, SunGm), 0.800310, 1e-5);
 	near('hill-radius-ratio', hillRadius(earthA, EarthGm, SunGm) / earthA, 0.010004, 1e-4);
-	// L1 的探测器驻留轨道 r = 0.1 ⇒ 占希尔球 12.5%：稳定，但也不是随便就能再放大
-	const parking = 0.1;
+	// L1 的探测器停泊轨 = **真实阿波罗剖面**（B0，2026-09-28）：200 km 高度 ⇒ 地心 6,571 km。
+	// 它只占希尔球的 0.44%（深在引力阱里，稳）；周期 88.4 分钟、圆轨速度 7.788 km/s
+	// —— 三者与真实阿波罗停泊轨都对得上（见 docs/L1重构设计案.md 第二节）。
+	const parking = EarthRadius + 200 / KmPerUnit;
 	const frac = parking / hillRadius(earthA, EarthGm, SunGm);
-	check('parking-inside-hill', frac > 0.05 && frac < 0.2, 'r/r_H=' + frac.toFixed(4) + ' (want 0.125)');
-	near('parking-period', period(parking, EarthGm), 0.42727, 1e-4);
-	near('parking-v-circ', circularSpeed(EarthGm, parking), 1.47055, 1e-5);
-	near('parking-v-escape', escapeSpeed(EarthGm, parking), 2.07968, 1e-5);
+	check('parking-inside-hill', frac > 0.001 && frac < 0.01, 'r/r_H=' + frac.toFixed(5) + ' (want 0.0044)');
+	// 期望值 = 引擎实测 0.0028144569659…（= 88.4 分钟 / 1.8835e6）；near() 用**相对**容差，所以给 1e-5
+	near('parking-period', period(parking, EarthGm), 0.00281446, 1e-5);
+	near('parking-v-circ', circularSpeed(EarthGm, parking), 7.8448, 1e-3);
+	near('parking-v-escape', escapeSpeed(EarthGm, parking), 11.0942, 1e-3);
 	near('escape-is-sqrt2-circular', escapeSpeed(EarthGm, parking) / circularSpeed(EarthGm, parking), 1.4142135623730951, 1e-12);
 	// 月球轨道的圆轨速度（真实 1.022 km/s ⇒ 1.026 单位/秒）
 	near('moon-orbit-v-circ', circularSpeed(EarthGm, MoonOrbitRadius), 1.02566, 1e-4);
