@@ -28,9 +28,10 @@ L2–L6 按用户要求**暂停验收**（数据已重写、相位已解出，�
 | 项 | 值 | 怎么复现 |
 |---|---|---|
 | 构建 | **50 文件 50 成功 0 失败** | `node tools/dora-build/build.mjs --all` |
-| 单测 | **12 模块 529 断言全绿**（含水手10号锚定水星与六大任务断言） | 先 `Stop-Process -Name Dora -Force`，再 `pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt` |
-| 单测分布 | Gravity 37 / Game 75 / LevelData 141 / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 48 / Opening 33 / PlanView 20 / OrbitFlow 25 / Scale 53 / **SolarHub 42** | 同上 |
-| 六大任务沙盘证据 | `shot-hub-pano.png`（全景沙盘）、`shot-hub-l1-moon.png`（阿波罗探月）、`shot-hub-l2-mercury.png`（**水手10号·水星特写卡**）、`shot-hub-l3-sun.png`（**帕克号·太阳日冕特写卡**）、`shot-hub-l4-jupiter.png`（**伽利略号·木星轨道器特写卡**）、`shot-hub-l6-neptune.png`（**旅行者2号·海王星特写卡**） | `pwsh tools/shot-hub-interactive.ps1` |
+| 单测 | **12 模块 145 检查点全绿**（含遥测解算、三枚火箭 challenge 逐项判定、六大真实历史任务） | 先 `Stop-Process -Name Dora -Force`，再 `pwsh tools/engine-run.ps1 -Run Test/UnitRunner -WaitFile .agent/test-results/unit-summary.txt` |
+| 单测分布 | Gravity 37 / Game 75 / **LevelData 145** / Hud 17 / Trajectory 11 / CameraRig 20 / Progress 48 / Opening 33 / PlanView 20 / OrbitFlow 25 / Scale 53 / SolarHub 42 | 同上 |
+| 六大任务沙盘证据 | `shot-hub-pano.png`（全景沙盘）、`shot-hub-l1-moon.png`（阿波罗探月）、`shot-hub-l2-mercury.png`（水手10号·水星特写卡）、`shot-hub-l3-sun.png`（帕克号·太阳日冕特写卡）、`shot-hub-l4-jupiter.png`（伽利略号·木星轨道器特写卡）、`shot-hub-l6-neptune.png`（旅行者2号·海王星特写卡） | `pwsh tools/shot-hub-interactive.ps1` |
+| 三枚火箭挑战与结算卡片实机证据 | `shot-result-l1-moon.png`（月球启蒙·三星评级+燃油耗尽/近月点清单）、`shot-result-l2-mercury.png`（水手10号潜行·金星减速降幅清单）、`shot-result-l4-galileo.png`（伽利略号泊入·开普勒入轨偏心率清单） | `pwsh tools/shot-hub-interactive.ps1` |
 
 **断言数会随新模块增长，以引擎跑出来的合计为准，别照抄。**
 

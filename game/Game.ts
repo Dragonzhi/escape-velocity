@@ -30,7 +30,7 @@ import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
-import { GoalSpec, PlanetVisualDef, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { GoalSpec, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
@@ -158,6 +158,15 @@ export interface GameCore {
 	slowmo: boolean;
 	/** 触发慢动作的天体索引（-1 = 没有）。取景时相机贴近这颗天体。 */
 	slowmoBody: number;
+}
+
+/** 飞行遥测数据（S7：用于任务结算与三枚火箭挑战判定）。 */
+export interface FlightTelemetry {
+	burnDv: number;
+	flightTime: number;
+	closestDist: number;
+	maxSpeed: number;
+	eccentricity?: number;
 }
 
 /** 中性瞄准（没拖过时的姿态）：朝目标、力度取这一关的下限。 */
@@ -443,6 +452,71 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 	return false;
 }
 
+/**
+ * 从飞行回放结果中解算遥测数据（纯计算，可单测）。
+ */
+export function calcFlightTelemetry(
+	core: GameCore,
+	level: GameLevel,
+): FlightTelemetry {
+	const burnDv = Math.sqrt(core.aim.velocity.x * core.aim.velocity.x + core.aim.velocity.y * core.aim.velocity.y);
+	let maxSpeed = 0;
+	let closestDist = 1e9;
+	let eccentricity: number | undefined = undefined;
+
+	if (core.flight !== undefined) {
+		const pts = core.flight.points;
+		const vels = core.flight.velocities;
+		const end = coreProbeIndex(core);
+		const targetIdx = level.goal.planetIndex;
+		const targetBody = targetIdx >= 0 && targetIdx < level.bodies.length ? level.bodies[targetIdx] : undefined;
+
+		for (let k = 0; k <= end && k < pts.length; k++) {
+			const p = pts[k];
+			if (vels !== undefined && k < vels.length) {
+				const v = vels[k];
+				const spd = Math.sqrt(v.x * v.x + v.y * v.y);
+				if (spd > maxSpeed) maxSpeed = spd;
+			}
+			if (targetBody !== undefined) {
+				const t = core.t0 + k * core.dt;
+				const tp = bodyPositionAt(targetBody, t);
+				const d = distance(p, tp);
+				if (d < closestDist) closestDist = d;
+			}
+		}
+
+		if (targetBody !== undefined && targetBody.gm > 0 && vels !== undefined && end < pts.length && end < vels.length) {
+			const tEnd = core.t0 + end * core.dt;
+			const tpEnd = bodyPositionAt(targetBody, tEnd);
+			const tvEnd = bodyVelocityAt(targetBody, tEnd);
+			const rx = pts[end].x - tpEnd.x;
+			const ry = pts[end].y - tpEnd.y;
+			const vx = vels[end].x - tvEnd.x;
+			const vy = vels[end].y - tvEnd.y;
+			const r = Math.sqrt(rx * rx + ry * ry);
+			const v2 = vx * vx + vy * vy;
+			const mu = targetBody.gm;
+			if (r > 0 && mu > 0) {
+				const energy = v2 / 2 - mu / r;
+				const h = rx * vy - ry * vx;
+				const term = 1 + (2 * energy * h * h) / (mu * mu);
+				if (term >= 0) {
+					eccentricity = Math.sqrt(term);
+				}
+			}
+		}
+	}
+
+	return {
+		burnDv,
+		flightTime: core.flightTime,
+		closestDist: closestDist < 1e8 ? closestDist : 0,
+		maxSpeed,
+		eccentricity,
+	};
+}
+
 /** 重试本关：回到 Aiming，清空飞行与结算。 */
 export function coreRetry(core: GameCore, aimMin?: number): void {
 	core.phase = 'Aiming';
@@ -564,8 +638,8 @@ export interface GameDeps {
 	aspect: number;
 	/** 阶段变化回调（驱动 UI 显隐）。 */
 	onPhase: (p: GamePhase) => void;
-	/** 结算回调（驱动结果面板）。 */
-	onResult: (r: ResultKind) => void;
+	/** 结算回调（驱动结果面板，携带遥测数据）。 */
+	onResult: (r: ResultKind, telemetry?: FlightTelemetry) => void;
 	/**
 	 * 这一关成功之后是否进**终章「暗淡蓝点」**（S3.18）。
 	 *
@@ -1258,7 +1332,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				const toFinale = deps.finale === true && core.result === 'success';
 				if (toFinale) coreEnterFinale(core);
 				// onResult 先走：解锁 / 存档只有这一条路（面板显隐完全交给 onPhase，见 init.ts）
-				deps.onResult(core.result);
+				const telem = calcFlightTelemetry(core, level);
+				deps.onResult(core.result, telem);
 				if (toFinale && core.flight !== undefined && deps.onFinale !== undefined) {
 					const end = core.flight.points.length - 1;
 					deps.onFinale({

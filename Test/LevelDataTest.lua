@@ -13,6 +13,7 @@ local ____LevelData = require("game.LevelData") -- 11
 local bodyVelocityAt = ____LevelData.bodyVelocityAt -- 11
 local captureThreshold = ____LevelData.captureThreshold -- 11
 local evaluateRockets = ____LevelData.evaluateRockets -- 11
+local evaluateRocketsDetailed = ____LevelData.evaluateRocketsDetailed -- 11
 local findGoalIndex = ____LevelData.findGoalIndex -- 11
 local getLevel = ____LevelData.getLevel -- 11
 local levelCount = ____LevelData.levelCount -- 11
@@ -657,43 +658,48 @@ local function testEvaluateRockets() -- 433
 			evaluateRockets(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.05}) == 2, -- 441
 			"未达成近掠应为 2 枚火箭" -- 441
 		) -- 441
-	end -- 441
-	local l4 = getLevel(3) -- 444
-	if l4 ~= nil then -- 444
-		check( -- 446
-			"rockets-l4-eccentricity-3", -- 446
-			evaluateRockets(l4, "success", l4.dvBudget * 0.6, {eccentricity = 0.25}) == 3, -- 446
-			"低偏心率入轨应为 3 枚火箭" -- 446
-		) -- 446
-	end -- 446
-	local l3 = getLevel(2) -- 449
-	if l3 ~= nil then -- 449
-		check( -- 451
-			"rockets-l3-speed-3", -- 451
-			evaluateRockets(l3, "success", l3.dvBudget * 0.7, {maxSpeed = 65}) == 3, -- 451
-			"高速狂飙应为 3 枚火箭" -- 451
-		) -- 451
-	end -- 451
+		local det = evaluateRocketsDetailed(l1, "success", l1.dvBudget * 0.5, {closestDist = 0.01}) -- 443
+		check("rockets-detailed-count", det.rockets == 3, "详细评价火箭数应为 3") -- 444
+		check("rockets-detailed-c1", det.achieved[1] == true, "挑战 1 应达成") -- 445
+		check("rockets-detailed-c2", det.achieved[2] == true, "挑战 2 应达成") -- 446
+		check("rockets-detailed-c3", det.achieved[3] == true, "挑战 3 应达成") -- 447
+	end -- 447
+	local l4 = getLevel(3) -- 450
+	if l4 ~= nil then -- 450
+		check( -- 452
+			"rockets-l4-eccentricity-3", -- 452
+			evaluateRockets(l4, "success", l4.dvBudget * 0.6, {eccentricity = 0.25}) == 3, -- 452
+			"低偏心率入轨应为 3 枚火箭" -- 452
+		) -- 452
+	end -- 452
+	local l3 = getLevel(2) -- 455
+	if l3 ~= nil then -- 455
+		check( -- 457
+			"rockets-l3-speed-3", -- 457
+			evaluateRockets(l3, "success", l3.dvBudget * 0.7, {maxSpeed = 65}) == 3, -- 457
+			"高速狂飙应为 3 枚火箭" -- 457
+		) -- 457
+	end -- 457
 end -- 433
-function ____exports.runTests() -- 455
-	testValidity() -- 456
-	testFindGoalIndex() -- 457
-	local stats = testReachability() -- 458
-	testTimeWindow(stats) -- 459
-	testCapture() -- 460
-	testMissionMeta() -- 461
-	testEvaluateRockets() -- 462
-	local lines = {} -- 464
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 465
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 466
-	local limit = #failures < 12 and #failures or 12 -- 467
-	do -- 467
-		local i = 0 -- 468
-		while i < limit do -- 468
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 469
-			i = i + 1 -- 468
-		end -- 468
-	end -- 468
-	return table.concat(lines, "\n") -- 471
-end -- 455
-return ____exports -- 455
+function ____exports.runTests() -- 461
+	testValidity() -- 462
+	testFindGoalIndex() -- 463
+	local stats = testReachability() -- 464
+	testTimeWindow(stats) -- 465
+	testCapture() -- 466
+	testMissionMeta() -- 467
+	testEvaluateRockets() -- 468
+	local lines = {} -- 470
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 471
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 472
+	local limit = #failures < 12 and #failures or 12 -- 473
+	do -- 473
+		local i = 0 -- 474
+		while i < limit do -- 474
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 475
+			i = i + 1 -- 474
+		end -- 474
+	end -- 474
+	return table.concat(lines, "\n") -- 477
+end -- 461
+return ____exports -- 461

@@ -95,6 +95,18 @@ Start-Sleep -Milliseconds 600
 RequestShot "focus:5" "shot-hub-l6-neptune.png"
 Start-Sleep -Milliseconds 600
 
+# 7) L1 月球任务三枚火箭结算卡片
+RequestShot "showResult:0" "shot-result-l1-moon.png"
+Start-Sleep -Milliseconds 600
+
+# 8) L2 水手10号水星任务三枚火箭结算卡片
+RequestShot "showResult:1" "shot-result-l2-mercury.png"
+Start-Sleep -Milliseconds 600
+
+# 9) L4 伽利略号木星任务三枚火箭结算卡片
+RequestShot "showResult:3" "shot-result-l4-galileo.png"
+Start-Sleep -Milliseconds 600
+
 # 停掉引擎
 try { $null = Api "stop" } catch {}
 Start-Sleep -Milliseconds 300

@@ -184,6 +184,88 @@ export interface LevelDef {
 	mission?: MissionMeta;
 }
 
+/** 任务评价结果详情（S7）。 */
+export interface MissionEvaluation {
+	rockets: number;
+	achieved: [boolean, boolean, boolean];
+	burnDv: number;
+	stats: {
+		closestDist?: number;
+		maxSpeed?: number;
+		eccentricity?: number;
+	};
+}
+
+/**
+ * 评价一局飞行的火箭星级及逐条达成详情（纯函数）。
+ */
+export function evaluateRocketsDetailed(
+	level: LevelDef,
+	result: string,
+	burnDv: number,
+	extra?: {
+		closestDist?: number;
+		maxSpeed?: number;
+		eccentricity?: number;
+	},
+): MissionEvaluation {
+	const achieved: [boolean, boolean, boolean] = [false, false, false];
+	if (result !== 'success') {
+		return {
+			rockets: 0,
+			achieved,
+			burnDv,
+			stats: extra !== undefined ? extra : {},
+		};
+	}
+
+	achieved[0] = true;
+	let count = 1;
+	const challenges = level.mission !== undefined ? level.mission.challenges : undefined;
+	if (challenges !== undefined) {
+		// 第 2 枚火箭：燃料控制
+		const c2 = challenges[1];
+		if (c2.type === 'fuel' && c2.threshold !== undefined) {
+			if (burnDv <= level.dvBudget * c2.threshold) {
+				achieved[1] = true;
+				count += 1;
+			}
+		} else if (burnDv <= level.dvBudget * 0.8) {
+			achieved[1] = true;
+			count += 1;
+		}
+
+		// 第 3 枚火箭：专属挑战
+		const c3 = challenges[2];
+		if (c3.type === 'distance' && c3.threshold !== undefined) {
+			if (extra !== undefined && extra.closestDist !== undefined && extra.closestDist <= c3.threshold) {
+				achieved[2] = true;
+				count += 1;
+			}
+		} else if (c3.type === 'speed' && c3.threshold !== undefined) {
+			if (extra !== undefined && extra.maxSpeed !== undefined && extra.maxSpeed >= c3.threshold) {
+				achieved[2] = true;
+				count += 1;
+			}
+		} else if (c3.type === 'eccentricity' && c3.threshold !== undefined) {
+			if (extra !== undefined && extra.eccentricity !== undefined && extra.eccentricity <= c3.threshold) {
+				achieved[2] = true;
+				count += 1;
+			}
+		} else if (count === 2 && burnDv <= level.dvBudget * 0.5) {
+			achieved[2] = true;
+			count += 1;
+		}
+	}
+
+	return {
+		rockets: Math.min(3, Math.max(0, count)),
+		achieved,
+		burnDv,
+		stats: extra !== undefined ? extra : {},
+	};
+}
+
 /**
  * 评价一局飞行的火箭星级（0 ~ 3 枚火箭，纯函数）。
  */
@@ -197,38 +279,7 @@ export function evaluateRockets(
 		eccentricity?: number;
 	},
 ): number {
-	if (result !== 'success') return 0;
-	let count = 1;
-	const challenges = level.mission !== undefined ? level.mission.challenges : undefined;
-	if (challenges === undefined) return count;
-
-	// 第 2 枚火箭：燃料控制
-	const c2 = challenges[1];
-	if (c2.type === 'fuel' && c2.threshold !== undefined) {
-		if (burnDv <= level.dvBudget * c2.threshold) count += 1;
-	} else if (burnDv <= level.dvBudget * 0.8) {
-		count += 1;
-	}
-
-	// 第 3 枚火箭：专属挑战
-	const c3 = challenges[2];
-	if (c3.type === 'distance' && c3.threshold !== undefined) {
-		if (extra !== undefined && extra.closestDist !== undefined && extra.closestDist <= c3.threshold) {
-			count += 1;
-		}
-	} else if (c3.type === 'speed' && c3.threshold !== undefined) {
-		if (extra !== undefined && extra.maxSpeed !== undefined && extra.maxSpeed >= c3.threshold) {
-			count += 1;
-		}
-	} else if (c3.type === 'eccentricity' && c3.threshold !== undefined) {
-		if (extra !== undefined && extra.eccentricity !== undefined && extra.eccentricity <= c3.threshold) {
-			count += 1;
-		}
-	} else if (count === 2 && burnDv <= level.dvBudget * 0.5) {
-		count += 1;
-	}
-
-	return Math.min(3, Math.max(0, count));
+	return evaluateRocketsDetailed(level, result, burnDv, extra).rockets;
 }
 
 // ---------------------------------------------------------------------------

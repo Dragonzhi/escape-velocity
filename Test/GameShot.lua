@@ -99,9 +99,12 @@ local ok = false
 if chunk == nil then
   log("init chunk failed: " .. tostring(lerr))
 else
-  local runOk, runErr = pcall(chunk)
+  local runOk, runRes = pcall(chunk)
   ok = runOk
-  log("init run ok=" .. tostring(runOk) .. " err=" .. tostring(runErr))
+  if runOk and type(runRes) == "table" then
+    package.loaded["init"] = runRes
+  end
+  log("init run ok=" .. tostring(runOk) .. " res=" .. tostring(runRes))
 end
 print("[gameshot] driver ready ok=" .. tostring(ok) .. " root=" .. tostring(root))
 
@@ -121,8 +124,19 @@ threadLoop(function()
       local SolarHub = package.loaded["game.SolarHub"]
       local hub = SolarHub ~= nil and SolarHub.getActiveSolarHub ~= nil and SolarHub.getActiveSolarHub() or nil
 
+      local resIdx = string.match(want, "showResult:(%d+)")
       local focusIdx = string.match(want, "focus:(%d+)")
-      if focusIdx ~= nil then
+      if resIdx ~= nil then
+        local idx = tonumber(resIdx)
+        local initMod = package.loaded["init"]
+        if initMod ~= nil and initMod.triggerDebugResult ~= nil then
+          initMod.triggerDebugResult(idx, "success")
+          log("invoked triggerDebugResult(" .. tostring(idx) .. ")")
+        else
+          log("triggerDebugResult failed: initMod=" .. tostring(initMod))
+        end
+        pendingDelay = 20
+      elseif focusIdx ~= nil then
         local idx = tonumber(focusIdx)
         if hub ~= nil and hub.focusMission ~= nil then
           hub.focusMission(idx)

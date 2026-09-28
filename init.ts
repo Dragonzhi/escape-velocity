@@ -19,14 +19,14 @@
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
 import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
-import { getLevel, goalWaypoints, levelCount, scaledPlanets } from 'game/LevelData';
+import { evaluateRocketsDetailed, getLevel, goalWaypoints, levelCount, scaledPlanets } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
 import { PlanView, arrivalRingRadius, createPlanView, defaultPlanOptions, planFitRadius } from 'game/PlanView';
-import { AimInput, AimResult, FinaleMainText, FinalePanel, LevelSelect, ResultPanel, createAimInput, createFinalePanel, createLevelSelect, createResultPanel, finaleSubtitle } from 'game/Hud';
-import { Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
-import { Progress, advanceUnlocked, getTotalRockets, loadProgress, progressFilePath, saveProgress } from 'game/Progress';
+import { AimInput, AimResult, FinaleMainText, FinalePanel, LevelSelect, ResultDetailParams, ResultPanel, createAimInput, createFinalePanel, createLevelSelect, createResultPanel, finaleSubtitle } from 'game/Hud';
+import { FlightTelemetry, Game, GameLevel, GamePhase, ResultKind, createGame } from 'game/Game';
+import { Progress, advanceUnlocked, getTotalRockets, loadProgress, progressFilePath, recordMissionResult, saveProgress } from 'game/Progress';
 // 只为主循环推进 UI 时钟：按钮防抖不能依赖引擎那个冻结的 App.elapsedTime（见 game/Ui.ts）
 import { advanceUiClock } from 'game/Ui';
 // S5：每关的物理步长 / 播放倍速 / 相机夹紧 / 瞄准区间（"想调就调"的值都在那里）
@@ -55,6 +55,9 @@ interface LevelRuntime {
 	/** 时间流量程（秒）；没有时间轴时为 0。 */
 	dateSpan: number;
 }
+
+let debugTriggerResultFn: ((levelIndex: number, outcome?: ResultKind) => void) | undefined = undefined;
+let activeResultPanel: ResultPanel | undefined = undefined;
 
 /** 关卡槽位：`built` 与 `runtime` 分开，避免出现带空洞的数组（手册 §7.2）。 */
 interface LevelSlot {
@@ -299,19 +302,58 @@ if (levelTotal <= 0) {
 					}
 				}
 			},
-			onResult: (r: ResultKind): void => {
-				// 结算在发射瞬间就已确定，这里只是“飞行播完了”的时刻
-				if (r === 'success') {
-					const next = advanceUnlocked(progress.unlocked, r, index, levelTotal);
-					if (next !== progress.unlocked) {
-						progress = { unlocked: next };
-						saveProgress(progress);
-						print('[escape-velocity] unlocked -> ' + next.toFixed(0) + ' (saved)');
+			onResult: (r: ResultKind, telemetry?: FlightTelemetry): void => {
+				const telem = telemetry !== undefined ? telemetry : {
+					burnDv: 0,
+					flightTime: 0,
+					closestDist: 0,
+					maxSpeed: 0,
+				};
+				const evalInfo = evaluateRocketsDetailed(def, r, telem.burnDv, {
+					closestDist: telem.closestDist,
+					maxSpeed: telem.maxSpeed,
+					eccentricity: telem.eccentricity,
+				});
+
+				// 推进并保存火箭挑战进度
+				progress = recordMissionResult(progress, index, evalInfo.rockets, levelTotal);
+				saveProgress(progress);
+				const currentTotal = getTotalRockets(progress, levelTotal);
+
+				print('[escape-velocity] result = ' + r + ' on ' + levelNames[index]
+					+ ' rockets=' + evalInfo.rockets.toFixed(0)
+					+ ' (total=' + currentTotal.toFixed(0) + '/' + (levelTotal * 3).toFixed(0) + ')');
+
+				resultIndex = index; // 面板显示的是这一关的结算
+
+				const challengesList: string[] = [];
+				if (def.mission !== undefined) {
+					for (let k = 0; k < def.mission.challenges.length; k++) {
+						challengesList.push(def.mission.challenges[k].desc);
 					}
 				}
-				print('[escape-velocity] result = ' + r + ' on ' + levelNames[index]);
-				resultIndex = index; // 面板显示的是**这一关**的结算（见 resultIndex 的说明）
-				if (resultPanel !== undefined) resultPanel.show(r, levelNames[index]);
+
+				const titleWithSub = def.mission !== undefined
+					? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle
+					: levelNames[index];
+
+				const detailParams: ResultDetailParams = {
+					result: r,
+					levelName: titleWithSub,
+					levelIndex: index,
+					rocketsGot: evalInfo.rockets,
+					challenges: challengesList,
+					achieved: evalInfo.achieved,
+					burnDv: telem.burnDv,
+					dvBudget: def.dvBudget,
+					flightTime: telem.flightTime,
+					totalRockets: currentTotal,
+					totalPossibleRockets: levelTotal * 3,
+				};
+
+				if (resultPanel !== undefined) {
+					resultPanel.show(r, titleWithSub, detailParams);
+				}
 			},
 			// S3.18：终章数据（文案小字的两个数）。只在这一刻算一次，之后画面冻结。
 			onFinale: (info): void => {
@@ -488,6 +530,7 @@ if (levelTotal <= 0) {
 			onRetry: (): void => onRetryTap(),
 			onBackToSelect: (): void => onBackToSelectTap(),
 		});
+		activeResultPanel = resultPanel;
 		const created = createLevelSelect(uiLayer, viewW, viewH, {
 			levels: levelEntries,
 			onPick: (index: number): void => {
@@ -824,4 +867,47 @@ if (levelTotal <= 0) {
 
 	// 带上视口尺寸与平台：真机（手机浏览器）排查全靠这一行——手机上的 View.size 只能从这里看
 	print('[escape-velocity] started: ' + levelTotal.toFixed(0) + ' levels, unlocked=' + progress.unlocked.toFixed(0) + ', view=' + viewW.toFixed(0) + 'x' + viewH.toFixed(0) + ', platform=' + App.platform + ', introSeen=' + (introSeen ? 'yes' : 'no'));
+
+	debugTriggerResultFn = (levelIndex: number, outcome: ResultKind = 'success'): void => {
+		if (solarHub !== undefined) solarHub.hide();
+		if (opening !== undefined) opening.hide();
+		const def = getLevel(levelIndex);
+		if (def === undefined || resultPanel === undefined) return;
+		const burn = def.dvBudget * 0.65;
+		const challengesList: string[] = [];
+		if (def.mission !== undefined) {
+			for (let k = 0; k < def.mission.challenges.length; k++) {
+				challengesList.push(def.mission.challenges[k].desc);
+			}
+		}
+		const titleWithSub = def.mission !== undefined
+			? 'L' + (levelIndex + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle
+			: 'L' + (levelIndex + 1).toFixed(0);
+
+		resultPanel.show(outcome, titleWithSub, {
+			result: outcome,
+			levelName: titleWithSub,
+			levelIndex,
+			rocketsGot: outcome === 'success' ? 3 : 0,
+			challenges: challengesList,
+			achieved: outcome === 'success' ? [true, true, true] : [false, false, false],
+			burnDv: burn,
+			dvBudget: def.dvBudget,
+			flightTime: 12.8,
+			totalRockets: outcome === 'success' ? 16 : 13,
+			totalPossibleRockets: 18,
+		});
+	};
+}
+
+/** 获取当前处于激活状态的结算面板（调试/截图用）。 */
+export function getActiveResultPanel(): ResultPanel | undefined {
+	return activeResultPanel;
+}
+
+/** 触发一次指定关卡的结算卡片演出（调试/自动化截图用）。 */
+export function triggerDebugResult(levelIndex: number, outcome: ResultKind = 'success'): void {
+	if (debugTriggerResultFn !== undefined) {
+		debugTriggerResultFn(levelIndex, outcome);
+	}
 }

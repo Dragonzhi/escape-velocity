@@ -8,7 +8,7 @@
  */
 import { Body, P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { SunGm } from 'game/Scale';
-import { GoalSpec, bodyVelocityAt, captureThreshold, evaluateRockets, findGoalIndex, getLevel, goalWaypoints, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
+import { GoalSpec, bodyVelocityAt, captureThreshold, evaluateRockets, evaluateRocketsDetailed, findGoalIndex, getLevel, goalWaypoints, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
 import { AimMaxSpeed, AimMinSpeed, BrakeShare, PhysicsStep } from 'game/Config';
 import { levelRuntime } from 'game/Tuning';
 import { resolveResult } from 'game/Game';
@@ -439,6 +439,12 @@ function testEvaluateRockets(): void {
 		check('rockets-fuel-ok-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5) === 2, '达成省油应为 2 枚火箭');
 		check('rockets-peri-ok-3', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.01 }) === 3, '达成近掠应为 3 枚火箭');
 		check('rockets-peri-fail-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.05 }) === 2, '未达成近掠应为 2 枚火箭');
+
+		const det = evaluateRocketsDetailed(l1, 'success', l1.dvBudget * 0.5, { closestDist: 0.01 });
+		check('rockets-detailed-count', det.rockets === 3, '详细评价火箭数应为 3');
+		check('rockets-detailed-c1', det.achieved[0] === true, '挑战 1 应达成');
+		check('rockets-detailed-c2', det.achieved[1] === true, '挑战 2 应达成');
+		check('rockets-detailed-c3', det.achieved[2] === true, '挑战 3 应达成');
 	}
 
 	const l4 = getLevel(3);

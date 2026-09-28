@@ -29,7 +29,7 @@
  * 全部使用**属性式箭头函数类型**，避免 TSTL 为对象成员函数引入隐式 self
  * （见手册 §7.2.1 坑 1）。
  */
-import { Color, DrawNode, Node, Size, Touch, Vec2 } from 'Dora';
+import { Color, DrawNode, Label, Node, Size, Touch, Vec2 } from 'Dora';
 import { CameraBasis, screenToPlaneY } from 'game/Projection';
 import { P2 } from 'game/Gravity';
 import {
@@ -885,16 +885,31 @@ export interface ResultPanelOptions {
 	onBackToSelect: () => void;
 }
 
+/** 结算详情参数（S7 三枚火箭评价）。 */
+export interface ResultDetailParams {
+	result: ResultKind;
+	levelName: string;
+	levelIndex: number;
+	rocketsGot: number;
+	challenges: string[];
+	achieved: [boolean, boolean, boolean];
+	burnDv: number;
+	dvBudget: number;
+	flightTime: number;
+	totalRockets: number;
+	totalPossibleRockets: number;
+}
+
 /** 结算面板句柄。 */
 export interface ResultPanel {
 	/** 根节点（全屏半透明底），调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
-	show: (result: ResultKind, levelName: string) => void;
+	show: (result: ResultKind, levelName: string, detail?: ResultDetailParams) => void;
 	hide: () => void;
 }
 
 /**
- * 建结算面板：半透明全屏底 + 居中卡片（宽 = 0.88 × 视宽）+ 4 行内容 + 2 个按钮。
+ * 建结算面板：半透明全屏底 + 居中工业级卡片 + 三枚火箭挑战清单 + 遥测数据 + 2 个按钮。
  *
  * ⚠️ 全屏底**不能**设 `touch: true`（真机验收踩到的坑）：
  * 全屏 + `swallowTouches` 的节点会独占它覆盖范围内的点击，而节点树里它排在瞄准层之前；
@@ -913,32 +928,33 @@ export function createResultPanel(
 ): ResultPanel {
 	const root = createPanel(parent, viewW, viewH, ResultBackdropHex, { alpha: 0.78 });
 
-	// 尺寸全部按视图逻辑像素推导：竖屏 601×1066 到桌面 2024×1230 都要能看。
-	// ⚠️ 按钮宽度必须**留在卡片内**：早前写成 max(560, …)，竖屏卡片只有 529 宽，
-	// 按钮横向戳出卡片外（真机竖屏实测截图可见）。
-	const cardW = viewW * 0.88;
-	const btnW = clampNumber(cardW - 60, MinButtonWidth, 900);
-	let btnH = clampNumber(viewH * 0.13, MinButtonHeight, 150);
+	const cardW = clampNumber(viewW * 0.90, 360, 560);
+	const btnW = clampNumber(cardW - 60, MinButtonWidth, 480);
+	let btnH = clampNumber(viewH * 0.08, 48, 60);
 	const padX = (cardW - btnW) / 2;
-	const padY = 44;
+	const padY = 28;
 
-	const fontLevel = 34;
-	const fontTitle = 66;
-	const fontBody = 34;
-	const fontHint = 30;
-	const btnFont = 40;
-	const rowGap = 26;
+	const fontLevel = 24;
+	const fontRockets = 38;
+	const fontTitle = 30;
+	const fontTelemetry = 19;
+	const fontChallenge = 18;
+	const fontTotal = 20;
+	const btnFont = 24;
+	const rowGap = 12;
 
-	// 行高按“字号 + 余量”给；说明句预留两行，窄屏换行时不会被按钮压住
-	const hLevel = fontLevel + 10;
-	const hTitle = fontTitle + 18;
-	const hBody = fontBody * 2 + 12;
-	const hHint = fontHint + 10;
-	let cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22;
-	// 卡片不得超出屏幕：超了先压按钮高度（最大项），而不是让内容被裁掉
+	const hLevel = 28;
+	const hRockets = 42;
+	const hTitle = 34;
+	const hTelemetry = 24;
+	const hChallengeRow = 30;
+	const hChallenges = hChallengeRow * 3;
+	const hTotal = 24;
+
+	let cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7;
 	if (cardH > viewH - 24) {
 		btnH = Math.max(MinButtonHeight, btnH - (cardH - (viewH - 24)) / 2);
-		cardH = padY * 2 + hLevel + hTitle + hBody + hHint + rowGap * 4 + btnH * 2 + 22;
+		cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7;
 	}
 
 	const card = createPanel(root, cardW, cardH, ResultCardHex, {
@@ -948,27 +964,41 @@ export function createResultPanel(
 	});
 	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2);
 
-	// 垂直排版：卡片局部坐标是**左下原点**，所以从顶部往下累减
+	// 垂直排版：从顶部往下累减
 	let cursor = cardH - padY;
 
 	cursor -= hLevel;
 	const levelLabel = createLabel(card, '', fontLevel, ResultLevelHex);
 	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2);
 
+	cursor -= rowGap + hRockets;
+	const rocketsLabel = createLabel(card, '', fontRockets, 0xffc83b);
+	setLabelCenter(rocketsLabel, cardW / 2, cursor + hRockets / 2);
+
 	cursor -= rowGap + hTitle;
 	const titleLabel = createLabel(card, '', fontTitle, TitleSuccessHex);
 	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2);
 
-	cursor -= rowGap + hBody;
-	const bodyLabel = createLabel(card, '', fontBody, ResultBodyHex);
-	setLabelCenter(bodyLabel, cardW / 2, cursor + hBody / 2);
-	if (bodyLabel !== undefined) bodyLabel.textWidth = cardW - 80;
+	cursor -= rowGap + hTelemetry;
+	const telemetryLabel = createLabel(card, '', fontTelemetry, ResultHintHex);
+	setLabelCenter(telemetryLabel, cardW / 2, cursor + hTelemetry / 2);
 
-	cursor -= rowGap + hHint;
-	const hintLabel = createLabel(card, '', fontHint, ResultHintHex);
-	setLabelCenter(hintLabel, cardW / 2, cursor + hHint / 2);
+	cursor -= rowGap;
+	const challengeLabels: Label.Type[] = [];
+	for (let k = 0; k < 3; k++) {
+		cursor -= hChallengeRow;
+		const cl = createLabel(card, '', fontChallenge, 0x9ec5eb);
+		if (cl !== undefined) {
+			cl.textWidth = cardW - 60;
+			setLabelCenter(cl, cardW / 2, cursor + hChallengeRow / 2);
+			challengeLabels.push(cl);
+		}
+	}
 
-	// 按钮：重试本关在上（主位，拇指落点），返回关卡选择在下
+	cursor -= rowGap + hTotal;
+	const totalLabel = createLabel(card, '', fontTotal, 0xffd479);
+	setLabelCenter(totalLabel, cardW / 2, cursor + hTotal / 2);
+
 	cursor -= rowGap + btnH;
 	const retryButton = createButton(card, {
 		w: btnW,
@@ -983,7 +1013,7 @@ export function createResultPanel(
 	});
 	retryButton.root.position = Vec2(padX, cursor);
 
-	cursor -= 22 + btnH;
+	cursor -= 14 + btnH;
 	const backButton = createButton(card, {
 		w: btnW,
 		h: btnH,
@@ -998,28 +1028,60 @@ export function createResultPanel(
 	backButton.root.position = Vec2(padX, cursor);
 
 	root.visible = false;
-	// ⚠️ 创建即禁用：面板在第一次 show() 之前也处于树里，若按钮此刻是可点的，
-	// 隐藏面板会继续参与命中并吞掉覆盖区域的点击（真机验收踩到的坑）。
 	retryButton.setEnabled(false);
 	backButton.setEnabled(false);
 
 	return {
 		root,
-		show: (result: ResultKind, levelName: string): void => {
-			// 只让面板在显示时才可点（见 hide 的兜底说明）
+		show: (result: ResultKind, levelName: string, detail?: ResultDetailParams): void => {
 			retryButton.setEnabled(true);
 			backButton.setEnabled(true);
 			setLabelText(levelLabel, levelName);
 			setLabelText(titleLabel, resultTitle(result));
 			setLabelColor(titleLabel, resultTitleColor(result));
-			setLabelText(bodyLabel, resultBody(result));
-			setLabelText(hintLabel, resultHint(result));
+
+			if (detail !== undefined) {
+				const rCount = detail.rocketsGot;
+				let rStr = '☆  ☆  ☆';
+				if (rCount === 1) rStr = '★  ☆  ☆';
+				else if (rCount === 2) rStr = '★  ★  ☆';
+				else if (rCount >= 3) rStr = '★  ★  ★';
+				setLabelText(rocketsLabel, rStr);
+				setLabelColor(rocketsLabel, rCount > 0 ? 0xffc83b : 0x607894);
+
+				const pct = detail.dvBudget > 0 ? Math.floor((detail.burnDv / detail.dvBudget) * 100) : 0;
+				const telemText = '点火消耗 Δv: ' + detail.burnDv.toFixed(2) + ' / ' + detail.dvBudget.toFixed(2) + ' (' + pct.toFixed(0) + '%) · 用时: ' + detail.flightTime.toFixed(1) + 's';
+				setLabelText(telemetryLabel, telemText);
+
+				for (let k = 0; k < 3; k++) {
+					if (challengeLabels[k] !== undefined) {
+						if (k < detail.challenges.length) {
+							const ok = detail.achieved[k];
+							const icon = ok ? '★' : '☆';
+							const rank = k === 0 ? '一星' : (k === 1 ? '二星' : '三星');
+							const text = icon + ' [' + rank + '] ' + detail.challenges[k];
+							setLabelText(challengeLabels[k], text);
+							setLabelColor(challengeLabels[k], ok ? 0xffc83b : 0x607894);
+							challengeLabels[k].visible = true;
+						} else {
+							challengeLabels[k].visible = false;
+						}
+					}
+				}
+
+				setLabelText(totalLabel, '全深空火箭勋章: ' + detail.totalRockets.toFixed(0) + ' / ' + detail.totalPossibleRockets.toFixed(0) + ' ★');
+				if (totalLabel !== undefined) totalLabel.visible = true;
+			} else {
+				setLabelText(rocketsLabel, result === 'success' ? '★  ☆  ☆' : '☆  ☆  ☆');
+				setLabelColor(rocketsLabel, result === 'success' ? 0xffc83b : 0x607894);
+				setLabelText(telemetryLabel, resultBody(result));
+				for (let k = 0; k < challengeLabels.length; k++) challengeLabels[k].visible = false;
+				if (totalLabel !== undefined) totalLabel.visible = false;
+			}
 			root.visible = true;
 		},
 		hide: (): void => {
 			root.visible = false;
-			// 兜底：隐藏时把两个按钮的触摸也断掉 —— 任何“隐藏但仍参与命中”的引擎行为
-			// 都不会再吞掉点击（瞄准层在下面，收不到就拖不动）
 			retryButton.setEnabled(false);
 			backButton.setEnabled(false);
 		},
