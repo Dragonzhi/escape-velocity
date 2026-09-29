@@ -62,3 +62,12 @@ npm run verify
 - `dora-types/` —— Dora API 类型声明副本（编译期类型契约；摘自已安装的 Dora SSR v1.9.3，MIT），
   使工具在**没有引擎的机器上也能工作**；也可用 `--dora-dts` 指向引擎自带的 `Script/Lib/Dora/zh-Hans/Dora.d.ts`
 - `node_modules/`、`out/` —— 不纳入版本控制
+
+## 不依赖 Web IDE 缓存的 HTML 导出
+
+在项目根目录运行 `node tools/export-web.mjs --engine "Dora.exe 所在目录"`。
+工具先用临时目录全量构建，检查每份 Lua 与仓库一致，随后读取引擎 `www/web-player/runtime.json` 并验证全部运行时 SHA256。
+复用安装目录的官方 `Service-*.js` 打包逻辑；只有工作空间 API 导入和 ZIP 压缩调度适配到 Node，HTML loader、manifest 和运行时保持官方实现。
+目前适配本项目使用的 v1.9.3 打包器结构，升级后须重新验证；结构不兼容会停止导出。
+输出 `build/escape-velocity-web-html.zip` 与解压目录 `build/web-html/`，只打包游戏 Lua、Assets 和许可说明，不含测试、构建依赖与编辑器状态。
+如果报源码 / Lua 不一致，先按门禁纪律比对并同步相应 Lua，再重跑。

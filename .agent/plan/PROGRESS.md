@@ -391,3 +391,12 @@ git show <commit>:.agent/plan/PROGRESS.md
 
 - **已整理**：README 指向的正式提交素材已更新：1024×1024 PNG 图标与 1080×1920 JPG 封面。
 - **检查**：已目视核对主图内容与尺寸；保留额外 PNG/JPG 预览副本为本地未跟踪素材，不纳入正式提交。
+
+## 2026-09-29 · 导出器异常复核与离线交付
+
+- **日志证据**：21:56 导出在 `Test/OpeningTest.ts` 报 `lua.d.ts` 的 `LuauultiReturn` 拼写错误；21:57 在 `Test/GameProbe.ts` 报测试目录作为 `rootDir` 引起的 TS6059 / TS100001。安装目录中的同一声明实际为 `LuaMultiReturn`，磁盘没有该拼写错误。额外复核 `/ts/build` 时还遇到引擎重复装载 `lualib_bundle.lua`，故不将该接口成功返回当作编译通过。
+- **已实现**：新增 `tools/export-web.mjs`，全量临时构建、逐字节 Lua 门禁、官方运行时 SHA256 门禁，再使用当前安装引擎的官方 manifest / HTML loader / ZIP 实现打包。只适配 Node 的压缩调度，不修改引擎和游戏规则。
+- **已修复**：PlanView 的标签数组使用含可选 label 的非空对象，兼容 Lua 不允许 nil 数组项的限制，同时保留字体缺失时的安全处理；修正第三关标点移动到土星后遗留的海王星测试断言。TS 与 Lua 同步。
+- **已验证**：全量构建 60/60，Lua 比对 60 相同 / 0 不同；活引擎新鲜 UnitRunner 为 15 模块通过、0 失败，共 648 检查。生成约 22 MiB 的官方 HTML 包，运行时 1.9.3、91 个游戏文件；ZIP CRC、95 个内嵌资源的大小与 SHA256、HTML loader 语法检查全部通过。测试、开发依赖和编辑器文件不进入作品包。
+- **未验证**：原 Web IDE 的导出按钮流程未成功复验；自动浏览器工具禁止打开 file://，因此本版 HTML 的启动、手机输入和听音仍需实际浏览器复测。构建产物留在本地 build，不入 Git。
+- **Git 整理**：封面 PNG 与图标 JPG 预览副本一并保存；过时的 `gen_audio.py` 和未使用的 `bgm_deep_space.wav` 保留本地并加入精确本地忽略规则，不运行、不删除。

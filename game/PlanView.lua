@@ -576,7 +576,7 @@ function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) 
 						col -- 590
 					) -- 590
 					if i < #bodyLabels then -- 590
-						local lb = bodyLabels[i + 1] -- 595
+						local lb = bodyLabels[i + 1].label -- 595
 						local near = s.x > -60 and s.x < viewW + 60 and s.y > -60 and s.y < viewH + 60 -- 599
 						setLabelVisible(lb, near) -- 600
 						if not near then -- 600
@@ -751,7 +751,7 @@ function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) 
 				do -- 722
 					local i = 0 -- 723
 					while i < #bs do -- 723
-						bodyLabels[#bodyLabels + 1] = createLabel(labelRoot, "", options.labelFontSize, options.labelHex) -- 724
+						bodyLabels[#bodyLabels + 1] = {label = createLabel(labelRoot, "", options.labelFontSize, options.labelHex)} -- 724
 						i = i + 1 -- 723
 					end -- 723
 				end -- 723

@@ -387,7 +387,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	/** 探测器读数标签（惰性建一次）。 */
 	let probeLabel: Label.Type | undefined = undefined;
 	/** 天体读数标签（与 bodies 一一对应，惰性建）。 */
-	let bodyLabels: (Label.Type | undefined)[] = [];
+	let bodyLabels: { label: Label.Type | undefined }[] = [];
 	/** 探测器的读数文字（在 syncProbe 里按"此刻离哪个天体最近"算出来）。 */
 	let probeReadout = '探测器';
 	/** 上次写进 Label 的文字（**没变就别碰 Label**：文字布局每帧重算是纯浪费，Hud 同款纪律）。 */
@@ -592,7 +592,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			// ④b 读数（B 修复③）：名字 + 它离**宿主**多远（「月球 · 38.4 万 km」）。
 			// 根天体（太阳 / L1 的地球）没有宿主 ⇒ 只写名字，不编一个数字。
 			if (i < bodyLabels.length) {
-				const lb = bodyLabels[i];
+				const lb = bodyLabels[i].label;
 				// ⚠️ 画外天体**不给读数**：贴边夹紧会让"太阳"这种远在天边的天体把标签糊在屏幕角上
 				// （实测：L1 的太阳在平面 (0,0)，离这张图十万八千里，标签却被夹到了标题栏上）。
 				// 只保留"刚好出画"的（±60px）—— 那种情况玩家确实需要知道"它就在那边"。
@@ -721,7 +721,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			if (bodyLabels.length !== bs.length) {
 				bodyLabels = [];
 				for (let i = 0; i < bs.length; i++) {
-					bodyLabels.push(createLabel(labelRoot, '', options.labelFontSize, options.labelHex));
+					bodyLabels.push({ label: createLabel(labelRoot, '', options.labelFontSize, options.labelHex) });
 				}
 			}
 			// S5：以某颗天体为中心时，**中心跟着它走** —— L1 的地球在绕日公转，
