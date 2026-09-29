@@ -30,7 +30,7 @@ import {
 } from 'Dora';
 import {
 	OrbitRingTintHex, PlaneToWorldX, PlaneToWorldZ,
-	SunGlowScale, SunLightIntensity, SunLightRange, SunMinGmForLight,
+	SunGlowScale, SunLightIntensity, SunLightRange, SunFillIntensity,
 } from 'game/Config';
 import { Body, P2, bodyPositionAt } from 'game/Gravity';
 import { FlowDotsPerOrbit, flowDotAngle, orbitCenterAt } from 'game/OrbitFlow';
@@ -224,6 +224,11 @@ export interface PlanetVisual {
 	emissive?: { r: number; g: number; b: number };
 }
 
+/** 恒星按明确的太阳模型识别，质量大的地球仍是行星。 */
+export function isSunVisual(visual: PlanetVisual | undefined): boolean {
+	return visual !== undefined && visual.model === 'Sun';
+}
+
 /** 行星在场景中的句柄。 */
 export interface PlanetNode {
 	/** 行星本体（球体或 .glb 模型）。 */
@@ -292,6 +297,8 @@ export interface SceneOptions {
  * @noSelf
  */
 export interface GameScene {
+	/** 只读验收：没有太阳的 L1 为 undefined。 */
+	sunLight?: PointLight3D.Type;
 	/** 每帧把行星同步到时刻 t 的位置（t 来自物理推演）。 */
 	syncBodies(t: number): void;
 	/** 把探测器同步到平面位置（含大天线"回头指向地球"的更新）。 */
@@ -603,50 +610,33 @@ interface FlowOrbit {
 export function buildScene(options: SceneOptions): GameScene | undefined {
 	const { root, bodies, visuals, probeStart } = options;
 
-	// ---- 恒星（太阳）：它就是光源本身（S3.12）----
-	// 判据：**场里 gm 最大、且不绕别的天体转**的那个天体 = 恒星（L2~L6 是 bodies[0] 的太阳；
-	// L1 是地月系，只有地球 gm 2600 ⇒ 低于 SunMinGmForLight，退回方向光）。
-	// 从前这里无条件是一盏方向光，方位角写死（angleX=-42/angleY=75）——
-	// 于是"太阳在哪"与"光从哪来"毫无关系：行星的明暗交界线不指向太阳，太阳自己也只是
-	// 一颗被照亮的土黄球（用户会话 44 原话："太阳本身不发光"）。
+	// 明确太阳身份；场外日照只用于没有太阳实例的地月关。
 	let starWorld: Vec3.Type | undefined = undefined;
 	let starRadius = 0;
-	let starGm = 0;
+	let starIndex = -1;
 	for (let i = 0; i < bodies.length; i++) {
 		const b = bodies[i];
-		if (b.orbitRadius !== 0) continue; // 会绕别的天体转的不可能是恒星
-		if (b.gm <= starGm) continue;
-		starGm = b.gm;
+		if (!isSunVisual(visuals[i])) continue;
+		starIndex = i;
 		starRadius = b.radius;
-		starWorld = planeToWorld({ x: b.orbitCenter.x, y: b.orbitCenter.y }, 0);
+		starWorld = planeToWorld(bodyPositionAt(b, 0), 0);
+		break;
 	}
-	const hasStar = starWorld !== undefined && starGm >= SunMinGmForLight;
-	// ⚠️ **为什么最终还是方向光**（S3.12 实测过一版点光源）：
-	// 把点光源放在太阳中心（几何上唯一正确的位置）之后，光照按距离衰减 ——
-	// 太阳半径 28、行星轨道 55~195，同一盏灯的强度没法同时照亮金星与海王星：
-	// 实测强度 2.4 与 8.0 两档，**外圈行星全部发黑**（截图对比：木星/土星从暖褐变成暗灰）。
-	// 用户要的"发光"是**视觉**上的（原话："太阳本身不发光就算了"），那件事由
-	// ①太阳本体的自发光贴图 + ②朝向相机的光晕面片完成（见 buildSunGlow），
-	// 行星的晨昏线继续由这盏方向光负责（它的方位角是按截图标定的）。
+	const hasStar = starIndex >= 0;
+	let sunLight: PointLight3D.Type | undefined = undefined;
+	if (hasStar && starWorld !== undefined) {
+		sunLight = PointLight3D();
+		sunLight.position = starWorld; sunLight.color = Color3(0xfff3da);
+		sunLight.intensity = SunLightIntensity; sunLight.range = SunLightRange;
+		root.addChild(sunLight);
+	}
 	{
 		const light = DirectionalLight3D();
 		light.color = Color3(0xfff3da);
-		light.intensity = 3.6;
+		light.intensity = hasStar ? SunFillIntensity : 3.6;
 		light.angleX = -42;
 		light.angleY = 75;
 		root.addChild(light);
-	}
-	// 恒星索引：它的表面照不到自己（光在球心）⇒ 必须靠自发光贴图把自己点亮
-	let starIndex = -1;
-	if (hasStar) {
-		let best = 0;
-		for (let i = 0; i < bodies.length; i++) {
-			const b = bodies[i];
-			if (b.orbitRadius === 0 && b.gm > best) {
-				best = b.gm;
-				starIndex = i;
-			}
-		}
 	}
 
 	// ---- 行星 ----
@@ -897,6 +887,11 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 
 	// ---- 同步函数 ----
 	const syncBodies = (t: number): void => {
+		if (sunLight !== undefined && starIndex >= 0) {
+			starWorld = planeToWorld(bodyPositionAt(bodies[starIndex], t), 0);
+			sunLight.position = starWorld;
+			if (glowNode !== undefined) glowNode.position = starWorld;
+		}
 		for (let i = 0; i < planets.length; i++) {
 			const p = planets[i];
 			const wp = planeToWorld(bodyPositionAt(p.def, t), 0);
@@ -987,6 +982,7 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 
 	return {
 		syncBodies,
+		sunLight,
 		syncProbe,
 		faceVelocity,
 		syncBackdrop,

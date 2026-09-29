@@ -75,13 +75,15 @@ ____exports.AimMaxDragPx = 380 -- 138
 -- 装不下就让它在画外（它的光晕还会从画面边缘扫进来，反而更像"远处一颗恒星"）。
 -- 实测：不设预算时太阳会把取景顶到贴脸（太阳半屏、探测器变成一个小点）。
 ____exports.CameraFramingBudget = 240 -- 158
-____exports.SunLightIntensity = 8 -- 160
---- 点光源有效范围：要盖到海王星轨道（195）×2 还留余量。
-____exports.SunLightRange = 1600 -- 162
+--- 单灯灰球在 220/350/650 距离标定；引擎点光源按距离平方衰减，旧 5.5 候选不可见。
+____exports.SunLightIntensity = 500000 -- 161
+____exports.SunLightRange = 1800 -- 162
+--- 只补暗面轮廓，晨昏方向由太阳点光源主导。
+____exports.SunFillIntensity = 0.15 -- 164
+--- 开场与沙盘为 7.5–55 的微缩场景，使用独立尺度的点光源强度。
+____exports.MiniSunLightIntensity = 2000 -- 166
 --- 光晕面片的缩放（× 恒星半径）：太小看不出"发光"，太大会糊住行星。
-____exports.SunGlowScale = 1.7 -- 164
---- 认定"这是一颗恒星"的 gm 下限：L2~L6 的太阳是 72000，L1 的地球只有 2600（L1 不设点光源）。
-____exports.SunMinGmForLight = 10000 -- 166
+____exports.SunGlowScale = 1.7 -- 168
 --- 飞行回放的**手动倍速档**（模拟秒 / 真实秒，S3.17 起它是"兜底档"而不是常数）。
 -- 
 -- 1 = 实时；2 = 两倍速（默认）。玩家在飞行中可以用 HUD 的 1×/2×/4× 三颗按钮覆盖它
@@ -89,21 +91,21 @@ ____exports.SunMinGmForLight = 10000 -- 166
 -- **叠在**这个档位上（× SlowMoFactor），不替换它 —— 所以"当前播放速度"永远是
 --    手动档 × (慢动作中 ? SlowMoFactor : 1)
 -- 唯一写进 core.flightTime 的地方在 game/Game.ts 的 coreUpdate（不重算物理、不引入第二套时钟）。
-____exports.FlightPlayback = 2 -- 177
+____exports.FlightPlayback = 2 -- 179
 --- 慢动作播放系数：**相对当前手动倍速**的 1/4（不是 0.25× 实时、也不是 1.5×）。
 -- 
 -- 基准（写进注释，别再换算错）：默认手动档 2× ⇒ 慢动作期间 2 × 0.25 = 0.5× 实时；
 -- 玩家切到 4× 时慢动作是 1× 实时，切到 1× 时是 0.25× 实时。
-____exports.SlowMoFactor = 0.25 -- 194
+____exports.SlowMoFactor = 0.25 -- 196
 --- 慢动作触发阈值（世界单位）= `max(天体半径 × SlowMoRadiusFactor, SlowMoFloorDist)`。
 -- 
 -- 为什么是半径 × 系数：天体大小差别太大（月球 1.0 / 木星 4.63 / 太阳 28），
 -- 固定世界单位对木星太细（瞬间就过去）、对月球太粗（全程慢动作）。
 -- 系数 5 的实测含义：木星阈值 23.2（盖住它 17.6 的到达容差 ⇒ **抵达即慢动作**）、
 -- 月球阈值取地板 8（盖住 5 的容差）、金星 8.6、地球 8.8（L1 探测器轨道半径 10 ⇒ 起飞不误触）。
-____exports.SlowMoRadiusFactor = 5 -- 204
+____exports.SlowMoRadiusFactor = 5 -- 206
 --- 慢动作触发阈值的地板（世界单位）：小天体（月球）也要有足够长的慢动作窗口。
-____exports.SlowMoFloorDist = 8 -- 207
+____exports.SlowMoFloorDist = 8 -- 209
 --- 慢动作期间的取景下限（相机与被掠天体的距离地板，世界单位）。
 -- 
 -- 与进关镜头特写的 `IntroCloseDist` 同一量级（木星半径 × 6 ≈ 28）：低于它，
@@ -111,7 +113,7 @@ ____exports.SlowMoFloorDist = 8 -- 207
 -- （实测：不放开下限时相机只从 ~110 收到 60，木星在画面里只大 1.8 倍）。
 -- 取景仍然走 CameraRig 的逐点半径求解（step 的第 4 个参数只是换了下限，
 -- 不是另写一套取景）；装不下时求解器自己会往后退，相机不会穿进天体。
-____exports.SlowMoCloseDist = 26 -- 218
+____exports.SlowMoCloseDist = 26 -- 220
 --- 终章相机距**太阳**（世界原点）的距离（世界单位）。
 -- 
 -- 为什么是 1000：L6 的探测器终点在海王星轨道附近（195），越界半径 700。
@@ -123,8 +125,8 @@ ____exports.SlowMoCloseDist = 26 -- 218
 --   - 太阳（半径 28）角半径 ≈ 1.6 度 ≈ 38 px ⇒ 一个亮点 + 光晕；
 --   - 地球（半径 1.76，轨道 80）距相机约 920–1080 ⇒ 角半径 ≈ 0.10 度 ≈ 2.4 px
 --     ⇒ **直径约 5 px 的一个点**。就是要这么小，别放大。
-____exports.FinaleCamDist = 1000 -- 242
+____exports.FinaleCamDist = 1000 -- 244
 --- 终章相态的**取景倾角**（度）：复用日常取景的默认倾角，不另立一套。
 -- 完全俯视会让轨道圈叠成一条线；45° 下行星轨道还是椭圆，"太阳系还在转"看得出来。
-____exports.FinaleCamTiltDeg = ____exports.CameraTiltDefault -- 248
-return ____exports -- 248
+____exports.FinaleCamTiltDeg = ____exports.CameraTiltDefault -- 250
+return ____exports -- 250

@@ -26,6 +26,7 @@ import {
 	Vec3,
 } from 'Dora';
 import { P2 } from 'game/Gravity';
+import { MiniSunLightIntensity, SunFillIntensity } from 'game/Config';
 import { LevelDef, getLevel, levelCount } from 'game/LevelData';
 import { Progress, getMissionRockets, getTotalRockets } from 'game/Progress';
 import {
@@ -137,6 +138,19 @@ export function formatRocketsString(count: number): string {
 	return '★  ★  ★';
 }
 
+/** 当前转移关按通关计数，旧存档的多枚火箭仍只代表完成了一关。 */
+export function formatProgressSummary(progress: Progress): string {
+	const count = levelCount();
+	let completed = 0;
+	for (let i = 0; i < count; i++) {
+		if (getLevel(i)?.transfer === undefined) {
+			return '全深空火箭勋章: ' + getTotalRockets(progress, count).toFixed(0) + ' / ' + (count * 3).toFixed(0) + ' ★';
+		}
+		if (getMissionRockets(progress, i) > 0) completed += 1;
+	}
+	return '任务完成: ' + completed.toFixed(0) + ' / ' + count.toFixed(0);
+}
+
 /** SolarHub 装配选项。 */
 export interface SolarHubOptions {
 	root: Node3D.Type;
@@ -184,14 +198,14 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	// ---- 3D 场景与光照 ----
 	const sunLight = PointLight3D();
 	sunLight.color = Color3(0xfff3da);
-	sunLight.intensity = 20;
+	sunLight.intensity = MiniSunLightIntensity;
 	sunLight.range = 700;
 	sunLight.position = Vec3(0, 0, 0);
 	root.addChild(sunLight);
 
 	const fillLight = DirectionalLight3D();
 	fillLight.color = Color3(0xbad2eb);
-	fillLight.intensity = 1.6;
+	fillLight.intensity = SunFillIntensity;
 	fillLight.angleX = -38;
 	fillLight.angleY = 65;
 	root.addChild(fillLight);
@@ -409,7 +423,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	const titleLabel = createLabel(topBar, '深空航迹 · 太阳系沙盘', 32, 0xffffff);
 	setLabelCenter(titleLabel, viewW / 2, 60);
 
-	const totalRocketsLabel = createLabel(topBar, '全深空火箭勋章: 0 / 18 ★', 22, 0x9ec5eb);
+	const totalRocketsLabel = createLabel(topBar, '任务完成: 0', 22, 0x9ec5eb);
 	setLabelCenter(totalRocketsLabel, viewW / 2, 24);
 
 	let replayIntroBtn: UiButton | undefined = undefined;
@@ -519,7 +533,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	const launchBtn = createButton(briefCard, {
 		w: launchBtnW,
 		h: btnH,
-		text: '启动任务 / LAUNCH ★',
+		text: '启动任务 / LAUNCH',
 		fontSize: 24,
 		bgHex: PrimaryBtnBgHex,
 		fgHex: PrimaryBtnFgHex,
@@ -621,8 +635,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	/** 刷新所有火箭指示与统计标签。 */
 	const refreshRocketsDisplay = (prog: Progress): void => {
 		currentProgress = prog;
-		const total = getTotalRockets(prog, levelCount());
-		setLabelText(totalRocketsLabel, '全深空火箭勋章: ' + total.toFixed(0) + ' / ' + (levelCount() * 3).toFixed(0) + ' ★');
+		setLabelText(totalRocketsLabel, formatProgressSummary(prog));
 
 		for (let i = 0; i < pins.length; i++) {
 			const p = pins[i];

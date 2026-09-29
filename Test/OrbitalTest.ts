@@ -4,6 +4,7 @@ import { bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { getLevel, installArcadeLevels, findGoalIndex, evaluateRocketsDetailed } from 'game/LevelData';
 import { analyzeOrbitalMission, advanceTransferPlayback, orbitalShotAt, planTransfer } from 'game/Transfer';
 import { GameLevel, createCore, coreLaunch, coreUpdate, coreEndViewing, coreRetry } from 'game/Game';
+import { isSunVisual } from 'game/Scene';
 
 export function runTests(): string {
 	let checks = 0;
@@ -11,6 +12,9 @@ export function runTests(): string {
 	const check = (name: string, ok: boolean): void => { checks++; if (!ok) failures.push(name); };
 	installArcadeLevels(Content.load('Assets/Levels/levels.json'), Content.load('Assets/Levels/bodies.json'), (s: string): unknown => json.decode(s)[0]);
 	const dt = 0.016;
+	check('explicit-sun-model', isSunVisual({ r: 1, g: 1, b: 1, displayRadius: 50, ring: false, model: 'Sun' }));
+	check('massive-earth-not-sun', !isSunVisual({ r: 1, g: 1, b: 1, displayRadius: 42, ring: false, model: 'Planet_Earth' }));
+	check('undefined-not-sun', !isSunVisual(undefined));
 	for (let n = 1; n <= 2; n++) {
 		const lv = getLevel(n)!;
 		if (lv.transfer === undefined || lv.transfer.orbital === undefined) return 'failed\nmissing orbital fixture';
@@ -46,6 +50,7 @@ export function runTests(): string {
 		check(prefix + 'instant-plan-success', analyzeOrbitalMission(ref, lv.planets, cfg, dt, 1).completionIndex > 0);
 		for (const e of analysis.encounters!) check(prefix + 'small-drift-' + e.planetIndex.toFixed(0), distance(flight.points[e.periapsisIndex], ref.points[e.periapsisIndex]) < 5);
 		check(prefix + 'work-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: cfg.encounters.map(e => ({ ...e, minWork: 1e9 })) }, dt, 1).completionIndex < 0);
+		check(prefix + 'missing-assist-fails', analyzeOrbitalMission(flight, lv.planets.map((b, i) => i === 1 ? { ...b, gm: 0 } : b), cfg, dt, 1).completionIndex < 0);
 		check(prefix + 'energy-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: cfg.encounters.map(e => ({ ...e, minEnergyChange: 1e9 })) }, dt, 1).completionIndex < 0);
 		check(prefix + 'safe-distance-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: cfg.encounters.map(e => ({ ...e, minPeriapsis: 105 })) }, dt, 1).completionIndex < 0);
 		const reverse = analyzeOrbitalMission(flight, lv.planets, { ...cfg, region: { ...cfg.region, direction: n === 1 ? 'outward' : 'inward' } }, dt, 1);

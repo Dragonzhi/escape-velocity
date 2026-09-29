@@ -23,6 +23,7 @@
  */
 import { Camera3D, Color, Color3, Content, DirectionalLight3D, Label, Material3D, Model3D, Node, Node3D, Path, PointLight3D, Size, Vec2, Vec3 } from 'Dora';
 import { P2 } from 'game/Gravity';
+import { MiniSunLightIntensity, SunFillIntensity } from 'game/Config';
 import { ProbeHandle, applyPlanetTexture, createProbe, createStarBackdrop, modelRadius, planeToWorld, pointAntenna, probeYawForVelocity } from 'game/Scene';
 import { colorFromHex, createLabel, setLabelCenter } from 'game/Ui';
 
@@ -333,21 +334,18 @@ export function createOpening(options: OpeningOptions): Opening {
 	// ---- 光照：**放在太阳位置的点光源**（2026-09-26 用户拍板）----
 	// 方向光在这里是错的：晨昏线方向与太阳位置无关，特写里的地球会出现"夜面朝着太阳"这种硬伤。
 	// 点光源从原点（太阳）向外照 ⇒ 每颗行星的晨昏线都自然朝外。
-	// 关卡里没有太阳这个实体，所以那边仍旧用方向光（Scene.ts），两边不必一致。
+	// 微缩尺度单独标定强度，与日心关卡一样让太阳主导受光方向。
 	const sunLight = PointLight3D();
 	sunLight.color = Color3(0xfff3da);
-	sunLight.intensity = 0; // 每帧按混合系数给（见 updateWorld）
+	sunLight.intensity = MiniSunLightIntensity;
 	sunLight.range = 600;
 	sunLight.position = Vec3(0, 0, 0);
 	root.addChild(sunLight);
 
-	// 全景段的均匀补光：点光源有距离衰减，外圈（海王星轨道 55）会明显比内圈暗，
-	// 宽景看起来就是"外面几颗发黑"。所以两盏灯**交叉淡入**：
-	// 全景（blend 0）= 方向光为主（均匀、可读），俯冲进特写（blend 1）= 太阳点光源为主（晨昏线正确）。
-	// 底光 0.9 一直留着，避免过渡中间出现"全黑一瞬"。
+	// 弱方向光只补暗部轮廓，全景与特写都保留太阳的主光方向。
 	const fillLight = DirectionalLight3D();
 	fillLight.color = Color3(0xfff3da);
-	fillLight.intensity = 3.6;
+	fillLight.intensity = SunFillIntensity;
 	fillLight.angleX = -42;
 	fillLight.angleY = 75;
 	root.addChild(fillLight);
@@ -478,10 +476,7 @@ export function createOpening(options: OpeningOptions): Opening {
 		options.camera.lookAt(pose.eye, pose.target, Vec3(0, 1, 0));
 		if (backdrop !== undefined) backdrop.sync(pose.eye, pose.target);
 
-		// 两盏灯的交叉淡入（理由见 sunLight / fillLight 的注释）
 		const k = openingBlend(f);
-		fillLight.intensity = 3.6 * (1 - k) + 0.9;
-		sunLight.intensity = 90 * k * k;
 
 		// 轨道线：俯冲进特写就整条收起（理由见 OrbitRingsHideBlend）
 		if (rings !== undefined) rings.visible = k < OrbitRingsHideBlend;

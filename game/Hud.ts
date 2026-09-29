@@ -1506,13 +1506,13 @@ export function createResultPanel(
 			setLabelColor(titleLabel, resultTitleColor(result));
 
 			if (detail !== undefined) {
-				if (detail.completionOnly === true) setLabelText(titleLabel, result === 'success' ? '月球减速掠过完成' : resultTitle(result));
+				if (detail.completionOnly === true) setLabelText(titleLabel, result === 'success' ? '引力借力完成' : resultTitle(result));
 				const rCount = detail.rocketsGot;
 				let rStr = '☆  ☆  ☆';
 				if (rCount === 1) rStr = '★  ☆  ☆';
 				else if (rCount === 2) rStr = '★  ★  ☆';
 				else if (rCount >= 3) rStr = '★  ★  ★';
-				setLabelText(rocketsLabel, detail.completionOnly === true ? (result === 'success' ? '地月转移完成' : '再试一次') : rStr);
+				setLabelText(rocketsLabel, detail.completionOnly === true ? (result === 'success' ? '目标已完成' : '再试一次') : rStr);
 				setLabelColor(rocketsLabel, rCount > 0 ? 0xffc83b : 0x607894);
 
 				const pct = detail.dvBudget > 0 ? Math.floor((detail.burnDv / detail.dvBudget) * 100) : 0;

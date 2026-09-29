@@ -5,6 +5,7 @@ import {
 	HUB_STATIONS,
 	LEVEL_TO_STATION_INDEX,
 	formatRocketsString,
+	formatProgressSummary,
 } from 'game/SolarHub';
 import { getLevel, installArcadeLevels, levelCount } from 'game/LevelData';
 import { Content, json } from 'Dora';
@@ -70,6 +71,10 @@ export function runTests(): string {
 	});
 	testFormatRockets();
 	testStationMappings();
+	check('completion-empty', formatProgressSummary({unlocked: 0}) === '任务完成: 0 / 3', '新存档不得显示三星计数');
+	check('completion-legacy-unlocked', formatProgressSummary({unlocked: 2}) === '任务完成: 2 / 3', '旧解锁存档应保留通关');
+	check('completion-old-multiple-rockets', formatProgressSummary({unlocked: 0, rockets: {L1: 3, L2: 2, L3: 0}}) === '任务完成: 2 / 3', '历史火箭数不能多算通关数量');
+	check('completion-all', formatProgressSummary({unlocked: 2, rockets: {L1: 1, L2: 1, L3: 1}}) === '任务完成: 3 / 3', '最终关完成应计入统计');
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

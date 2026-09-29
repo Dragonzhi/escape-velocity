@@ -205,8 +205,6 @@ export interface PlanOptions {
 	pinRadius: number;
 	/** 恒星的图钉半径（大一点，一眼找到太阳）。 */
 	sunPinRadius: number;
-	/** 认定"这是一颗恒星"的 gm 下限（与 Config.SunMinGmForLight 同源）。 */
-	sunGmMin: number;
 	/** 探测器图钉半径。 */
 	probePinRadius: number;
 	/**
@@ -263,7 +261,6 @@ export function defaultPlanOptions(): PlanOptions {
 		ringSegments: 48,
 		pinRadius: 8,
 		sunPinRadius: 13,
-		sunGmMin: 10000,
 		probePinRadius: 11,
 	maxPinRadius: 26,
 		probeTickLen: 22,
@@ -570,7 +567,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		for (let i = 0; i < bodies.length; i++) {
 			const b = bodies[i];
 			const s = planeToScreen(bodyPositionAt(b, tWorld), map);
-			let r = b.gm >= options.sunGmMin ? options.sunPinRadius : options.pinRadius;
+			let r = i < visuals.length && visuals[i].model === 'Sun' ? options.sunPinRadius : options.pinRadius;
 			if (i < visuals.length) {
 				const v = visuals[i];
 				const vr = v.displayRadius > 0 ? v.displayRadius * map.scale : 0;

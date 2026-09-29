@@ -157,13 +157,15 @@ export const AimMaxDragPx = 380;
  */
 export const CameraFramingBudget = 240;
 
-export const SunLightIntensity = 8.0;
-/** 点光源有效范围：要盖到海王星轨道（195）×2 还留余量。 */
-export const SunLightRange = 1600;
+/** 单灯灰球在 220/350/650 距离标定；引擎点光源按距离平方衰减，旧 5.5 候选不可见。 */
+export const SunLightIntensity = 500000;
+export const SunLightRange = 1800;
+/** 只补暗面轮廓，晨昏方向由太阳点光源主导。 */
+export const SunFillIntensity = 0.15;
+/** 开场与沙盘为 7.5–55 的微缩场景，使用独立尺度的点光源强度。 */
+export const MiniSunLightIntensity = 2000;
 /** 光晕面片的缩放（× 恒星半径）：太小看不出"发光"，太大会糊住行星。 */
 export const SunGlowScale = 1.7;
-/** 认定"这是一颗恒星"的 gm 下限：L2~L6 的太阳是 72000，L1 的地球只有 2600（L1 不设点光源）。 */
-export const SunMinGmForLight = 10000;
 
 /**
  * 飞行回放的**手动倍速档**（模拟秒 / 真实秒，S3.17 起它是"兜底档"而不是常数）。

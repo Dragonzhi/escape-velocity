@@ -1382,7 +1382,7 @@ function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1388
 				if detail.completionOnly == true then -- 1506
 					setLabelText( -- 1509
 						titleLabel, -- 1509
-						result == "success" and "月球减速掠过完成" or resultTitle(result) -- 1509
+						result == "success" and "引力借力完成" or resultTitle(result) -- 1509
 					) -- 1509
 				end -- 1509
 				local rCount = detail.rocketsGot -- 1510
@@ -1394,7 +1394,7 @@ function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1388
 				elseif rCount >= 3 then -- 1513
 					rStr = "★  ★  ★" -- 1514
 				end -- 1514
-				setLabelText(rocketsLabel, detail.completionOnly == true and (result == "success" and "地月转移完成" or "再试一次") or rStr) -- 1515
+				setLabelText(rocketsLabel, detail.completionOnly == true and (result == "success" and "目标已完成" or "再试一次") or rStr) -- 1515
 				setLabelColor(rocketsLabel, rCount > 0 and 16762939 or 6322324) -- 1516
 				local pct = detail.dvBudget > 0 and math.floor(detail.burnDv / detail.dvBudget * 100) or 0 -- 1518
 				local telemText = ((((((("点火消耗 Δv: " .. __TS__NumberToFixed(detail.burnDv, 2)) .. " / ") .. __TS__NumberToFixed(detail.dvBudget, 2)) .. " (") .. __TS__NumberToFixed(pct, 0)) .. "%) · 用时: ") .. __TS__NumberToFixed(detail.flightTime, 1)) .. "s" -- 1519
