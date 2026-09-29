@@ -8,7 +8,7 @@
  */
 import { Body, P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { SunGm } from 'game/Scale';
-import { GoalSpec, bodyVelocityAt, evaluateRockets, evaluateRocketsDetailed, findGoalIndex, getLevel, goalWaypoints, installArcadeLevels, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
+import { GoalSpec, bodyVelocityAt, evaluateRockets, evaluateRocketsDetailed, findGoalIndex, findGoalRegionIndex, getLevel, goalWaypoints, installArcadeLevels, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
 import { Content, json } from 'Dora';
 import { AimMaxSpeed, AimMinSpeed, PhysicsStep } from 'game/Config';
 import { levelRuntime } from 'game/Tuning';
@@ -105,7 +105,22 @@ function testValidity(): void {
 		check('arcade-l1-earth-radius', l1.planets[0].radius > 0 && l1.planets[0].gm > 0, `earth r=${l1.planets[0].radius}`);
 		check('transfer-l1-moon-present', l1.planets[1].name === '月球' && l1.planets[1].gm > 0 && l1.planets.length === 2, '地月教学关必须只有地球与月球');
 		check('transfer-l1-no-stars', l1.stars !== undefined && l1.stars.length === 0, '教学关不收集星尘');
+		check('goal-l1-height-band', l1.goal.region?.minAltitude === 14 && l1.goal.region.maxAltitude === 57 && l1.bonusPoints?.length === 1, 'L1 月球目标环或加分点配置不符');
 	}
+	const l2 = getLevel(1), l3 = getLevel(2);
+	check('goal-l2-mercury-band', l2?.goal.region?.bodyIndex === 2 && l2.goal.region.minAltitude === 6 && l2.bonusPoints?.length === 2, 'L2 水星目标环配置错误');
+	check('goal-l3-solar-escape', l3?.goal.region?.bodyIndex === 0 && l3.goal.region.minAltitude === 828 && l3.goal.region.maxAltitude === 888 && l3.goal.region.requiresEscape === true && l3.goal.region.direction === 'outward' && l3.bonusPoints?.length === 3, 'L3 逃逸目标或点位配置错误');
+	check('goal-l3-body-sizes', l3?.planets[0].radius === 72 && l3.planets[1].radius === 24 && l3.planets[2].radius === 20, 'L3 天体半径覆盖未应用');
+}
+
+function testGoalRegion(): void {
+	const body: Body = { gm: 100, radius: 1, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 };
+	const pts: P2[] = [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 8, y: 0 }];
+	const vel: P2[] = [{ x: 8, y: 0 }, { x: 8, y: 0 }, { x: 8, y: 0 }];
+	const outward = { bodyIndex: 0, minAltitude: 2, maxAltitude: 5, direction: 'outward' as const, requiresEscape: true };
+	check('goal-region-entry', findGoalRegionIndex(pts, vel, [body], outward, 0.1, 0) === 1, '应在首个外向穿环采样完成');
+	check('goal-region-energy-required', findGoalRegionIndex(pts, [{ x: 1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }], [body], outward, 0.1, 0) < 0, '逃逸目标必须满足比能条件');
+	check('goal-region-direction-required', findGoalRegionIndex(pts.slice().reverse(), vel, [body], outward, 0.1, 0) < 0, '向内穿过不能满足向外条件');
 }
 
 /** 2) findGoalIndex：静止与移动目标。 */
@@ -422,6 +437,7 @@ function testEvaluateRockets(): void {
 export function runTests(): string {
 	loadFixture();
 	testValidity();
+	testGoalRegion();
 	testFindGoalIndex();
 	const stats = testReachability();
 	testTimeWindow(stats);

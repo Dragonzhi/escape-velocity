@@ -15,6 +15,7 @@ local scaledPlanets = ____LevelData.scaledPlanets -- 15
 local ____Progress = require("game.Progress") -- 16
 local advanceUnlocked = ____Progress.advanceUnlocked -- 16
 local clampUnlocked = ____Progress.clampUnlocked -- 16
+local getMissionCompleted = ____Progress.getMissionCompleted -- 16
 local getMissionRockets = ____Progress.getMissionRockets -- 16
 local getTotalRockets = ____Progress.getTotalRockets -- 16
 local loadProgress = ____Progress.loadProgress -- 16
@@ -280,52 +281,76 @@ local function testRockets() -- 147
 	check( -- 161
 		"rocket-legacy-l0", -- 161
 		getMissionRockets(pLegacy, 0) == 1, -- 161
-		"旧存档第 1 关应兜底 1" -- 161
+		"纯旧内存结构应兼容旧火箭读取" -- 161
 	) -- 161
 	check( -- 162
 		"rocket-legacy-l1", -- 162
 		getMissionRockets(pLegacy, 1) == 1, -- 162
-		"旧存档第 2 关应兜底 1" -- 162
+		"纯旧内存结构应兼容旧火箭读取" -- 162
 	) -- 162
 	check( -- 163
 		"rocket-legacy-l2", -- 163
 		getMissionRockets(pLegacy, 2) == 0, -- 163
 		"旧存档未通关的关卡应为 0" -- 163
 	) -- 163
-	local levelCountForSave = 6 -- 166
-	local before = loadProgress(levelCountForSave) -- 167
-	saveProgress(p3) -- 168
-	local reloaded = loadProgress(levelCountForSave) -- 169
-	check( -- 170
-		"rocket-save-roundtrip-l0", -- 170
-		getMissionRockets(reloaded, 0) == 2, -- 170
-		"写盘读回 L1 应为 2" -- 170
-	) -- 170
-	check( -- 171
-		"rocket-save-roundtrip-l1", -- 171
-		getMissionRockets(reloaded, 1) == 3, -- 171
-		"写盘读回 L2 应为 3" -- 171
-	) -- 171
-	check("rocket-save-roundtrip-unlocked", reloaded.unlocked == 2, "写盘读回 unlocked 应为 2") -- 172
-	saveProgress(before) -- 173
+	local zeroScoreClear = recordMissionResult( -- 164
+		{unlocked = 0}, -- 164
+		0, -- 164
+		0, -- 164
+		6, -- 164
+		true -- 164
+	) -- 164
+	check( -- 165
+		"zero-score-clear", -- 165
+		getMissionCompleted(zeroScoreClear, 0) and getMissionRockets(zeroScoreClear, 0) == 0 and zeroScoreClear.unlocked == 1, -- 165
+		"零火箭成功应独立保存完成与解锁" -- 165
+	) -- 165
+	local levelCountForSave = 6 -- 168
+	local before = loadProgress(levelCountForSave) -- 169
+	saveProgress(p3) -- 170
+	local reloaded = loadProgress(levelCountForSave) -- 171
+	check( -- 172
+		"rocket-save-roundtrip-l0", -- 172
+		getMissionRockets(reloaded, 0) == 2, -- 172
+		"写盘读回 L1 应为 2" -- 172
+	) -- 172
+	check( -- 173
+		"rocket-save-roundtrip-l1", -- 173
+		getMissionRockets(reloaded, 1) == 3, -- 173
+		"写盘读回 L2 应为 3" -- 173
+	) -- 173
+	check("rocket-save-roundtrip-unlocked", reloaded.unlocked == 2, "写盘读回 unlocked 应为 2") -- 174
+	saveProgress({unlocked = 2, rockets = {L1 = 3, L2 = 2}}) -- 175
+	local migrated = loadProgress(levelCountForSave) -- 176
+	check( -- 177
+		"legacy-completion-migrates", -- 177
+		getMissionCompleted(migrated, 0) and getMissionCompleted(migrated, 1), -- 177
+		"旧火箭记录应迁移为已完成" -- 177
+	) -- 177
+	check( -- 178
+		"legacy-score-starts-zero", -- 178
+		getMissionRockets(migrated, 0) == 0 and getMissionRockets(migrated, 1) == 0, -- 178
+		"旧火箭评价不能折算为新点位分数" -- 178
+	) -- 178
+	saveProgress(before) -- 179
 end -- 147
-function ____exports.runTests() -- 176
-	testClamp() -- 177
-	testAdvance() -- 178
-	testPersistence() -- 179
-	testBackToSelect() -- 180
-	testRockets() -- 181
-	local lines = {} -- 183
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 184
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 185
-	local limit = #failures < 12 and #failures or 12 -- 186
-	do -- 186
-		local i = 0 -- 187
-		while i < limit do -- 187
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 188
-			i = i + 1 -- 187
-		end -- 187
-	end -- 187
-	return table.concat(lines, "\n") -- 190
-end -- 176
-return ____exports -- 176
+function ____exports.runTests() -- 182
+	testClamp() -- 183
+	testAdvance() -- 184
+	testPersistence() -- 185
+	testBackToSelect() -- 186
+	testRockets() -- 187
+	local lines = {} -- 189
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 190
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 191
+	local limit = #failures < 12 and #failures or 12 -- 192
+	do -- 192
+		local i = 0 -- 193
+		while i < limit do -- 193
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 194
+			i = i + 1 -- 193
+		end -- 193
+	end -- 193
+	return table.concat(lines, "\n") -- 196
+end -- 182
+return ____exports -- 182

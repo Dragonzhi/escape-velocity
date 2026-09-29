@@ -28,7 +28,7 @@ import {
 import { P2 } from 'game/Gravity';
 import { MiniSunLightIntensity, SunFillIntensity } from 'game/Config';
 import { LevelDef, getLevel, levelCount } from 'game/LevelData';
-import { Progress, getMissionRockets, getTotalRockets } from 'game/Progress';
+import { Progress, getMissionCompleted, getMissionRockets, getTotalRockets } from 'game/Progress';
 import {
 	applyPlanetTexture,
 	createProbe,
@@ -142,13 +142,9 @@ export function formatRocketsString(count: number): string {
 export function formatProgressSummary(progress: Progress): string {
 	const count = levelCount();
 	let completed = 0;
-	for (let i = 0; i < count; i++) {
-		if (getLevel(i)?.transfer === undefined) {
-			return '全深空火箭勋章: ' + getTotalRockets(progress, count).toFixed(0) + ' / ' + (count * 3).toFixed(0) + ' ★';
-		}
-		if (getMissionRockets(progress, i) > 0) completed += 1;
-	}
-	return '任务完成: ' + completed.toFixed(0) + ' / ' + count.toFixed(0);
+	let possible = 0;
+	for (let i = 0; i < count; i++) { if (getMissionCompleted(progress, i)) completed += 1; possible += getLevel(i)?.bonusPoints?.length || 0; }
+	return '已完成 ' + completed.toFixed(0) + ' / ' + count.toFixed(0) + ' · 火箭 ' + getTotalRockets(progress, count).toFixed(0) + ' / ' + possible.toFixed(0);
 }
 
 /** SolarHub 装配选项。 */
@@ -561,10 +557,24 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 		setLabelText(bTitleLabel, 'L' + (levelIndex + 1).toFixed(0) + ' · ' + lv.title + ' · ' + m.subtitle);
 		setLabelText(bSubtitleLabel, m.historicalRef + ' (' + m.codeName + ')');
 
-		setLabelText(bVehicleLabel, '【 飞掠型探测器 · 深空高速引力借力 】');
+		const savedScore = getMissionRockets(progress, levelIndex);
+		const cleared = getMissionCompleted(progress, levelIndex);
+		const bonusCount = lv.bonusPoints !== undefined ? lv.bonusPoints.length : 0;
+		setLabelText(bVehicleLabel, '【 飞掠型探测器 】 · ' + (cleared ? '已完成' : '待完成') + ' · 火箭最高分 ' + savedScore.toFixed(0) + '/' + bonusCount.toFixed(0));
 		setLabelColor(bVehicleLabel, 0x7fe3a0);
 
 		const rocketsGot = getMissionRockets(progress, levelIndex);
+		if (lv.bonusPoints !== undefined) {
+			const names: Record<string, string> = { 'moon-pass': '月球掠过', 'venus-assist': '金星借力', 'mercury-pass': '水星飞掠', 'jupiter-assist': '木星借力', 'saturn-assist': '土星借力', 'deep-space': '深空航点' };
+			for (let k = 0; k < 3; k++) {
+				if (k >= lv.bonusPoints.length) { setLabelVisible(challengeLabels[k], false); continue; }
+				setLabelVisible(challengeLabels[k], true);
+				const id = lv.bonusPoints[k].id;
+				setLabelText(challengeLabels[k], '绿色光点 · ' + (names[id] !== undefined ? names[id] : id));
+				setLabelColor(challengeLabels[k], 0x8cff9b);
+			}
+			return;
+		}
 		for (let k = 0; k < 3; k++) {
 			const c = m.challenges[k];
 			if (c === undefined) { setLabelVisible(challengeLabels[k], false); continue; }
@@ -637,12 +647,13 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 		for (let i = 0; i < pins.length; i++) {
 			const p = pins[i];
 			const count = getMissionRockets(prog, p.levelIndex);
-			const teaching = getLevel(p.levelIndex)?.transfer !== undefined;
-			setLabelText(p.rocketLabel, teaching ? (count > 0 ? '已完成' : '转移练习') : formatRocketsString(count));
+			const complete = getMissionCompleted(prog, p.levelIndex);
+			const total = getLevel(p.levelIndex)?.bonusPoints?.length || 0;
+			setLabelText(p.rocketLabel, (complete ? '已完成' : '待完成') + ' · 🚀 ' + count.toFixed(0) + '/' + total.toFixed(0));
 			setLabelColor(p.rocketLabel, count > 0 ? GoldStarHex : DimStarHex);
 
 			// 同步刷新底部 Dock 按钮文字
-			dockButtons[i].setText('L' + (p.levelIndex + 1).toFixed(0) + ' ' + (count > 0 ? (teaching ? '已完成' : count.toFixed(0) + '★') : ''));
+			dockButtons[i].setText('L' + (p.levelIndex + 1).toFixed(0) + ' ' + (complete ? '✓' : '') + ' 🚀' + count.toFixed(0));
 		}
 	};
 

@@ -317,6 +317,9 @@ export interface AimInput {
 	onQuickRetry: (callback: () => void) => void;
 	/** 街机模式：顶部三星收集状态指示。 */
 	setStarsStatus: (starsGot: number) => void;
+	setBonusStatus: (got: number, total: number) => void;
+	/** 显示刚获得的独立火箭分数。 */
+	setBonusFeedback: (score: number) => void;
 	/** 根节点：调用方自行 addChild 到想要的层级。 */
 	root: Node.Type;
 }
@@ -600,6 +603,8 @@ export function createAimInput(
 	starPlate.position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22);
 	starPlate.visible = !transferTutorial;
 	const starStatusLabel = createLabel(root, '☆ ☆ ☆', 30, 0xffd700);
+	const bonusToastLabel = createLabel(root, '', 34, 0x8cff9b);
+	if (bonusToastLabel !== undefined) { bonusToastLabel.position = Vec2(viewW / 2, viewH * 0.68); bonusToastLabel.visible = false; }
 	if (starStatusLabel !== undefined) {
 		starStatusLabel.anchor = Vec2(0.5, 0.5);
 		starStatusLabel.position = Vec2(viewW / 2, viewH - starPlateH / 2 - 22);
@@ -612,6 +617,12 @@ export function createAimInput(
 		else if (count === 2) s = '★ ★ ☆';
 		else if (count >= 3) s = '★ ★ ★';
 		setLabelText(starStatusLabel, s);
+	};
+	const updateBonusStatus = (got: number, total: number): void => {
+		if (starStatusLabel === undefined) return;
+		starPlate.visible = total > 0;
+		starStatusLabel.visible = total > 0;
+		if (total > 0) setLabelText(starStatusLabel, '🚀 ' + got.toFixed(0) + ' / ' + total.toFixed(0));
 	};
 
 	// ---- 「发射」按钮（S3.10，右下角拇指区；只在 Armed 态出现）----
@@ -843,6 +854,7 @@ export function createAimInput(
 	}
 	missionDrawerPlate.visible = false;
 	let drawerVisible = false;
+	let bonusToastSerial = 0;
 	let drawerLevelTitle = '';
 	let drawerRockets = 0;
 	let liveFuelBonus = false;
@@ -1130,6 +1142,20 @@ export function createAimInput(
 		setStarsStatus: (starsGot: number): void => {
 			updateStarsStatus(starsGot);
 		},
+		setBonusStatus: (got: number, total: number): void => { updateBonusStatus(got, total); },
+		setBonusFeedback: (score: number): void => {
+			if (bonusToastLabel === undefined) return;
+			bonusToastSerial += 1;
+			const serial = bonusToastSerial;
+			setLabelText(bonusToastLabel, '🚀 +' + score.toFixed(0));
+			bonusToastLabel.visible = true;
+			let elapsed = 0;
+			root.schedule((deltaTime: number): boolean => {
+				elapsed += deltaTime;
+				if (elapsed >= 0.6) { if (serial === bonusToastSerial) bonusToastLabel.visible = false; return true; }
+				return false;
+			});
+		},
 		root,
 	};
 }
@@ -1219,6 +1245,7 @@ export interface ResultPanelOptions {
 /** 结算详情参数（S7 三枚火箭评价）。 */
 export interface ResultDetailParams {
 	completionOnly?: boolean;
+	bonusPointCount?: number;
 	result: ResultKind;
 	levelName: string;
 	levelIndex: number;
@@ -1379,7 +1406,7 @@ export function createResultPanel(
 				if (rCount === 1) rStr = '★  ☆  ☆';
 				else if (rCount === 2) rStr = '★  ★  ☆';
 				else if (rCount >= 3) rStr = '★  ★  ★';
-				setLabelText(rocketsLabel, detail.completionOnly === true ? (result === 'success' ? '目标已完成' : '再试一次') : rStr);
+				setLabelText(rocketsLabel, detail.completionOnly === true ? (result === 'success' ? '目标已完成' : '再试一次') : (detail.bonusPointCount !== undefined ? '火箭得分 ' + rCount.toFixed(0) + ' / ' + detail.bonusPointCount.toFixed(0) : rStr));
 				setLabelColor(rocketsLabel, rCount > 0 ? 0xffc83b : 0x607894);
 
 				const pct = detail.dvBudget > 0 ? Math.floor((detail.burnDv / detail.dvBudget) * 100) : 0;

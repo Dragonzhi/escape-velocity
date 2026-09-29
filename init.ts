@@ -133,6 +133,8 @@ if (!installArcadeLevels(levelsText, bodiesText, decodeLevelJson)) {
 	print('[escape-velocity] FATAL: levels.json 没有装上');
 }
 const levelTotal = levelCount();
+let totalBonusPoints = 0;
+for (let i = 0; i < levelTotal; i++) totalBonusPoints += getLevel(i)?.bonusPoints?.length || 0;
 
 if (levelTotal <= 0) {
 	print('[escape-velocity] FATAL: no level data');
@@ -259,12 +261,15 @@ if (levelTotal <= 0) {
 
 		const bodies = scaledPlanets(def);
 		const level: GameLevel = {
+			levelId: index + 1,
 			transfer: def.transfer,
 			bodies,
 			probeStart: def.probeStart,
 			// S3.9.3：出发时已有的速度（L1 = 绕地球的圆轨道速度）—— 玩家拖出来的是点火 Δv，落在它上面。
 			probeVel0: def.probeVel0,
 			goal: def.goal,
+			bonusPoints: def.bonusPoints,
+			viewingSeconds: index === 0 ? 24 : (index === 1 ? 12 : 6),
 			escapeRadius: def.escapeRadius,
 			physicsStep: levelRuntime(index).physicsStep,
 			// 街机关：pow 0 = 1 游戏秒 / 1 真实秒。太阳系那套 GameSecondsPerRealSecond 会把表冻住。
@@ -434,10 +439,18 @@ if (levelTotal <= 0) {
 					}
 				}
 			},
-			onMissionCompleted: (): void => {
-				progress = recordMissionResult(progress, index, 1, levelTotal);
+			onMissionCompleted: (telem: FlightTelemetry): void => {
+				progress = recordMissionResult(progress, index, def.bonusPoints !== undefined ? (telem.bonusRockets || 0) : 0, levelTotal, true);
 				saveProgress(progress);
 				print('[escape-velocity] flyby completion saved L' + (index + 1).toFixed(0));
+			},
+			onBonusCollected: (score: number, pointId: string): void => {
+				aim.setBonusFeedback(1);
+				if (game.missionCompleted()) {
+					progress = recordMissionResult(progress, index, score, levelTotal, true);
+					saveProgress(progress);
+				}
+				print('[escape-velocity] bonus +' + score.toFixed(0) + ' id=' + pointId);
 			},
 			onResult: (r: ResultKind, telemetry?: FlightTelemetry): void => {
 				const telem = telemetry !== undefined ? telemetry : {
@@ -452,22 +465,27 @@ if (levelTotal <= 0) {
 					eccentricity: telem.eccentricity,
 					starsCollected: telem.starsCollected !== undefined ? telem.starsCollected : 0,
 				});
+				const score = def.bonusPoints !== undefined ? (r === 'success' ? (telem.bonusRockets || 0) : 0) : evalInfo.rockets;
+				if (def.bonusPoints !== undefined) {
+					evalInfo.rockets = score;
+					evalInfo.achieved = [r === 'success', score > 0, score >= (def.bonusPoints.length || 1)];
+				}
 
-				// 推进并保存火箭挑战进度
-				if (!game.missionCompleted()) {
-					progress = recordMissionResult(progress, index, evalInfo.rockets, levelTotal);
+				// 完成记录与最高分分离；只在成功结果时更新本局最高分。
+				if (r === 'success') {
+					progress = recordMissionResult(progress, index, score, levelTotal, true);
 					saveProgress(progress);
 				}
 				const currentTotal = getTotalRockets(progress, levelTotal);
 
 				print('[escape-velocity] result = ' + r + ' on ' + levelNames[index]
 					+ ' rockets=' + evalInfo.rockets.toFixed(0)
-					+ ' (total=' + currentTotal.toFixed(0) + '/' + (levelTotal * 3).toFixed(0) + ')');
+					+ ' (total=' + currentTotal.toFixed(0) + '/' + totalBonusPoints.toFixed(0) + ')');
 
 				resultIndex = index; // 面板显示的是这一关的结算
 
 				const challengesList: string[] = [];
-				if (def.mission !== undefined) {
+				if (def.bonusPoints === undefined && def.mission !== undefined) {
 					for (let k = 0; k < def.mission.challenges.length; k++) {
 						challengesList.push(def.mission.challenges[k].desc);
 					}
@@ -483,13 +501,14 @@ if (levelTotal <= 0) {
 					levelIndex: index,
 					rocketsGot: evalInfo.rockets,
 					challenges: challengesList,
-					completionOnly: def.transfer !== undefined,
+					completionOnly: def.bonusPoints === undefined,
+					bonusPointCount: def.bonusPoints !== undefined ? def.bonusPoints.length : undefined,
 					achieved: evalInfo.achieved,
 					burnDv: telem.burnDv,
 					dvBudget: def.dvBudget,
 					flightTime: telem.flightTime,
 					totalRockets: currentTotal,
-					totalPossibleRockets: levelTotal * 3,
+					totalPossibleRockets: totalBonusPoints,
 				};
 
 				if (resultPanel !== undefined) {
@@ -984,6 +1003,7 @@ if (levelTotal <= 0) {
 			// Armed 是状态，按钮显隐跟着状态走（AGENTS 硬约束 5）
 			runtime.aim.setArmed(runtime.game.armed());
 			runtime.aim.setStarsStatus(runtime.game.starsNow());
+			runtime.aim.setBonusStatus(runtime.game.bonusScore(), runtime.game.bonusTotal());
 			// 视图也是状态：右下角那颗按钮的文字跟着 core.viewMode 走（别自己翻转局部变量）
 			const is2D = runtime.game.viewMode() === '2D';
 			runtime.aim.setViewMode(runtime.game.viewMode());

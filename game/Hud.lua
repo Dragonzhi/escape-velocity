@@ -118,1012 +118,1057 @@ end -- 178
 -- @param parent 挂载父节点（通常是 Director.ui）
 -- @param viewW 视图宽（`View.size.width`）
 -- @param viewH 视图高（`View.size.height`）
-function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, speedChoices, transferTutorial, transferMode) -- 338
-	if transferTutorial == nil then -- 338
-		transferTutorial = false -- 348
-	end -- 348
-	if transferMode == nil then -- 348
-		transferMode = "lunar" -- 349
-	end -- 349
-	local datePlate, dateLabel -- 349
-	local speedMin = minSpeed ~= nil and minSpeed >= 0 and minSpeed < (maxSpeed ~= nil and maxSpeed or AimMaxSpeed) and minSpeed or AimMinSpeed -- 351
-	local speedTop = maxSpeed ~= nil and maxSpeed > speedMin and maxSpeed or AimMaxSpeed -- 353
-	local root = Node() -- 354
-	root.size = Size(viewW, viewH) -- 355
-	root.anchor = Vec2(0, 0) -- 361
-	root.position = Vec2(0, 0) -- 362
-	local touchLayer = Node() -- 365
-	touchLayer.size = Size(viewW, viewH) -- 366
-	touchLayer.anchor = Vec2(0.5, 0.5) -- 367
-	touchLayer.position = Vec2(viewW / 2, viewH / 2) -- 368
-	touchLayer.swallowTouches = true -- 369
-	root:addChild(touchLayer) -- 370
-	local space = {viewW = viewW, viewH = viewH} -- 372
-	local enabled = false -- 374
-	local dragging = false -- 375
+function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, speedChoices, transferTutorial, transferMode) -- 341
+	if transferTutorial == nil then -- 341
+		transferTutorial = false -- 351
+	end -- 351
+	if transferMode == nil then -- 351
+		transferMode = "lunar" -- 352
+	end -- 352
+	local datePlate, dateLabel -- 352
+	local speedMin = minSpeed ~= nil and minSpeed >= 0 and minSpeed < (maxSpeed ~= nil and maxSpeed or AimMaxSpeed) and minSpeed or AimMinSpeed -- 354
+	local speedTop = maxSpeed ~= nil and maxSpeed > speedMin and maxSpeed or AimMaxSpeed -- 356
+	local root = Node() -- 357
+	root.size = Size(viewW, viewH) -- 358
+	root.anchor = Vec2(0, 0) -- 364
+	root.position = Vec2(0, 0) -- 365
+	local touchLayer = Node() -- 368
+	touchLayer.size = Size(viewW, viewH) -- 369
+	touchLayer.anchor = Vec2(0.5, 0.5) -- 370
+	touchLayer.position = Vec2(viewW / 2, viewH / 2) -- 371
+	touchLayer.swallowTouches = true -- 372
+	root:addChild(touchLayer) -- 373
+	local space = {viewW = viewW, viewH = viewH} -- 375
+	local enabled = false -- 377
+	local dragging = false -- 378
 	--- 整屏瞄准（2D 模式）；由 Game 按视图状态同步。
-	local fullScreenAim = false -- 377
-	local aim = {velocity = {x = 0, y = -speedMin}, power = 0, unit = {x = 0, y = -1}} -- 378
-	local probeOffset = {x = 0, y = 0} -- 381
-	local dragHandler = nil -- 383
-	local readyHandler = nil -- 384
-	local observeHandler = nil -- 385
-	local zoomHandler = nil -- 386
-	local launchHandler = nil -- 387
-	local skipTourHandler = nil -- 388
-	local tourActiveChecker = nil -- 389
-	local pressOffset = {x = 0, y = 0} -- 400
+	local fullScreenAim = false -- 380
+	local aim = {velocity = {x = 0, y = -speedMin}, power = 0, unit = {x = 0, y = -1}} -- 381
+	local probeOffset = {x = 0, y = 0} -- 384
+	local dragHandler = nil -- 386
+	local readyHandler = nil -- 387
+	local observeHandler = nil -- 388
+	local zoomHandler = nil -- 389
+	local launchHandler = nil -- 390
+	local skipTourHandler = nil -- 391
+	local tourActiveChecker = nil -- 392
+	local pressOffset = {x = 0, y = 0} -- 403
 	--- 用"相对按下点的位移"驱动一次瞄准（位移为 0 时即 computeAim 的中性解 = 直飞）。
-	local function handleDelta(delta) -- 403
-		aim = ____exports.computeAim( -- 404
-			{x = 0, y = 0}, -- 404
-			delta, -- 404
-			AimMaxDragPx, -- 404
-			speedTop, -- 404
-			speedMin -- 404
-		) -- 404
-		if dragHandler ~= nil then -- 404
-			dragHandler(aim) -- 405
-		end -- 405
-	end -- 403
-	local aimRadius = math.max(96, viewW * 0.25) -- 412
-	local mode = "none" -- 413
-	local observeLast = {x = 0, y = 0} -- 414
-	touchLayer:onTapBegan(function(touch) -- 415
-		if not enabled then -- 415
-			return -- 416
-		end -- 416
-		if tourActiveChecker ~= nil and tourActiveChecker() and skipTourHandler ~= nil then -- 416
-			skipTourHandler() -- 418
+	local function handleDelta(delta) -- 406
+		aim = ____exports.computeAim( -- 407
+			{x = 0, y = 0}, -- 407
+			delta, -- 407
+			AimMaxDragPx, -- 407
+			speedTop, -- 407
+			speedMin -- 407
+		) -- 407
+		if dragHandler ~= nil then -- 407
+			dragHandler(aim) -- 408
+		end -- 408
+	end -- 406
+	local aimRadius = math.max(96, viewW * 0.25) -- 415
+	local mode = "none" -- 416
+	local observeLast = {x = 0, y = 0} -- 417
+	touchLayer:onTapBegan(function(touch) -- 418
+		if not enabled then -- 418
 			return -- 419
 		end -- 419
-		local at = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 421
-		local dx = at.x - probeOffset.x -- 422
-		local dy = at.y - probeOffset.y -- 423
-		if fullScreenAim or math.sqrt(dx * dx + dy * dy) <= aimRadius then -- 423
-			mode = "aim" -- 425
-			dragging = true -- 426
-			pressOffset = at -- 427
-			handleDelta({x = 0, y = 0}) -- 429
-		else -- 429
-			mode = "observe" -- 431
-			observeLast = at -- 432
-		end -- 432
-	end) -- 415
-	touchLayer:onTapMoved(function(touch) -- 436
-		if not enabled then -- 436
-			return -- 437
-		end -- 437
-		local cur = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 438
-		if mode == "aim" and dragging then -- 438
-			handleDelta({x = cur.x - pressOffset.x, y = cur.y - pressOffset.y}) -- 440
-		elseif mode == "observe" then -- 440
-			if observeHandler ~= nil then -- 440
-				observeHandler(cur.x - observeLast.x, cur.y - observeLast.y) -- 443
-			end -- 443
-			observeLast = cur -- 444
-		end -- 444
-	end) -- 436
-	touchLayer:onTapEnded(function(touch) -- 448
-		if not enabled then -- 448
-			return -- 449
-		end -- 449
-		local cur = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 450
-		if mode == "aim" then -- 450
-			dragging = false -- 452
-			handleDelta({x = cur.x - pressOffset.x, y = cur.y - pressOffset.y}) -- 453
-			if readyHandler ~= nil then -- 453
-				readyHandler(aim) -- 455
-			end -- 455
-		end -- 455
-		mode = "none" -- 457
-	end) -- 448
-	touchLayer:onGesture(function(_center, numFingers, deltaDist, _deltaAngle) -- 461
-		if not enabled or numFingers < 2 then -- 461
-			return -- 462
-		end -- 462
-		if zoomHandler ~= nil then -- 462
-			zoomHandler(deltaDist) -- 463
-		end -- 463
-	end) -- 461
-	touchLayer.touchEnabled = false -- 471
-	createPanel( -- 477
-		root, -- 477
-		220, -- 477
-		50, -- 477
-		658964, -- 477
-		{alpha = 0.45} -- 477
-	) -- 477
-	local orbitName = transferMode == "inward" and "近日点" or (transferMode == "outward" and "远日点" or "远地点高度") -- 478
-	local dvLabel = createLabel(root, transferTutorial and "拖动调整" .. orbitName or "Δv — / —", transferTutorial and 22 or 30, ResultHintHex) -- 479
-	if dvLabel ~= nil then -- 479
-		dvLabel.position = Vec2(24, viewH - (transferTutorial and 130 or 44)) -- 481
-		dvLabel.anchor = Vec2(0, 0) -- 482
-	end -- 482
-	local warpHandler = nil -- 492
-	local dateSpan = 0 -- 493
+		if tourActiveChecker ~= nil and tourActiveChecker() and skipTourHandler ~= nil then -- 419
+			skipTourHandler() -- 421
+			return -- 422
+		end -- 422
+		local at = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 424
+		local dx = at.x - probeOffset.x -- 425
+		local dy = at.y - probeOffset.y -- 426
+		if fullScreenAim or math.sqrt(dx * dx + dy * dy) <= aimRadius then -- 426
+			mode = "aim" -- 428
+			dragging = true -- 429
+			pressOffset = at -- 430
+			handleDelta({x = 0, y = 0}) -- 432
+		else -- 432
+			mode = "observe" -- 434
+			observeLast = at -- 435
+		end -- 435
+	end) -- 418
+	touchLayer:onTapMoved(function(touch) -- 439
+		if not enabled then -- 439
+			return -- 440
+		end -- 440
+		local cur = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 441
+		if mode == "aim" and dragging then -- 441
+			handleDelta({x = cur.x - pressOffset.x, y = cur.y - pressOffset.y}) -- 443
+		elseif mode == "observe" then -- 443
+			if observeHandler ~= nil then -- 443
+				observeHandler(cur.x - observeLast.x, cur.y - observeLast.y) -- 446
+			end -- 446
+			observeLast = cur -- 447
+		end -- 447
+	end) -- 439
+	touchLayer:onTapEnded(function(touch) -- 451
+		if not enabled then -- 451
+			return -- 452
+		end -- 452
+		local cur = ____exports.localToOffset({x = touch.location.x, y = touch.location.y}, space) -- 453
+		if mode == "aim" then -- 453
+			dragging = false -- 455
+			handleDelta({x = cur.x - pressOffset.x, y = cur.y - pressOffset.y}) -- 456
+			if readyHandler ~= nil then -- 456
+				readyHandler(aim) -- 458
+			end -- 458
+		end -- 458
+		mode = "none" -- 460
+	end) -- 451
+	touchLayer:onGesture(function(_center, numFingers, deltaDist, _deltaAngle) -- 464
+		if not enabled or numFingers < 2 then -- 464
+			return -- 465
+		end -- 465
+		if zoomHandler ~= nil then -- 465
+			zoomHandler(deltaDist) -- 466
+		end -- 466
+	end) -- 464
+	touchLayer.touchEnabled = false -- 474
+	createPanel( -- 480
+		root, -- 480
+		220, -- 480
+		50, -- 480
+		658964, -- 480
+		{alpha = 0.45} -- 480
+	) -- 480
+	local orbitName = transferMode == "inward" and "近日点" or (transferMode == "outward" and "远日点" or "远地点高度") -- 481
+	local dvLabel = createLabel(root, transferTutorial and "拖动调整" .. orbitName or "Δv — / —", transferTutorial and 22 or 30, ResultHintHex) -- 482
+	if dvLabel ~= nil then -- 482
+		dvLabel.position = Vec2(24, viewH - (transferTutorial and 130 or 44)) -- 484
+		dvLabel.anchor = Vec2(0, 0) -- 485
+	end -- 485
+	local warpHandler = nil -- 495
+	local dateSpan = 0 -- 496
 	--- 这一关有时间轴**且**当前相态允许改日期（Flying/Result 时必须是 false）。
-	local warpOn = true -- 500
-	local warpVisible = true -- 501
+	local warpOn = true -- 503
+	local warpVisible = true -- 504
 	--- 相态是否允许改日期（由主循环每帧 setTimeEnabled 同步）。
-	local warpAllowed = true -- 503
+	local warpAllowed = true -- 506
 	--- 上次写进日期的文字（避免每帧重设 Label 文本）。
-	local lastDateText = "" -- 505
+	local lastDateText = "" -- 508
 	--- >0 = 正在按住这个方向（-1 回退 / +1 加速）；0 = 没按住。
-	local warpHoldDir = 0 -- 507
+	local warpHoldDir = 0 -- 510
 	--- 距离下一次连按还有多久（秒）。
-	local warpRepeatIn = 0 -- 509
-	local WarpButtonW = 116 -- 510
-	local WarpButtonH = 64 -- 511
-	local warpButtons = {} -- 512
-	local function applyWarpState() -- 513
-		local vis = dateSpan > 0 -- 514
-		local on = vis and warpAllowed -- 515
-		if vis == warpVisible and on == warpOn then -- 515
-			return -- 516
-		end -- 516
-		warpVisible = vis -- 517
-		warpOn = on -- 518
-		if not on then -- 518
-			warpHoldDir = 0 -- 519
+	local warpRepeatIn = 0 -- 512
+	local WarpButtonW = 116 -- 513
+	local WarpButtonH = 64 -- 514
+	local warpButtons = {} -- 515
+	local function applyWarpState() -- 516
+		local vis = dateSpan > 0 -- 517
+		local on = vis and warpAllowed -- 518
+		if vis == warpVisible and on == warpOn then -- 518
+			return -- 519
 		end -- 519
-		for ____, b in ipairs(warpButtons) do -- 520
-			b.root.visible = vis -- 521
-			b:setEnabled(on) -- 522
+		warpVisible = vis -- 520
+		warpOn = on -- 521
+		if not on then -- 521
+			warpHoldDir = 0 -- 522
 		end -- 522
-		if dateLabel ~= nil then -- 522
-			dateLabel.visible = vis -- 524
-		end -- 524
-		datePlate.visible = vis -- 525
-	end -- 513
-	local function makeWarpButton(text, dir, x) -- 527
-		local btn = createButton( -- 528
-			root, -- 528
-			{ -- 528
-				w = WarpButtonW, -- 529
-				h = WarpButtonH, -- 530
-				text = text, -- 531
-				fontSize = 30, -- 532
-				bgHex = ResultButtonAltBgHex, -- 533
-				fgHex = ResultButtonFgHex, -- 534
-				borderHex = ResultButtonBorderHex, -- 535
-				onTap = function() -- 538
-				end, -- 538
-				onPressBegan = function() -- 539
-					print((("[escape-velocity] warp press dir=" .. __TS__NumberToFixed(dir, 0)) .. " on=") .. (warpOn and "1" or "0")) -- 541
-					if not warpOn then -- 541
-						return -- 542
-					end -- 542
-					if warpHoldDir == dir then -- 542
-						return -- 544
-					end -- 544
-					warpHoldDir = dir -- 545
-					warpRepeatIn = WarpHoldDelaySec -- 546
-					if warpHandler ~= nil then -- 546
-						warpHandler(dir) -- 547
+		for ____, b in ipairs(warpButtons) do -- 523
+			b.root.visible = vis -- 524
+			b:setEnabled(on) -- 525
+		end -- 525
+		if dateLabel ~= nil then -- 525
+			dateLabel.visible = vis -- 527
+		end -- 527
+		datePlate.visible = vis -- 528
+	end -- 516
+	local function makeWarpButton(text, dir, x) -- 530
+		local btn = createButton( -- 531
+			root, -- 531
+			{ -- 531
+				w = WarpButtonW, -- 532
+				h = WarpButtonH, -- 533
+				text = text, -- 534
+				fontSize = 30, -- 535
+				bgHex = ResultButtonAltBgHex, -- 536
+				fgHex = ResultButtonFgHex, -- 537
+				borderHex = ResultButtonBorderHex, -- 538
+				onTap = function() -- 541
+				end, -- 541
+				onPressBegan = function() -- 542
+					print((("[escape-velocity] warp press dir=" .. __TS__NumberToFixed(dir, 0)) .. " on=") .. (warpOn and "1" or "0")) -- 544
+					if not warpOn then -- 544
+						return -- 545
+					end -- 545
+					if warpHoldDir == dir then -- 545
+						return -- 547
 					end -- 547
-				end, -- 539
-				onPressEnded = function() -- 549
-					print((("[escape-velocity] warp release dir=" .. __TS__NumberToFixed(dir, 0)) .. " hold=") .. __TS__NumberToFixed(warpHoldDir, 0)) -- 550
-					if warpHoldDir == dir then -- 550
-						warpHoldDir = 0 -- 552
-					end -- 552
-				end -- 549
-			} -- 549
-		) -- 549
-		btn.root.position = Vec2(x, viewH - 96 - WarpButtonH) -- 558
-		warpButtons[#warpButtons + 1] = btn -- 559
-	end -- 527
-	local warpLeftX = viewW - (WarpButtonW * 2 + 8) - 20 -- 561
-	makeWarpButton("◀ 回退", -1, warpLeftX) -- 562
-	makeWarpButton("加速 ▶", 1, warpLeftX + WarpButtonW + 8) -- 563
-	datePlate = createPanel( -- 565
-		root, -- 565
-		300, -- 565
-		50, -- 565
-		658964, -- 565
-		{alpha = 0.45} -- 565
-	) -- 565
-	datePlate.position = Vec2(warpLeftX - 316, viewH - 96 - WarpButtonH + 8) -- 566
-	dateLabel = createLabel(root, "发射日期 —", 30, ResultHintHex) -- 567
-	if dateLabel ~= nil then -- 567
-		dateLabel.anchor = Vec2(1, 0) -- 572
-		dateLabel.position = Vec2(warpLeftX - 16, viewH - 96 - WarpButtonH + 18) -- 573
-	end -- 573
-	local QuickRetryW = 110 -- 577
-	local QuickRetryH = 50 -- 578
-	local quickRetryHandler = nil -- 579
-	local quickRetryBtn = createButton( -- 580
-		root, -- 580
-		{ -- 580
-			w = QuickRetryW, -- 581
-			h = QuickRetryH, -- 582
-			text = "↺ 重试", -- 583
-			fontSize = 26, -- 584
-			bgHex = 12730636, -- 585
-			fgHex = 16777215, -- 586
-			borderHex = 16498468, -- 587
-			fireOn = "press", -- 588
-			onTap = function() -- 589
-				print("[escape-velocity] quick retry tapped") -- 590
-				if quickRetryHandler ~= nil then -- 590
-					quickRetryHandler() -- 591
-				end -- 591
-			end -- 589
-		} -- 589
-	) -- 589
-	quickRetryBtn.root.position = Vec2(viewW - QuickRetryW - 20, viewH - QuickRetryH - 20) -- 594
-	local starPlateW = 180 -- 597
-	local starPlateH = 46 -- 598
-	local starPlate = createPanel( -- 599
-		root, -- 599
-		starPlateW, -- 599
-		starPlateH, -- 599
-		658964, -- 599
-		{alpha = 0.55} -- 599
-	) -- 599
-	starPlate.position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22) -- 600
-	starPlate.visible = not transferTutorial -- 601
-	local starStatusLabel = createLabel(root, "☆ ☆ ☆", 30, 16766720) -- 602
-	if starStatusLabel ~= nil then -- 602
-		starStatusLabel.anchor = Vec2(0.5, 0.5) -- 604
-		starStatusLabel.position = Vec2(viewW / 2, viewH - starPlateH / 2 - 22) -- 605
-	end -- 605
-	local function updateStarsStatus(count) -- 607
-		if starStatusLabel == nil then -- 607
-			return -- 608
-		end -- 608
-		if transferTutorial then -- 608
-			starStatusLabel.visible = false -- 609
-			return -- 609
-		end -- 609
-		local s = "☆ ☆ ☆" -- 610
-		if count == 1 then -- 610
-			s = "★ ☆ ☆" -- 611
-		elseif count == 2 then -- 611
-			s = "★ ★ ☆" -- 612
-		elseif count >= 3 then -- 612
-			s = "★ ★ ★" -- 613
-		end -- 613
-		setLabelText(starStatusLabel, s) -- 614
+					warpHoldDir = dir -- 548
+					warpRepeatIn = WarpHoldDelaySec -- 549
+					if warpHandler ~= nil then -- 549
+						warpHandler(dir) -- 550
+					end -- 550
+				end, -- 542
+				onPressEnded = function() -- 552
+					print((("[escape-velocity] warp release dir=" .. __TS__NumberToFixed(dir, 0)) .. " hold=") .. __TS__NumberToFixed(warpHoldDir, 0)) -- 553
+					if warpHoldDir == dir then -- 553
+						warpHoldDir = 0 -- 555
+					end -- 555
+				end -- 552
+			} -- 552
+		) -- 552
+		btn.root.position = Vec2(x, viewH - 96 - WarpButtonH) -- 561
+		warpButtons[#warpButtons + 1] = btn -- 562
+	end -- 530
+	local warpLeftX = viewW - (WarpButtonW * 2 + 8) - 20 -- 564
+	makeWarpButton("◀ 回退", -1, warpLeftX) -- 565
+	makeWarpButton("加速 ▶", 1, warpLeftX + WarpButtonW + 8) -- 566
+	datePlate = createPanel( -- 568
+		root, -- 568
+		300, -- 568
+		50, -- 568
+		658964, -- 568
+		{alpha = 0.45} -- 568
+	) -- 568
+	datePlate.position = Vec2(warpLeftX - 316, viewH - 96 - WarpButtonH + 8) -- 569
+	dateLabel = createLabel(root, "发射日期 —", 30, ResultHintHex) -- 570
+	if dateLabel ~= nil then -- 570
+		dateLabel.anchor = Vec2(1, 0) -- 575
+		dateLabel.position = Vec2(warpLeftX - 16, viewH - 96 - WarpButtonH + 18) -- 576
+	end -- 576
+	local QuickRetryW = 110 -- 580
+	local QuickRetryH = 50 -- 581
+	local quickRetryHandler = nil -- 582
+	local quickRetryBtn = createButton( -- 583
+		root, -- 583
+		{ -- 583
+			w = QuickRetryW, -- 584
+			h = QuickRetryH, -- 585
+			text = "↺ 重试", -- 586
+			fontSize = 26, -- 587
+			bgHex = 12730636, -- 588
+			fgHex = 16777215, -- 589
+			borderHex = 16498468, -- 590
+			fireOn = "press", -- 591
+			onTap = function() -- 592
+				print("[escape-velocity] quick retry tapped") -- 593
+				if quickRetryHandler ~= nil then -- 593
+					quickRetryHandler() -- 594
+				end -- 594
+			end -- 592
+		} -- 592
+	) -- 592
+	quickRetryBtn.root.position = Vec2(viewW - QuickRetryW - 20, viewH - QuickRetryH - 20) -- 597
+	local starPlateW = 180 -- 600
+	local starPlateH = 46 -- 601
+	local starPlate = createPanel( -- 602
+		root, -- 602
+		starPlateW, -- 602
+		starPlateH, -- 602
+		658964, -- 602
+		{alpha = 0.55} -- 602
+	) -- 602
+	starPlate.position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22) -- 603
+	starPlate.visible = not transferTutorial -- 604
+	local starStatusLabel = createLabel(root, "☆ ☆ ☆", 30, 16766720) -- 605
+	local bonusToastLabel = createLabel(root, "", 34, 9240475) -- 606
+	if bonusToastLabel ~= nil then -- 606
+		bonusToastLabel.position = Vec2(viewW / 2, viewH * 0.68) -- 607
+		bonusToastLabel.visible = false -- 607
 	end -- 607
-	local LaunchButtonW = 220 -- 619
-	local LaunchButtonH = 112 -- 620
-	local launchButton = createButton( -- 621
-		root, -- 621
-		{ -- 621
-			w = LaunchButtonW, -- 622
-			h = LaunchButtonH, -- 623
-			text = "▲ 发射 ▲", -- 624
-			fontSize = 38, -- 625
-			bgHex = ResultButtonBgHex, -- 626
-			fgHex = ResultButtonFgHex, -- 627
-			borderHex = ResultButtonBorderHex, -- 628
-			fireOn = "press", -- 629
-			onTap = function() -- 630
-				print("[escape-velocity] launch button fire (press)") -- 631
-				if launchHandler ~= nil then -- 631
-					launchHandler() -- 632
-				end -- 632
-			end -- 630
-		} -- 630
-	) -- 630
-	launchButton.root.position = Vec2(viewW - LaunchButtonW - 24, 96) -- 635
-	launchButton.root.visible = false -- 636
-	launchButton:setEnabled(false) -- 637
-	local CancelButtonW = 160 -- 640
-	local CancelButtonH = 72 -- 641
-	local cancelAimHandler = nil -- 642
-	local cancelAimButton = createButton( -- 643
-		root, -- 643
-		{ -- 643
-			w = CancelButtonW, -- 644
-			h = CancelButtonH, -- 645
-			text = "✕ 取消", -- 646
-			fontSize = 28, -- 647
-			bgHex = ResultButtonAltBgHex, -- 648
-			fgHex = ResultButtonFgHex, -- 649
-			borderHex = ResultButtonBorderHex, -- 650
-			fireOn = "press", -- 651
-			onTap = function() -- 652
-				print("[escape-velocity] cancel aim fire (press)") -- 653
-				if cancelAimHandler ~= nil then -- 653
-					cancelAimHandler() -- 654
-				end -- 654
-			end -- 652
-		} -- 652
-	) -- 652
-	cancelAimButton.root.position = Vec2(viewW - LaunchButtonW - CancelButtonW - 40, 116) -- 657
-	cancelAimButton.root.visible = false -- 658
-	cancelAimButton:setEnabled(false) -- 659
-	local ViewButtonW = 116 -- 663
-	local ViewButtonH = 64 -- 664
-	local viewHandler = nil -- 665
-	local viewButton = createButton( -- 666
-		root, -- 666
-		{ -- 666
-			w = ViewButtonW, -- 667
-			h = ViewButtonH, -- 668
-			text = "[ 3D ]", -- 669
-			fontSize = 26, -- 670
-			bgHex = ResultButtonAltBgHex, -- 671
-			fgHex = ResultButtonFgHex, -- 672
-			borderHex = ResultButtonBorderHex, -- 673
-			fireOn = "press", -- 674
-			onTap = function() -- 675
-				print("[escape-velocity] view toggle fire (press)") -- 676
-				if viewHandler ~= nil then -- 676
-					viewHandler() -- 677
-				end -- 677
-			end -- 675
-		} -- 675
-	) -- 675
-	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 12) -- 680
+	if starStatusLabel ~= nil then -- 607
+		starStatusLabel.anchor = Vec2(0.5, 0.5) -- 609
+		starStatusLabel.position = Vec2(viewW / 2, viewH - starPlateH / 2 - 22) -- 610
+	end -- 610
+	local function updateStarsStatus(count) -- 612
+		if starStatusLabel == nil then -- 612
+			return -- 613
+		end -- 613
+		if transferTutorial then -- 613
+			starStatusLabel.visible = false -- 614
+			return -- 614
+		end -- 614
+		local s = "☆ ☆ ☆" -- 615
+		if count == 1 then -- 615
+			s = "★ ☆ ☆" -- 616
+		elseif count == 2 then -- 616
+			s = "★ ★ ☆" -- 617
+		elseif count >= 3 then -- 617
+			s = "★ ★ ★" -- 618
+		end -- 618
+		setLabelText(starStatusLabel, s) -- 619
+	end -- 612
+	local function updateBonusStatus(got, total) -- 621
+		if starStatusLabel == nil then -- 621
+			return -- 622
+		end -- 622
+		starPlate.visible = total > 0 -- 623
+		starStatusLabel.visible = total > 0 -- 624
+		if total > 0 then -- 624
+			setLabelText( -- 625
+				starStatusLabel, -- 625
+				(("🚀 " .. __TS__NumberToFixed(got, 0)) .. " / ") .. __TS__NumberToFixed(total, 0) -- 625
+			) -- 625
+		end -- 625
+	end -- 621
+	local LaunchButtonW = 220 -- 630
+	local LaunchButtonH = 112 -- 631
+	local launchButton = createButton( -- 632
+		root, -- 632
+		{ -- 632
+			w = LaunchButtonW, -- 633
+			h = LaunchButtonH, -- 634
+			text = "▲ 发射 ▲", -- 635
+			fontSize = 38, -- 636
+			bgHex = ResultButtonBgHex, -- 637
+			fgHex = ResultButtonFgHex, -- 638
+			borderHex = ResultButtonBorderHex, -- 639
+			fireOn = "press", -- 640
+			onTap = function() -- 641
+				print("[escape-velocity] launch button fire (press)") -- 642
+				if launchHandler ~= nil then -- 642
+					launchHandler() -- 643
+				end -- 643
+			end -- 641
+		} -- 641
+	) -- 641
+	launchButton.root.position = Vec2(viewW - LaunchButtonW - 24, 96) -- 646
+	launchButton.root.visible = false -- 647
+	launchButton:setEnabled(false) -- 648
+	local CancelButtonW = 160 -- 651
+	local CancelButtonH = 72 -- 652
+	local cancelAimHandler = nil -- 653
+	local cancelAimButton = createButton( -- 654
+		root, -- 654
+		{ -- 654
+			w = CancelButtonW, -- 655
+			h = CancelButtonH, -- 656
+			text = "✕ 取消", -- 657
+			fontSize = 28, -- 658
+			bgHex = ResultButtonAltBgHex, -- 659
+			fgHex = ResultButtonFgHex, -- 660
+			borderHex = ResultButtonBorderHex, -- 661
+			fireOn = "press", -- 662
+			onTap = function() -- 663
+				print("[escape-velocity] cancel aim fire (press)") -- 664
+				if cancelAimHandler ~= nil then -- 664
+					cancelAimHandler() -- 665
+				end -- 665
+			end -- 663
+		} -- 663
+	) -- 663
+	cancelAimButton.root.position = Vec2(viewW - LaunchButtonW - CancelButtonW - 40, 116) -- 668
+	cancelAimButton.root.visible = false -- 669
+	cancelAimButton:setEnabled(false) -- 670
+	local ViewButtonW = 116 -- 674
+	local ViewButtonH = 64 -- 675
+	local viewHandler = nil -- 676
+	local viewButton = createButton( -- 677
+		root, -- 677
+		{ -- 677
+			w = ViewButtonW, -- 678
+			h = ViewButtonH, -- 679
+			text = "[ 3D ]", -- 680
+			fontSize = 26, -- 681
+			bgHex = ResultButtonAltBgHex, -- 682
+			fgHex = ResultButtonFgHex, -- 683
+			borderHex = ResultButtonBorderHex, -- 684
+			fireOn = "press", -- 685
+			onTap = function() -- 686
+				print("[escape-velocity] view toggle fire (press)") -- 687
+				if viewHandler ~= nil then -- 687
+					viewHandler() -- 688
+				end -- 688
+			end -- 686
+		} -- 686
+	) -- 686
+	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 12) -- 691
 	--- 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。
-	local lastViewText = "2D" -- 682
-	local cameraFocusHandler = nil -- 685
-	local endViewingHandler = nil -- 686
-	local cameraFocusButton = transferTutorial and createButton( -- 687
-		root, -- 687
-		{ -- 687
-			w = 260, -- 688
-			h = 58, -- 688
-			text = "镜头 · 自动", -- 688
-			fontSize = 22, -- 688
-			bgHex = ResultButtonAltBgHex, -- 689
-			fgHex = ResultButtonFgHex, -- 689
-			borderHex = ResultButtonBorderHex, -- 689
-			fireOn = "press", -- 689
-			onTap = function() -- 690
-				if cameraFocusHandler ~= nil then -- 690
-					cameraFocusHandler() -- 690
-				end -- 690
-			end -- 690
-		} -- 690
-	) or nil -- 690
-	local endViewingButton = transferTutorial and createButton( -- 692
-		root, -- 692
-		{ -- 692
-			w = 220, -- 693
-			h = LaunchButtonH, -- 693
-			text = "结束观赏", -- 693
-			fontSize = 26, -- 693
-			bgHex = ResultButtonAltBgHex, -- 694
-			fgHex = ResultButtonFgHex, -- 694
-			borderHex = ResultButtonBorderHex, -- 694
-			fireOn = "press", -- 694
-			onTap = function() -- 695
-				if endViewingHandler ~= nil then -- 695
-					endViewingHandler() -- 695
-				end -- 695
-			end -- 695
-		} -- 695
-	) or nil -- 695
-	if cameraFocusButton ~= nil then -- 695
-		cameraFocusButton.root.position = Vec2(24, 266) -- 697
-		cameraFocusButton.root.visible = false -- 697
-		cameraFocusButton:setEnabled(false) -- 697
-	end -- 697
-	if endViewingButton ~= nil then -- 697
-		endViewingButton.root.position = Vec2(viewW - 244, 96) -- 698
-		endViewingButton.root.visible = false -- 698
-		endViewingButton:setEnabled(false) -- 698
-	end -- 698
-	local ____transferTutorial_0 -- 699
-	if transferTutorial then -- 699
-		____transferTutorial_0 = createLabel(root, "", 24, ResultHintHex) -- 699
-	else -- 699
-		____transferTutorial_0 = nil -- 699
-	end -- 699
-	local viewingLabel = ____transferTutorial_0 -- 699
-	if viewingLabel ~= nil then -- 699
-		viewingLabel.position = Vec2(24, viewH - 130) -- 700
-		viewingLabel.anchor = Vec2(0, 0) -- 700
-		viewingLabel.visible = false -- 700
-	end -- 700
-	local viewingKey = "" -- 701
-	local ZoomBtnSize = 58 -- 704
-	local zoomGap = 8 -- 705
-	local zoomButtons = {} -- 706
-	local zoomInHandler = nil -- 707
-	local zoomOutHandler = nil -- 708
-	local fitViewHandler = nil -- 709
-	local function makeZoomButton(text, x, fontSize, onClick) -- 711
-		local btn = createButton( -- 712
-			root, -- 712
-			{ -- 712
-				w = ZoomBtnSize, -- 713
-				h = ZoomBtnSize, -- 714
-				text = text, -- 715
-				fontSize = fontSize, -- 716
-				bgHex = ResultButtonAltBgHex, -- 717
-				fgHex = ResultButtonFgHex, -- 718
-				borderHex = ResultButtonBorderHex, -- 719
-				fireOn = "press", -- 720
-				onTap = function() -- 721
-					print(("[escape-velocity] zoom btn " .. text) .. " fire") -- 722
-					onClick() -- 723
-				end -- 721
-			} -- 721
-		) -- 721
-		btn.root.position = Vec2(x, 96) -- 726
-		btn.root.visible = false -- 727
-		btn:setEnabled(false) -- 728
-		zoomButtons[#zoomButtons + 1] = btn -- 729
-		return btn -- 730
+	local lastViewText = "2D" -- 693
+	local cameraFocusHandler = nil -- 696
+	local endViewingHandler = nil -- 697
+	local cameraFocusButton = transferTutorial and createButton( -- 698
+		root, -- 698
+		{ -- 698
+			w = 260, -- 699
+			h = 58, -- 699
+			text = "镜头 · 自动", -- 699
+			fontSize = 22, -- 699
+			bgHex = ResultButtonAltBgHex, -- 700
+			fgHex = ResultButtonFgHex, -- 700
+			borderHex = ResultButtonBorderHex, -- 700
+			fireOn = "press", -- 700
+			onTap = function() -- 701
+				if cameraFocusHandler ~= nil then -- 701
+					cameraFocusHandler() -- 701
+				end -- 701
+			end -- 701
+		} -- 701
+	) or nil -- 701
+	local endViewingButton = transferTutorial and createButton( -- 703
+		root, -- 703
+		{ -- 703
+			w = 220, -- 704
+			h = LaunchButtonH, -- 704
+			text = "结束观赏", -- 704
+			fontSize = 26, -- 704
+			bgHex = ResultButtonAltBgHex, -- 705
+			fgHex = ResultButtonFgHex, -- 705
+			borderHex = ResultButtonBorderHex, -- 705
+			fireOn = "press", -- 705
+			onTap = function() -- 706
+				if endViewingHandler ~= nil then -- 706
+					endViewingHandler() -- 706
+				end -- 706
+			end -- 706
+		} -- 706
+	) or nil -- 706
+	if cameraFocusButton ~= nil then -- 706
+		cameraFocusButton.root.position = Vec2(24, 266) -- 708
+		cameraFocusButton.root.visible = false -- 708
+		cameraFocusButton:setEnabled(false) -- 708
+	end -- 708
+	if endViewingButton ~= nil then -- 708
+		endViewingButton.root.position = Vec2(viewW - 244, 96) -- 709
+		endViewingButton.root.visible = false -- 709
+		endViewingButton:setEnabled(false) -- 709
+	end -- 709
+	local ____transferTutorial_0 -- 710
+	if transferTutorial then -- 710
+		____transferTutorial_0 = createLabel(root, "", 24, ResultHintHex) -- 710
+	else -- 710
+		____transferTutorial_0 = nil -- 710
+	end -- 710
+	local viewingLabel = ____transferTutorial_0 -- 710
+	if viewingLabel ~= nil then -- 710
+		viewingLabel.position = Vec2(24, viewH - 130) -- 711
+		viewingLabel.anchor = Vec2(0, 0) -- 711
+		viewingLabel.visible = false -- 711
 	end -- 711
-	makeZoomButton( -- 732
-		"−", -- 732
-		24, -- 732
-		32, -- 732
-		function() -- 732
-			if zoomOutHandler ~= nil then -- 732
-				zoomOutHandler() -- 733
-			end -- 733
-		end -- 732
-	) -- 732
-	makeZoomButton( -- 735
-		"FIT", -- 735
-		24 + ZoomBtnSize + zoomGap, -- 735
-		20, -- 735
-		function() -- 735
-			if fitViewHandler ~= nil then -- 735
-				fitViewHandler() -- 736
-			end -- 736
-		end -- 735
-	) -- 735
-	makeZoomButton( -- 738
-		"+", -- 738
-		24 + (ZoomBtnSize + zoomGap) * 2, -- 738
-		32, -- 738
-		function() -- 738
-			if zoomInHandler ~= nil then -- 738
-				zoomInHandler() -- 739
-			end -- 739
-		end -- 738
-	) -- 738
-	local zoomControlsVisible = nil -- 741
-	local function setZoomVisible(on) -- 742
-		if zoomControlsVisible == on then -- 742
-			return -- 743
+	local viewingKey = "" -- 712
+	local ZoomBtnSize = 58 -- 715
+	local zoomGap = 8 -- 716
+	local zoomButtons = {} -- 717
+	local zoomInHandler = nil -- 718
+	local zoomOutHandler = nil -- 719
+	local fitViewHandler = nil -- 720
+	local function makeZoomButton(text, x, fontSize, onClick) -- 722
+		local btn = createButton( -- 723
+			root, -- 723
+			{ -- 723
+				w = ZoomBtnSize, -- 724
+				h = ZoomBtnSize, -- 725
+				text = text, -- 726
+				fontSize = fontSize, -- 727
+				bgHex = ResultButtonAltBgHex, -- 728
+				fgHex = ResultButtonFgHex, -- 729
+				borderHex = ResultButtonBorderHex, -- 730
+				fireOn = "press", -- 731
+				onTap = function() -- 732
+					print(("[escape-velocity] zoom btn " .. text) .. " fire") -- 733
+					onClick() -- 734
+				end -- 732
+			} -- 732
+		) -- 732
+		btn.root.position = Vec2(x, 96) -- 737
+		btn.root.visible = false -- 738
+		btn:setEnabled(false) -- 739
+		zoomButtons[#zoomButtons + 1] = btn -- 740
+		return btn -- 741
+	end -- 722
+	makeZoomButton( -- 743
+		"−", -- 743
+		24, -- 743
+		32, -- 743
+		function() -- 743
+			if zoomOutHandler ~= nil then -- 743
+				zoomOutHandler() -- 744
+			end -- 744
 		end -- 743
-		zoomControlsVisible = on -- 744
-		for ____, b in ipairs(zoomButtons) do -- 745
-			b.root.visible = on -- 746
-			b:setEnabled(on) -- 747
-		end -- 747
-	end -- 742
-	setZoomVisible(false) -- 750
-	local TimeBtnW = 78 -- 756
-	local TimeBtnH = 64 -- 757
-	local TimeRowY = 170 -- 758
-	local speedUpHandler = nil -- 759
-	local speedDownHandler = nil -- 760
-	local pauseHandler = nil -- 761
-	local slowButton = createButton( -- 763
-		root, -- 763
-		{ -- 763
-			w = TimeBtnW, -- 764
-			h = TimeBtnH, -- 764
-			text = "◀ 慢", -- 764
-			fontSize = 26, -- 764
-			bgHex = ResultButtonAltBgHex, -- 765
-			fgHex = ResultButtonFgHex, -- 765
-			borderHex = ResultButtonBorderHex, -- 765
-			onTap = function() -- 766
-				print("[escape-velocity] speed down fire") -- 767
-				if speedDownHandler ~= nil then -- 767
-					speedDownHandler() -- 768
-				end -- 768
-			end -- 766
-		} -- 766
-	) -- 766
-	slowButton.root.position = Vec2(24, TimeRowY) -- 771
-	local pauseButton = createButton( -- 772
-		root, -- 772
-		{ -- 772
-			w = TimeBtnW, -- 773
-			h = TimeBtnH, -- 773
-			text = "⏸", -- 773
-			fontSize = 30, -- 773
-			bgHex = ResultButtonAltBgHex, -- 774
-			fgHex = ResultButtonFgHex, -- 774
-			borderHex = ResultButtonBorderHex, -- 774
-			onTap = function() -- 775
-				print("[escape-velocity] pause toggle fire") -- 776
-				if pauseHandler ~= nil then -- 776
-					pauseHandler() -- 777
-				end -- 777
-			end -- 775
-		} -- 775
-	) -- 775
-	pauseButton.root.position = Vec2(24 + TimeBtnW + 8, TimeRowY) -- 780
-	local fastButton = createButton( -- 781
-		root, -- 781
-		{ -- 781
-			w = TimeBtnW, -- 782
-			h = TimeBtnH, -- 782
-			text = "快 ▶", -- 782
-			fontSize = 26, -- 782
-			bgHex = ResultButtonAltBgHex, -- 783
-			fgHex = ResultButtonFgHex, -- 783
-			borderHex = ResultButtonBorderHex, -- 783
-			onTap = function() -- 784
-				print("[escape-velocity] speed up fire") -- 785
-				if speedUpHandler ~= nil then -- 785
-					speedUpHandler() -- 786
-				end -- 786
-			end -- 784
-		} -- 784
-	) -- 784
-	fastButton.root.position = Vec2(24 + (TimeBtnW + 8) * 2, TimeRowY) -- 789
-	local timePlate = createPanel( -- 792
+	) -- 743
+	makeZoomButton( -- 746
+		"FIT", -- 746
+		24 + ZoomBtnSize + zoomGap, -- 746
+		20, -- 746
+		function() -- 746
+			if fitViewHandler ~= nil then -- 746
+				fitViewHandler() -- 747
+			end -- 747
+		end -- 746
+	) -- 746
+	makeZoomButton( -- 749
+		"+", -- 749
+		24 + (ZoomBtnSize + zoomGap) * 2, -- 749
+		32, -- 749
+		function() -- 749
+			if zoomInHandler ~= nil then -- 749
+				zoomInHandler() -- 750
+			end -- 750
+		end -- 749
+	) -- 749
+	local zoomControlsVisible = nil -- 752
+	local function setZoomVisible(on) -- 753
+		if zoomControlsVisible == on then -- 753
+			return -- 754
+		end -- 754
+		zoomControlsVisible = on -- 755
+		for ____, b in ipairs(zoomButtons) do -- 756
+			b.root.visible = on -- 757
+			b:setEnabled(on) -- 758
+		end -- 758
+	end -- 753
+	setZoomVisible(false) -- 761
+	local TimeBtnW = 78 -- 767
+	local TimeBtnH = 64 -- 768
+	local TimeRowY = 170 -- 769
+	local speedUpHandler = nil -- 770
+	local speedDownHandler = nil -- 771
+	local pauseHandler = nil -- 772
+	local slowButton = createButton( -- 774
+		root, -- 774
+		{ -- 774
+			w = TimeBtnW, -- 775
+			h = TimeBtnH, -- 775
+			text = "◀ 慢", -- 775
+			fontSize = 26, -- 775
+			bgHex = ResultButtonAltBgHex, -- 776
+			fgHex = ResultButtonFgHex, -- 776
+			borderHex = ResultButtonBorderHex, -- 776
+			onTap = function() -- 777
+				print("[escape-velocity] speed down fire") -- 778
+				if speedDownHandler ~= nil then -- 778
+					speedDownHandler() -- 779
+				end -- 779
+			end -- 777
+		} -- 777
+	) -- 777
+	slowButton.root.position = Vec2(24, TimeRowY) -- 782
+	local pauseButton = createButton( -- 783
+		root, -- 783
+		{ -- 783
+			w = TimeBtnW, -- 784
+			h = TimeBtnH, -- 784
+			text = "⏸", -- 784
+			fontSize = 30, -- 784
+			bgHex = ResultButtonAltBgHex, -- 785
+			fgHex = ResultButtonFgHex, -- 785
+			borderHex = ResultButtonBorderHex, -- 785
+			onTap = function() -- 786
+				print("[escape-velocity] pause toggle fire") -- 787
+				if pauseHandler ~= nil then -- 787
+					pauseHandler() -- 788
+				end -- 788
+			end -- 786
+		} -- 786
+	) -- 786
+	pauseButton.root.position = Vec2(24 + TimeBtnW + 8, TimeRowY) -- 791
+	local fastButton = createButton( -- 792
 		root, -- 792
-		300, -- 792
-		50, -- 792
-		658964, -- 792
-		{alpha = 0.45} -- 792
-	) -- 792
-	timePlate.position = transferTutorial and Vec2(24, viewH - 190) or Vec2(24 + (TimeBtnW + 8) * 3 + 4, TimeRowY + 7) -- 793
-	local timeLabel = createLabel(root, "1×（现实）  T+ 0:00", transferTutorial and 22 or 26, ResultHintHex) -- 794
-	if timeLabel ~= nil then -- 794
-		timeLabel.anchor = Vec2(0, 0) -- 796
-		timeLabel.position = transferTutorial and Vec2(36, viewH - 179) or Vec2(24 + (TimeBtnW + 8) * 3 + 16, TimeRowY + 18) -- 797
-	end -- 797
+		{ -- 792
+			w = TimeBtnW, -- 793
+			h = TimeBtnH, -- 793
+			text = "快 ▶", -- 793
+			fontSize = 26, -- 793
+			bgHex = ResultButtonAltBgHex, -- 794
+			fgHex = ResultButtonFgHex, -- 794
+			borderHex = ResultButtonBorderHex, -- 794
+			onTap = function() -- 795
+				print("[escape-velocity] speed up fire") -- 796
+				if speedUpHandler ~= nil then -- 796
+					speedUpHandler() -- 797
+				end -- 797
+			end -- 795
+		} -- 795
+	) -- 795
+	fastButton.root.position = Vec2(24 + (TimeBtnW + 8) * 2, TimeRowY) -- 800
+	local timePlate = createPanel( -- 803
+		root, -- 803
+		300, -- 803
+		50, -- 803
+		658964, -- 803
+		{alpha = 0.45} -- 803
+	) -- 803
+	timePlate.position = transferTutorial and Vec2(24, viewH - 190) or Vec2(24 + (TimeBtnW + 8) * 3 + 4, TimeRowY + 7) -- 804
+	local timeLabel = createLabel(root, "1×（现实）  T+ 0:00", transferTutorial and 22 or 26, ResultHintHex) -- 805
+	if timeLabel ~= nil then -- 805
+		timeLabel.anchor = Vec2(0, 0) -- 807
+		timeLabel.position = transferTutorial and Vec2(36, viewH - 179) or Vec2(24 + (TimeBtnW + 8) * 3 + 16, TimeRowY + 18) -- 808
+	end -- 808
 	--- 档位文字：pow 0 就是"1×（现实）"，别写成 1e0×。
-	local function powText(pow) -- 800
-		return pow <= 0 and "1×（现实）" or ("1e" .. __TS__NumberToFixed(pow, 0)) .. "×" -- 800
-	end -- 800
+	local function powText(pow) -- 811
+		return pow <= 0 and "1×（现实）" or ("1e" .. __TS__NumberToFixed(pow, 0)) .. "×" -- 811
+	end -- 811
 	--- 任务时钟：真实秒 → "T+ 3天 04:12"。1× 下它每秒跳一格 —— 时间在流逝的唯一可见证据。
-	local function missionText(sec) -- 802
-		local s = sec > 0 and sec or 0 -- 803
-		local days = math.floor(s / 86400) -- 804
-		local rest = s - days * 86400 -- 805
-		local hh = math.floor(rest / 3600) -- 806
-		local mm = math.floor((rest - hh * 3600) / 60) -- 807
-		local function pad(v) -- 808
-			return (v < 10 and "0" or "") .. __TS__NumberToFixed(v, 0) -- 808
-		end -- 808
-		return ((("T+ " .. (days > 0 and __TS__NumberToFixed(days, 0) .. "天 " or "")) .. pad(hh)) .. ":") .. pad(mm) -- 809
-	end -- 802
-	local lastTimeText = "" -- 811
-	local lastPaused = false -- 812
-	local function setTimeControl(pow, maxPow, paused, missionSeconds, actualRate) -- 813
-		local txt = (((transferTutorial and actualRate ~= nil and __TS__NumberToFixed(actualRate, 2) .. "×" or powText(pow)) .. (paused and " ⏸ 暂停" or "")) .. "  ") .. (transferTutorial and ("T+ " .. __TS__NumberToFixed(missionSeconds, 1)) .. "s" or missionText(missionSeconds)) -- 814
-		if txt ~= lastTimeText then -- 814
-			lastTimeText = txt -- 816
-			if timeLabel ~= nil then -- 816
-				timeLabel.text = txt -- 817
-			end -- 817
-		end -- 817
-		if paused ~= lastPaused then -- 817
-			lastPaused = paused -- 820
-			pauseButton:setText(paused and "▶" or "⏸") -- 821
-			pauseButton:setColors(paused and ResultButtonBgHex or ResultButtonAltBgHex, ResultButtonFgHex) -- 822
-		end -- 822
-		fastButton:setEnabled(pow < maxPow) -- 825
-		slowButton:setEnabled(pow > 0) -- 826
+	local function missionText(sec) -- 813
+		local s = sec > 0 and sec or 0 -- 814
+		local days = math.floor(s / 86400) -- 815
+		local rest = s - days * 86400 -- 816
+		local hh = math.floor(rest / 3600) -- 817
+		local mm = math.floor((rest - hh * 3600) / 60) -- 818
+		local function pad(v) -- 819
+			return (v < 10 and "0" or "") .. __TS__NumberToFixed(v, 0) -- 819
+		end -- 819
+		return ((("T+ " .. (days > 0 and __TS__NumberToFixed(days, 0) .. "天 " or "")) .. pad(hh)) .. ":") .. pad(mm) -- 820
 	end -- 813
-	local DrawerW = 380 -- 830
-	local DrawerH = 46 -- 831
-	local missionDrawerPlate = createPanel( -- 832
-		root, -- 832
-		DrawerW, -- 832
-		DrawerH, -- 832
-		658964, -- 832
-		{alpha = 0.65, borderHex = 4610157} -- 832
-	) -- 832
-	missionDrawerPlate.position = Vec2(transferTutorial and 24 or (viewW - DrawerW) / 2, viewH - 56) -- 833
-	local missionTitleLabel = createLabel(missionDrawerPlate, "", 19, 13426158) -- 834
-	if missionTitleLabel ~= nil then -- 834
-		missionTitleLabel.anchor = Vec2(0, 0.5) -- 836
-		missionTitleLabel.position = Vec2(14, DrawerH / 2) -- 837
-	end -- 837
-	local missionRocketsLabel = createLabel(missionDrawerPlate, "☆  ☆  ☆", 22, 16766720) -- 839
-	if missionRocketsLabel ~= nil then -- 839
-		missionRocketsLabel.anchor = Vec2(1, 0.5) -- 841
-		missionRocketsLabel.position = Vec2(DrawerW - 14, DrawerH / 2) -- 842
-	end -- 842
-	missionDrawerPlate.visible = false -- 844
-	local drawerVisible = false -- 845
-	local drawerLevelTitle = "" -- 846
-	local drawerRockets = 0 -- 847
-	local liveFuelBonus = false -- 848
-	local function updateDrawerDisplay() -- 850
-		if missionTitleLabel ~= nil then -- 850
-			setLabelText(missionTitleLabel, drawerLevelTitle) -- 852
-		end -- 852
-		if missionRocketsLabel ~= nil then -- 852
-			local r1 = drawerRockets >= 1 and "★" or "☆" -- 855
-			local r2 = (drawerRockets >= 2 or liveFuelBonus) and "★" or "☆" -- 856
-			local r3 = drawerRockets >= 3 and "★" or "☆" -- 857
-			setLabelText(missionRocketsLabel, transferTutorial and (drawerRockets >= 1 and "已完成" or (transferMode == "lunar" and "地月转移练习" or "日心借力练习")) or (((r1 .. "  ") .. r2) .. "  ") .. r3) -- 858
-		end -- 858
-	end -- 850
-	local IntroBannerW = math.min(viewW - 48, 540) -- 863
-	local IntroBannerH = 68 -- 864
-	local introBannerPlate = createPanel( -- 865
-		root, -- 865
-		IntroBannerW, -- 865
-		IntroBannerH, -- 865
-		658964, -- 865
-		{alpha = 0.8, borderHex = 4610157} -- 865
-	) -- 865
-	introBannerPlate.position = Vec2((viewW - IntroBannerW) / 2, 70) -- 866
-	local introBannerTitle = createLabel(introBannerPlate, "", 17, 15398143) -- 867
-	if introBannerTitle ~= nil then -- 867
-		introBannerTitle.anchor = Vec2(0.5, 0.5) -- 869
-		introBannerTitle.position = Vec2(IntroBannerW / 2, IntroBannerH * 0.65) -- 870
-	end -- 870
-	local introBannerHint = createLabel(introBannerPlate, "轻触屏幕任意位置跳过运镜", 13, 9283005) -- 872
-	if introBannerHint ~= nil then -- 872
-		introBannerHint.anchor = Vec2(0.5, 0.5) -- 874
-		introBannerHint.position = Vec2(IntroBannerW / 2, IntroBannerH * 0.28) -- 875
-	end -- 875
-	introBannerPlate.visible = false -- 877
-	local PlaybackButtonW = 116 -- 886
-	local PlaybackButtonH = 64 -- 887
-	local playbackGap = 10 -- 888
-	local playbackButtons = {} -- 889
-	local playbackSpeeds = {} -- 890
-	local playbackHandler = nil -- 891
-	local speedChoice = speedChoices ~= nil and #speedChoices > 0 and speedChoices or ({1, 2, 4}) -- 894
-	local playbackSpeed = speedChoice[1] -- 895
+	local lastTimeText = "" -- 822
+	local lastPaused = false -- 823
+	local function setTimeControl(pow, maxPow, paused, missionSeconds, actualRate) -- 824
+		local txt = (((transferTutorial and actualRate ~= nil and __TS__NumberToFixed(actualRate, 2) .. "×" or powText(pow)) .. (paused and " ⏸ 暂停" or "")) .. "  ") .. (transferTutorial and ("T+ " .. __TS__NumberToFixed(missionSeconds, 1)) .. "s" or missionText(missionSeconds)) -- 825
+		if txt ~= lastTimeText then -- 825
+			lastTimeText = txt -- 827
+			if timeLabel ~= nil then -- 827
+				timeLabel.text = txt -- 828
+			end -- 828
+		end -- 828
+		if paused ~= lastPaused then -- 828
+			lastPaused = paused -- 831
+			pauseButton:setText(paused and "▶" or "⏸") -- 832
+			pauseButton:setColors(paused and ResultButtonBgHex or ResultButtonAltBgHex, ResultButtonFgHex) -- 833
+		end -- 833
+		fastButton:setEnabled(pow < maxPow) -- 836
+		slowButton:setEnabled(pow > 0) -- 837
+	end -- 824
+	local DrawerW = 380 -- 841
+	local DrawerH = 46 -- 842
+	local missionDrawerPlate = createPanel( -- 843
+		root, -- 843
+		DrawerW, -- 843
+		DrawerH, -- 843
+		658964, -- 843
+		{alpha = 0.65, borderHex = 4610157} -- 843
+	) -- 843
+	missionDrawerPlate.position = Vec2(transferTutorial and 24 or (viewW - DrawerW) / 2, viewH - 56) -- 844
+	local missionTitleLabel = createLabel(missionDrawerPlate, "", 19, 13426158) -- 845
+	if missionTitleLabel ~= nil then -- 845
+		missionTitleLabel.anchor = Vec2(0, 0.5) -- 847
+		missionTitleLabel.position = Vec2(14, DrawerH / 2) -- 848
+	end -- 848
+	local missionRocketsLabel = createLabel(missionDrawerPlate, "☆  ☆  ☆", 22, 16766720) -- 850
+	if missionRocketsLabel ~= nil then -- 850
+		missionRocketsLabel.anchor = Vec2(1, 0.5) -- 852
+		missionRocketsLabel.position = Vec2(DrawerW - 14, DrawerH / 2) -- 853
+	end -- 853
+	missionDrawerPlate.visible = false -- 855
+	local drawerVisible = false -- 856
+	local bonusToastSerial = 0 -- 857
+	local drawerLevelTitle = "" -- 858
+	local drawerRockets = 0 -- 859
+	local liveFuelBonus = false -- 860
+	local function updateDrawerDisplay() -- 862
+		if missionTitleLabel ~= nil then -- 862
+			setLabelText(missionTitleLabel, drawerLevelTitle) -- 864
+		end -- 864
+		if missionRocketsLabel ~= nil then -- 864
+			local r1 = drawerRockets >= 1 and "★" or "☆" -- 867
+			local r2 = (drawerRockets >= 2 or liveFuelBonus) and "★" or "☆" -- 868
+			local r3 = drawerRockets >= 3 and "★" or "☆" -- 869
+			setLabelText(missionRocketsLabel, transferTutorial and (drawerRockets >= 1 and "已完成" or (transferMode == "lunar" and "地月转移练习" or "日心借力练习")) or (((r1 .. "  ") .. r2) .. "  ") .. r3) -- 870
+		end -- 870
+	end -- 862
+	local IntroBannerW = math.min(viewW - 48, 540) -- 875
+	local IntroBannerH = 68 -- 876
+	local introBannerPlate = createPanel( -- 877
+		root, -- 877
+		IntroBannerW, -- 877
+		IntroBannerH, -- 877
+		658964, -- 877
+		{alpha = 0.8, borderHex = 4610157} -- 877
+	) -- 877
+	introBannerPlate.position = Vec2((viewW - IntroBannerW) / 2, 70) -- 878
+	local introBannerTitle = createLabel(introBannerPlate, "", 17, 15398143) -- 879
+	if introBannerTitle ~= nil then -- 879
+		introBannerTitle.anchor = Vec2(0.5, 0.5) -- 881
+		introBannerTitle.position = Vec2(IntroBannerW / 2, IntroBannerH * 0.65) -- 882
+	end -- 882
+	local introBannerHint = createLabel(introBannerPlate, "轻触屏幕任意位置跳过运镜", 13, 9283005) -- 884
+	if introBannerHint ~= nil then -- 884
+		introBannerHint.anchor = Vec2(0.5, 0.5) -- 886
+		introBannerHint.position = Vec2(IntroBannerW / 2, IntroBannerH * 0.28) -- 887
+	end -- 887
+	introBannerPlate.visible = false -- 889
+	local PlaybackButtonW = 116 -- 898
+	local PlaybackButtonH = 64 -- 899
+	local playbackGap = 10 -- 900
+	local playbackButtons = {} -- 901
+	local playbackSpeeds = {} -- 902
+	local playbackHandler = nil -- 903
+	local speedChoice = speedChoices ~= nil and #speedChoices > 0 and speedChoices or ({1, 2, 4}) -- 906
+	local playbackSpeed = speedChoice[1] -- 907
 	--- 已应用到节点上的显隐状态。初值 false 如实反映"建出来就隐藏"（照 warp 按钮的教训）。
-	local playbackVisible = false -- 897
-	local function paintPlayback() -- 898
-		do -- 898
-			local i = 0 -- 899
-			while i < #playbackButtons do -- 899
-				local on = playbackSpeeds[i + 1] == playbackSpeed -- 900
-				playbackButtons[i + 1]:setColors(on and ResultButtonBgHex or ResultButtonAltBgHex, ResultButtonFgHex) -- 901
-				i = i + 1 -- 899
-			end -- 899
-		end -- 899
-	end -- 898
-	local function makePlaybackButton(speed, x) -- 904
-		local btn = createButton( -- 905
-			root, -- 905
-			{ -- 905
-				w = PlaybackButtonW, -- 906
-				h = PlaybackButtonH, -- 907
-				text = ____exports.playbackLabel(speed), -- 908
-				fontSize = 30, -- 909
-				bgHex = ResultButtonAltBgHex, -- 910
-				fgHex = ResultButtonFgHex, -- 911
-				borderHex = ResultButtonBorderHex, -- 912
-				onTap = function() -- 913
-					print(("[escape-velocity] playback button fire " .. __TS__NumberToFixed(speed, 0)) .. "x (release)") -- 915
-					playbackSpeed = speed -- 916
-					paintPlayback() -- 917
-					if playbackHandler ~= nil then -- 917
-						playbackHandler(speed) -- 918
-					end -- 918
-				end -- 913
-			} -- 913
-		) -- 913
-		btn.root.position = Vec2(x, 96) -- 923
-		playbackButtons[#playbackButtons + 1] = btn -- 924
-		playbackSpeeds[#playbackSpeeds + 1] = speed -- 925
-	end -- 904
-	do -- 904
-		local i = 0 -- 927
-		while i < #speedChoice and i < 3 do -- 927
-			makePlaybackButton(speedChoice[i + 1], 24 + (PlaybackButtonW + playbackGap) * i) -- 928
-			i = i + 1 -- 927
-		end -- 927
-	end -- 927
-	paintPlayback() -- 930
-	for ____, b in ipairs(playbackButtons) do -- 932
-		b.root.visible = false -- 933
-		b:setEnabled(false) -- 934
-	end -- 934
-	parent:addChild(root) -- 937
-	return { -- 939
-		onDrag = function(____, callback) -- 940
-			dragHandler = callback -- 941
-		end, -- 940
-		setEnabled = function(____, value) -- 943
-			enabled = value -- 944
-			touchLayer.touchEnabled = value -- 947
-			if not value then -- 947
-				dragging = false -- 949
-			end -- 949
-		end, -- 943
-		onAimReady = function(____, callback) -- 952
-			readyHandler = callback -- 953
+	local playbackVisible = false -- 909
+	local function paintPlayback() -- 910
+		do -- 910
+			local i = 0 -- 911
+			while i < #playbackButtons do -- 911
+				local on = playbackSpeeds[i + 1] == playbackSpeed -- 912
+				playbackButtons[i + 1]:setColors(on and ResultButtonBgHex or ResultButtonAltBgHex, ResultButtonFgHex) -- 913
+				i = i + 1 -- 911
+			end -- 911
+		end -- 911
+	end -- 910
+	local function makePlaybackButton(speed, x) -- 916
+		local btn = createButton( -- 917
+			root, -- 917
+			{ -- 917
+				w = PlaybackButtonW, -- 918
+				h = PlaybackButtonH, -- 919
+				text = ____exports.playbackLabel(speed), -- 920
+				fontSize = 30, -- 921
+				bgHex = ResultButtonAltBgHex, -- 922
+				fgHex = ResultButtonFgHex, -- 923
+				borderHex = ResultButtonBorderHex, -- 924
+				onTap = function() -- 925
+					print(("[escape-velocity] playback button fire " .. __TS__NumberToFixed(speed, 0)) .. "x (release)") -- 927
+					playbackSpeed = speed -- 928
+					paintPlayback() -- 929
+					if playbackHandler ~= nil then -- 929
+						playbackHandler(speed) -- 930
+					end -- 930
+				end -- 925
+			} -- 925
+		) -- 925
+		btn.root.position = Vec2(x, 96) -- 935
+		playbackButtons[#playbackButtons + 1] = btn -- 936
+		playbackSpeeds[#playbackSpeeds + 1] = speed -- 937
+	end -- 916
+	do -- 916
+		local i = 0 -- 939
+		while i < #speedChoice and i < 3 do -- 939
+			makePlaybackButton(speedChoice[i + 1], 24 + (PlaybackButtonW + playbackGap) * i) -- 940
+			i = i + 1 -- 939
+		end -- 939
+	end -- 939
+	paintPlayback() -- 942
+	for ____, b in ipairs(playbackButtons) do -- 944
+		b.root.visible = false -- 945
+		b:setEnabled(false) -- 946
+	end -- 946
+	parent:addChild(root) -- 949
+	return { -- 951
+		onDrag = function(____, callback) -- 952
+			dragHandler = callback -- 953
 		end, -- 952
-		onObserve = function(____, callback) -- 955
-			observeHandler = callback -- 956
+		setEnabled = function(____, value) -- 955
+			enabled = value -- 956
+			touchLayer.touchEnabled = value -- 959
+			if not value then -- 959
+				dragging = false -- 961
+			end -- 961
 		end, -- 955
-		onZoom = function(____, callback) -- 958
-			zoomHandler = callback -- 959
-		end, -- 958
-		onLaunch = function(____, callback) -- 961
-			launchHandler = callback -- 962
-		end, -- 961
-		onCancelAim = function(____, callback) -- 964
-			cancelAimHandler = callback -- 965
+		onAimReady = function(____, callback) -- 964
+			readyHandler = callback -- 965
 		end, -- 964
-		setArmed = function(____, armed) -- 967
-			launchButton.root.visible = armed -- 968
-			launchButton:setEnabled(armed) -- 969
-			cancelAimButton.root.visible = armed -- 970
-			cancelAimButton:setEnabled(armed) -- 971
+		onObserve = function(____, callback) -- 967
+			observeHandler = callback -- 968
 		end, -- 967
-		onViewToggle = function(____, callback) -- 973
-			viewHandler = callback -- 974
+		onZoom = function(____, callback) -- 970
+			zoomHandler = callback -- 971
+		end, -- 970
+		onLaunch = function(____, callback) -- 973
+			launchHandler = callback -- 974
 		end, -- 973
-		onCameraFocus = function(____, callback) -- 976
-			cameraFocusHandler = callback -- 976
+		onCancelAim = function(____, callback) -- 976
+			cancelAimHandler = callback -- 977
 		end, -- 976
-		onEndViewing = function(____, callback) -- 977
-			endViewingHandler = callback -- 977
-		end, -- 977
-		setFlightViewing = function(____, flying, completed, mode, is3D, stage) -- 978
-			if not transferTutorial then -- 978
-				return -- 979
-			end -- 979
-			local key = ((((flying and "1" or "0") .. (completed and "1" or "0")) .. mode) .. (is3D and "1" or "0")) .. (stage ~= nil and stage or "") -- 980
-			if viewingKey == key then -- 980
-				return -- 981
-			end -- 981
-			viewingKey = key -- 982
-			if dvLabel ~= nil then -- 982
-				dvLabel.visible = not flying -- 983
-			end -- 983
-			if viewingLabel ~= nil then -- 983
-				viewingLabel.visible = flying -- 985
-				local near = stage == "Mercury" and "安全飞掠水星" or (stage == "Venus" and "金星减速借力" or (stage == "Jupiter" and "木星加速借力" or (stage == "Saturn" and "土星加速借力" or (stage == "Moon" and "借月球引力 · 观察轨迹转弯" or "滑行 · 观察航线")))) -- 986
-				setLabelText(viewingLabel, completed and (transferMode == "lunar" and "掠月完成 · 继续观察返回" or "目标完成 · 继续观察航线") or (stage == "Launch" and (transferMode == "inward" and "逆行点火 · 降低近日点" or "顺行点火 · 抬高" .. orbitName) or near)) -- 987
-				setLabelColor(viewingLabel, completed and 9430458 or ResultHintHex) -- 988
-			end -- 988
-			if cameraFocusButton ~= nil then -- 988
-				cameraFocusButton.root.visible = flying and is3D -- 991
-				cameraFocusButton:setEnabled(flying and is3D) -- 992
-				local title = mode == "Mercury" and "水星" or (mode == "Auto" and "自动" or (mode == "Probe" and "探测器" or (mode == "Moon" and "月球" or (mode == "Earth" and "地球" or (mode == "Venus" and "金星" or (mode == "Jupiter" and "木星" or (mode == "Saturn" and "土星" or (mode == "Sun" and "太阳" or "总览")))))))) -- 993
-				cameraFocusButton:setText("镜头 · " .. title) -- 994
-			end -- 994
-			if endViewingButton ~= nil then -- 994
-				endViewingButton.root.visible = flying and completed -- 996
-				endViewingButton:setEnabled(flying and completed) -- 996
-			end -- 996
-		end, -- 978
-		setViewMode = function(____, mode) -- 998
-			if mode == lastViewText then -- 998
-				return -- 999
-			end -- 999
-			lastViewText = mode -- 1000
-			local btnText = mode == "2D" and "[ 3D ]" or "[ 2D ]" -- 1002
-			viewButton:setText(btnText) -- 1003
-		end, -- 998
-		onPlayback = function(____, callback) -- 1005
-			playbackHandler = callback -- 1006
-		end, -- 1005
-		setPlayback = function(____, speed) -- 1008
-			if speed == playbackSpeed then -- 1008
-				return -- 1009
-			end -- 1009
-			playbackSpeed = speed -- 1010
-			paintPlayback() -- 1011
-		end, -- 1008
-		setPlaybackVisible = function(____, on) -- 1013
-			if on == playbackVisible then -- 1013
-				return -- 1014
-			end -- 1014
-			playbackVisible = on -- 1015
-			for ____, b in ipairs(playbackButtons) do -- 1016
-				b.root.visible = on -- 1017
-				b:setEnabled(on) -- 1018
-			end -- 1018
-		end, -- 1013
-		setFullScreenAim = function(____, on) -- 1021
-			fullScreenAim = on -- 1022
-		end, -- 1021
-		onWarp = function(____, callback) -- 1024
-			warpHandler = callback -- 1025
-		end, -- 1024
-		setDate = function(____, t0, span) -- 1027
-			dateSpan = span > 0 and span or 0 -- 1028
-			applyWarpState() -- 1029
-			local on = dateSpan > 0 -- 1030
-			local text = on and (("发射日期 " .. __TS__NumberToFixed(t0, 0)) .. " / ") .. __TS__NumberToFixed(dateSpan, 0) or "发射日期" -- 1031
-			if text ~= lastDateText then -- 1031
-				lastDateText = text -- 1033
-				setLabelText(dateLabel, text) -- 1034
-			end -- 1034
-		end, -- 1027
-		setTimeEnabled = function(____, on) -- 1037
-			if warpAllowed == on then -- 1037
-				return -- 1038
-			end -- 1038
-			warpAllowed = on -- 1039
-			applyWarpState() -- 1040
-		end, -- 1037
-		update = function(____, dt) -- 1042
-			if not warpOn or warpHoldDir == 0 then -- 1042
-				return -- 1043
-			end -- 1043
-			warpRepeatIn = warpRepeatIn - dt -- 1044
-			if warpRepeatIn > 0 then -- 1044
-				return -- 1045
-			end -- 1045
-			warpRepeatIn = TimeWarpStep / TimeWarpRate -- 1047
-			if warpHandler ~= nil then -- 1047
-				warpHandler(warpHoldDir) -- 1048
-			end -- 1048
-		end, -- 1042
-		isDragging = function() return dragging end, -- 1050
-		setBurnInfo = function(____, burn, budget) -- 1051
-			if transferTutorial then -- 1051
-				return -- 1052
-			end -- 1052
-			local b = budget < 1 and __TS__NumberToFixed(budget, 2) or __TS__NumberToFixed(budget, 0) -- 1056
-			local v = burn < 1 and __TS__NumberToFixed(burn, 2) or __TS__NumberToFixed(burn, 1) -- 1057
-			setLabelText(dvLabel, (("Δv " .. v) .. " / ") .. b) -- 1058
-		end, -- 1051
-		current = function() return aim end, -- 1060
-		setTransferInfo = function(____, apoapsis, duration, reachable) -- 1061
-			setLabelText( -- 1062
-				dvLabel, -- 1062
-				(((((orbitName .. " ") .. __TS__NumberToFixed(apoapsis, 0)) .. " · 点火 ") .. __TS__NumberToFixed(duration, 2)) .. "s") .. (reachable ~= nil and (reachable and (transferMode == "lunar" and " · 可减速掠月" or " · 航线可行") or " · 等待窗口") or "") -- 1062
-			) -- 1062
-		end, -- 1061
-		setProbeOffset = function(____, offset) -- 1064
-			probeOffset = offset -- 1065
-		end, -- 1064
-		handleLocal = function(____, ____local) -- 1069
-			handleDelta(____exports.localToOffset(____local, space)) -- 1070
-		end, -- 1069
-		handleOffset = function(____, delta) return handleDelta(delta) end, -- 1073
-		debugProbeOffset = function() return probeOffset end, -- 1074
-		onSpeedUp = function(____, callback) -- 1075
-			speedUpHandler = callback -- 1076
-		end, -- 1075
-		onSpeedDown = function(____, callback) -- 1078
-			speedDownHandler = callback -- 1079
-		end, -- 1078
-		onTogglePause = function(____, callback) -- 1081
-			pauseHandler = callback -- 1082
+		setArmed = function(____, armed) -- 979
+			launchButton.root.visible = armed -- 980
+			launchButton:setEnabled(armed) -- 981
+			cancelAimButton.root.visible = armed -- 982
+			cancelAimButton:setEnabled(armed) -- 983
+		end, -- 979
+		onViewToggle = function(____, callback) -- 985
+			viewHandler = callback -- 986
+		end, -- 985
+		onCameraFocus = function(____, callback) -- 988
+			cameraFocusHandler = callback -- 988
+		end, -- 988
+		onEndViewing = function(____, callback) -- 989
+			endViewingHandler = callback -- 989
+		end, -- 989
+		setFlightViewing = function(____, flying, completed, mode, is3D, stage) -- 990
+			if not transferTutorial then -- 990
+				return -- 991
+			end -- 991
+			local key = ((((flying and "1" or "0") .. (completed and "1" or "0")) .. mode) .. (is3D and "1" or "0")) .. (stage ~= nil and stage or "") -- 992
+			if viewingKey == key then -- 992
+				return -- 993
+			end -- 993
+			viewingKey = key -- 994
+			if dvLabel ~= nil then -- 994
+				dvLabel.visible = not flying -- 995
+			end -- 995
+			if viewingLabel ~= nil then -- 995
+				viewingLabel.visible = flying -- 997
+				local near = stage == "Mercury" and "安全飞掠水星" or (stage == "Venus" and "金星减速借力" or (stage == "Jupiter" and "木星加速借力" or (stage == "Saturn" and "土星加速借力" or (stage == "Moon" and "借月球引力 · 观察轨迹转弯" or "滑行 · 观察航线")))) -- 998
+				setLabelText(viewingLabel, completed and (transferMode == "lunar" and "掠月完成 · 继续观察返回" or "目标完成 · 继续观察航线") or (stage == "Launch" and (transferMode == "inward" and "逆行点火 · 降低近日点" or "顺行点火 · 抬高" .. orbitName) or near)) -- 999
+				setLabelColor(viewingLabel, completed and 9430458 or ResultHintHex) -- 1000
+			end -- 1000
+			if cameraFocusButton ~= nil then -- 1000
+				cameraFocusButton.root.visible = flying and is3D -- 1003
+				cameraFocusButton:setEnabled(flying and is3D) -- 1004
+				local title = mode == "Mercury" and "水星" or (mode == "Auto" and "自动" or (mode == "Probe" and "探测器" or (mode == "Moon" and "月球" or (mode == "Earth" and "地球" or (mode == "Venus" and "金星" or (mode == "Jupiter" and "木星" or (mode == "Saturn" and "土星" or (mode == "Sun" and "太阳" or "总览")))))))) -- 1005
+				cameraFocusButton:setText("镜头 · " .. title) -- 1006
+			end -- 1006
+			if endViewingButton ~= nil then -- 1006
+				endViewingButton.root.visible = flying and completed -- 1008
+				endViewingButton:setEnabled(flying and completed) -- 1008
+			end -- 1008
+		end, -- 990
+		setViewMode = function(____, mode) -- 1010
+			if mode == lastViewText then -- 1010
+				return -- 1011
+			end -- 1011
+			lastViewText = mode -- 1012
+			local btnText = mode == "2D" and "[ 3D ]" or "[ 2D ]" -- 1014
+			viewButton:setText(btnText) -- 1015
+		end, -- 1010
+		onPlayback = function(____, callback) -- 1017
+			playbackHandler = callback -- 1018
+		end, -- 1017
+		setPlayback = function(____, speed) -- 1020
+			if speed == playbackSpeed then -- 1020
+				return -- 1021
+			end -- 1021
+			playbackSpeed = speed -- 1022
+			paintPlayback() -- 1023
+		end, -- 1020
+		setPlaybackVisible = function(____, on) -- 1025
+			if on == playbackVisible then -- 1025
+				return -- 1026
+			end -- 1026
+			playbackVisible = on -- 1027
+			for ____, b in ipairs(playbackButtons) do -- 1028
+				b.root.visible = on -- 1029
+				b:setEnabled(on) -- 1030
+			end -- 1030
+		end, -- 1025
+		setFullScreenAim = function(____, on) -- 1033
+			fullScreenAim = on -- 1034
+		end, -- 1033
+		onWarp = function(____, callback) -- 1036
+			warpHandler = callback -- 1037
+		end, -- 1036
+		setDate = function(____, t0, span) -- 1039
+			dateSpan = span > 0 and span or 0 -- 1040
+			applyWarpState() -- 1041
+			local on = dateSpan > 0 -- 1042
+			local text = on and (("发射日期 " .. __TS__NumberToFixed(t0, 0)) .. " / ") .. __TS__NumberToFixed(dateSpan, 0) or "发射日期" -- 1043
+			if text ~= lastDateText then -- 1043
+				lastDateText = text -- 1045
+				setLabelText(dateLabel, text) -- 1046
+			end -- 1046
+		end, -- 1039
+		setTimeEnabled = function(____, on) -- 1049
+			if warpAllowed == on then -- 1049
+				return -- 1050
+			end -- 1050
+			warpAllowed = on -- 1051
+			applyWarpState() -- 1052
+		end, -- 1049
+		update = function(____, dt) -- 1054
+			if not warpOn or warpHoldDir == 0 then -- 1054
+				return -- 1055
+			end -- 1055
+			warpRepeatIn = warpRepeatIn - dt -- 1056
+			if warpRepeatIn > 0 then -- 1056
+				return -- 1057
+			end -- 1057
+			warpRepeatIn = TimeWarpStep / TimeWarpRate -- 1059
+			if warpHandler ~= nil then -- 1059
+				warpHandler(warpHoldDir) -- 1060
+			end -- 1060
+		end, -- 1054
+		isDragging = function() return dragging end, -- 1062
+		setBurnInfo = function(____, burn, budget) -- 1063
+			if transferTutorial then -- 1063
+				return -- 1064
+			end -- 1064
+			local b = budget < 1 and __TS__NumberToFixed(budget, 2) or __TS__NumberToFixed(budget, 0) -- 1068
+			local v = burn < 1 and __TS__NumberToFixed(burn, 2) or __TS__NumberToFixed(burn, 1) -- 1069
+			setLabelText(dvLabel, (("Δv " .. v) .. " / ") .. b) -- 1070
+		end, -- 1063
+		current = function() return aim end, -- 1072
+		setTransferInfo = function(____, apoapsis, duration, reachable) -- 1073
+			setLabelText( -- 1074
+				dvLabel, -- 1074
+				(((((orbitName .. " ") .. __TS__NumberToFixed(apoapsis, 0)) .. " · 点火 ") .. __TS__NumberToFixed(duration, 2)) .. "s") .. (reachable ~= nil and (reachable and (transferMode == "lunar" and " · 可减速掠月" or " · 航线可行") or " · 等待窗口") or "") -- 1074
+			) -- 1074
+		end, -- 1073
+		setProbeOffset = function(____, offset) -- 1076
+			probeOffset = offset -- 1077
+		end, -- 1076
+		handleLocal = function(____, ____local) -- 1081
+			handleDelta(____exports.localToOffset(____local, space)) -- 1082
 		end, -- 1081
-		setTimeControl = function(____, pow, maxPow, paused, missionSeconds, actualRate) -- 1084
-			setTimeControl( -- 1085
-				pow, -- 1085
-				maxPow, -- 1085
-				paused, -- 1085
-				missionSeconds, -- 1085
-				actualRate -- 1085
-			) -- 1085
-		end, -- 1084
-		onZoomIn = function(____, callback) -- 1087
-			zoomInHandler = callback -- 1088
+		handleOffset = function(____, delta) return handleDelta(delta) end, -- 1085
+		debugProbeOffset = function() return probeOffset end, -- 1086
+		onSpeedUp = function(____, callback) -- 1087
+			speedUpHandler = callback -- 1088
 		end, -- 1087
-		onZoomOut = function(____, callback) -- 1090
-			zoomOutHandler = callback -- 1091
+		onSpeedDown = function(____, callback) -- 1090
+			speedDownHandler = callback -- 1091
 		end, -- 1090
-		onFitView = function(____, callback) -- 1093
-			fitViewHandler = callback -- 1094
+		onTogglePause = function(____, callback) -- 1093
+			pauseHandler = callback -- 1094
 		end, -- 1093
-		setZoomControlsVisible = function(____, on) -- 1096
-			setZoomVisible(on) -- 1097
+		setTimeControl = function(____, pow, maxPow, paused, missionSeconds, actualRate) -- 1096
+			setTimeControl( -- 1097
+				pow, -- 1097
+				maxPow, -- 1097
+				paused, -- 1097
+				missionSeconds, -- 1097
+				actualRate -- 1097
+			) -- 1097
 		end, -- 1096
-		setMissionDrawer = function(____, levelName, _challenges, currentRockets) -- 1099
-			drawerLevelTitle = levelName -- 1100
-			drawerRockets = currentRockets -- 1101
-			updateDrawerDisplay() -- 1102
+		onZoomIn = function(____, callback) -- 1099
+			zoomInHandler = callback -- 1100
 		end, -- 1099
-		setMissionDrawerVisible = function(____, visible) -- 1104
-			if drawerVisible == visible then -- 1104
-				return -- 1105
-			end -- 1105
-			drawerVisible = visible -- 1106
-			missionDrawerPlate.visible = visible -- 1107
-		end, -- 1104
-		setLiveFuelChallengeStatus = function(____, achieved) -- 1109
-			if liveFuelBonus == achieved then -- 1109
-				return -- 1110
-			end -- 1110
-			liveFuelBonus = achieved -- 1111
-			updateDrawerDisplay() -- 1112
-		end, -- 1109
-		setIntroTourBanner = function(____, title, hint) -- 1114
-			if introBannerTitle ~= nil then -- 1114
-				setLabelText(introBannerTitle, title) -- 1115
-			end -- 1115
-			if introBannerHint ~= nil and hint ~= nil then -- 1115
-				setLabelText(introBannerHint, hint) -- 1116
-			end -- 1116
-		end, -- 1114
-		setIntroTourBannerVisible = function(____, visible) -- 1118
-			introBannerPlate.visible = visible -- 1119
-		end, -- 1118
-		onSkipTour = function(____, callback) -- 1121
-			skipTourHandler = callback -- 1122
+		onZoomOut = function(____, callback) -- 1102
+			zoomOutHandler = callback -- 1103
+		end, -- 1102
+		onFitView = function(____, callback) -- 1105
+			fitViewHandler = callback -- 1106
+		end, -- 1105
+		setZoomControlsVisible = function(____, on) -- 1108
+			setZoomVisible(on) -- 1109
+		end, -- 1108
+		setMissionDrawer = function(____, levelName, _challenges, currentRockets) -- 1111
+			drawerLevelTitle = levelName -- 1112
+			drawerRockets = currentRockets -- 1113
+			updateDrawerDisplay() -- 1114
+		end, -- 1111
+		setMissionDrawerVisible = function(____, visible) -- 1116
+			if drawerVisible == visible then -- 1116
+				return -- 1117
+			end -- 1117
+			drawerVisible = visible -- 1118
+			missionDrawerPlate.visible = visible -- 1119
+		end, -- 1116
+		setLiveFuelChallengeStatus = function(____, achieved) -- 1121
+			if liveFuelBonus == achieved then -- 1121
+				return -- 1122
+			end -- 1122
+			liveFuelBonus = achieved -- 1123
+			updateDrawerDisplay() -- 1124
 		end, -- 1121
-		setTourActiveChecker = function(____, fn) -- 1124
-			tourActiveChecker = fn -- 1125
-		end, -- 1124
-		onQuickRetry = function(____, callback) -- 1127
-			quickRetryHandler = callback -- 1128
-		end, -- 1127
-		setStarsStatus = function(____, starsGot) -- 1130
-			updateStarsStatus(starsGot) -- 1131
+		setIntroTourBanner = function(____, title, hint) -- 1126
+			if introBannerTitle ~= nil then -- 1126
+				setLabelText(introBannerTitle, title) -- 1127
+			end -- 1127
+			if introBannerHint ~= nil and hint ~= nil then -- 1127
+				setLabelText(introBannerHint, hint) -- 1128
+			end -- 1128
+		end, -- 1126
+		setIntroTourBannerVisible = function(____, visible) -- 1130
+			introBannerPlate.visible = visible -- 1131
 		end, -- 1130
-		root = root -- 1133
-	} -- 1133
-end -- 338
-local ResultBackdropHex = 329484 -- 1150
-local ResultCardHex = 1252395 -- 1151
-local ResultCardBorderHex = 3362938 -- 1152
-local ResultLevelHex = 9417948 -- 1153
-local ResultBodyHex = 14149367 -- 1154
-ResultHintHex = 8229803 -- 1155
-ResultButtonBgHex = 1919610 -- 1156
-ResultButtonAltBgHex = 1779509 -- 1157
-ResultButtonFgHex = 15398143 -- 1158
-ResultButtonBorderHex = 5211846 -- 1159
-local TitleSuccessHex = 8381344 -- 1160
-local TitleMissedHex = 16766073 -- 1161
-local TitleCrashedHex = 16743019 -- 1162
-local SelectBackdropHex = 329484 -- 1164
-local SelectTitleHex = 16777215 -- 1165
-local SelectSubtitleHex = 10470632 -- 1166
-local SelectHintHex = 7309478 -- 1167
-local SelectOpenBgHex = 1919610 -- 1168
-local SelectOpenFgHex = 15398143 -- 1169
-local SelectLockedBgHex = 1383204 -- 1170
-local SelectLockedFgHex = 6912140 -- 1171
-local SelectBorderHex = 4157096 -- 1172
+		onSkipTour = function(____, callback) -- 1133
+			skipTourHandler = callback -- 1134
+		end, -- 1133
+		setTourActiveChecker = function(____, fn) -- 1136
+			tourActiveChecker = fn -- 1137
+		end, -- 1136
+		onQuickRetry = function(____, callback) -- 1139
+			quickRetryHandler = callback -- 1140
+		end, -- 1139
+		setStarsStatus = function(____, starsGot) -- 1142
+			updateStarsStatus(starsGot) -- 1143
+		end, -- 1142
+		setBonusStatus = function(____, got, total) -- 1145
+			updateBonusStatus(got, total) -- 1145
+		end, -- 1145
+		setBonusFeedback = function(____, score) -- 1146
+			if bonusToastLabel == nil then -- 1146
+				return -- 1147
+			end -- 1147
+			bonusToastSerial = bonusToastSerial + 1 -- 1148
+			local serial = bonusToastSerial -- 1149
+			setLabelText( -- 1150
+				bonusToastLabel, -- 1150
+				"🚀 +" .. __TS__NumberToFixed(score, 0) -- 1150
+			) -- 1150
+			bonusToastLabel.visible = true -- 1151
+			local elapsed = 0 -- 1152
+			root:schedule(function(deltaTime) -- 1153
+				elapsed = elapsed + deltaTime -- 1154
+				if elapsed >= 0.6 then -- 1154
+					if serial == bonusToastSerial then -- 1154
+						bonusToastLabel.visible = false -- 1155
+					end -- 1155
+					return true -- 1155
+				end -- 1155
+				return false -- 1156
+			end) -- 1153
+		end, -- 1146
+		root = root -- 1159
+	} -- 1159
+end -- 341
+local ResultBackdropHex = 329484 -- 1176
+local ResultCardHex = 1252395 -- 1177
+local ResultCardBorderHex = 3362938 -- 1178
+local ResultLevelHex = 9417948 -- 1179
+local ResultBodyHex = 14149367 -- 1180
+ResultHintHex = 8229803 -- 1181
+ResultButtonBgHex = 1919610 -- 1182
+ResultButtonAltBgHex = 1779509 -- 1183
+ResultButtonFgHex = 15398143 -- 1184
+ResultButtonBorderHex = 5211846 -- 1185
+local TitleSuccessHex = 8381344 -- 1186
+local TitleMissedHex = 16766073 -- 1187
+local TitleCrashedHex = 16743019 -- 1188
+local SelectBackdropHex = 329484 -- 1190
+local SelectTitleHex = 16777215 -- 1191
+local SelectSubtitleHex = 10470632 -- 1192
+local SelectHintHex = 7309478 -- 1193
+local SelectOpenBgHex = 1919610 -- 1194
+local SelectOpenFgHex = 15398143 -- 1195
+local SelectLockedBgHex = 1383204 -- 1196
+local SelectLockedFgHex = 6912140 -- 1197
+local SelectBorderHex = 4157096 -- 1198
 --- 夹紧到 [lo, hi]（NaN 会原样穿过去，所以调用方必须传已校验的数）。
-local function clampNumber(value, lo, hi) -- 1175
-	if value < lo then -- 1175
-		return lo -- 1176
-	end -- 1176
-	if value > hi then -- 1176
-		return hi -- 1177
-	end -- 1177
-	return value -- 1178
-end -- 1175
+local function clampNumber(value, lo, hi) -- 1201
+	if value < lo then -- 1201
+		return lo -- 1202
+	end -- 1202
+	if value > hi then -- 1202
+		return hi -- 1203
+	end -- 1203
+	return value -- 1204
+end -- 1201
 --- 三态标题（逐字，手册 §5.8）。
-local function resultTitle(result) -- 1182
-	if result == "success" then -- 1182
-		return "借力成功" -- 1183
-	end -- 1183
-	if result == "crashed" then -- 1183
-		return "信号中断" -- 1184
-	end -- 1184
-	return "错过目标" -- 1185
-end -- 1182
+local function resultTitle(result) -- 1208
+	if result == "success" then -- 1208
+		return "借力成功" -- 1209
+	end -- 1209
+	if result == "crashed" then -- 1209
+		return "信号中断" -- 1210
+	end -- 1210
+	return "错过目标" -- 1211
+end -- 1208
 --- 三态说明句（逐字）。
-local function resultBody(result) -- 1189
-	if result == "success" then -- 1189
-		return "行星把探测器甩了出去，速度够了。" -- 1190
-	end -- 1190
-	if result == "crashed" then -- 1190
-		return "探测器撞上行星，任务到此为止。" -- 1191
-	end -- 1191
-	return "从行星身侧掠过，没能借到那一点速度。" -- 1192
-end -- 1189
+local function resultBody(result) -- 1215
+	if result == "success" then -- 1215
+		return "行星把探测器甩了出去，速度够了。" -- 1216
+	end -- 1216
+	if result == "crashed" then -- 1216
+		return "探测器撞上行星，任务到此为止。" -- 1217
+	end -- 1217
+	return "从行星身侧掠过，没能借到那一点速度。" -- 1218
+end -- 1215
 --- 标题配色：成功偏青绿、错过偏暖黄、撞毁偏红。
-local function resultTitleColor(result) -- 1196
-	if result == "success" then -- 1196
-		return TitleSuccessHex -- 1197
-	end -- 1197
-	if result == "crashed" then -- 1197
-		return TitleCrashedHex -- 1198
-	end -- 1198
-	return TitleMissedHex -- 1199
-end -- 1196
+local function resultTitleColor(result) -- 1222
+	if result == "success" then -- 1222
+		return TitleSuccessHex -- 1223
+	end -- 1223
+	if result == "crashed" then -- 1223
+		return TitleCrashedHex -- 1224
+	end -- 1224
+	return TitleMissedHex -- 1225
+end -- 1222
 --- 第四行提示（面板自有文案，不属于三态说明句）。
 -- 
 -- 为什么要有这一行：解锁是 S2.3 的核心反馈，玩家成功时必须**当场**看到
 -- “下一关开了”，否则只会以为“回到关卡选择还要自己找”。
-local function resultHint(result) -- 1208
-	if result == "success" then -- 1208
-		return "下一关已解锁" -- 1209
-	end -- 1209
-	return "可重试本关，或返回关卡选择" -- 1210
-end -- 1208
+local function resultHint(result) -- 1234
+	if result == "success" then -- 1234
+		return "下一关已解锁" -- 1235
+	end -- 1235
+	return "可重试本关，或返回关卡选择" -- 1236
+end -- 1234
 --- 建结算面板：半透明全屏底 + 居中工业级卡片 + 三枚火箭挑战清单 + 遥测数据 + 2 个按钮。
 -- 
 -- ⚠️ 全屏底**不能**设 `touch: true`（真机验收踩到的坑）：
@@ -1134,207 +1179,210 @@ end -- 1208
 -- 
 -- @param viewW 视图逻辑宽（`View.size.width`）
 -- @param viewH 视图逻辑高
-function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1255
-	local root = createPanel( -- 1261
-		parent, -- 1261
-		viewW, -- 1261
-		viewH, -- 1261
-		ResultBackdropHex, -- 1261
-		{alpha = 0.78} -- 1261
-	) -- 1261
-	local cardW = clampNumber(viewW * 0.9, 360, 560) -- 1263
-	local btnW = clampNumber(cardW - 60, MinButtonWidth, 480) -- 1264
-	local btnH = clampNumber(viewH * 0.08, 48, 60) -- 1265
-	local padX = (cardW - btnW) / 2 -- 1266
-	local padY = 28 -- 1267
-	local fontLevel = 24 -- 1269
-	local fontRockets = 38 -- 1270
-	local fontTitle = 30 -- 1271
-	local fontTelemetry = 19 -- 1272
-	local fontChallenge = 18 -- 1273
-	local fontTotal = 20 -- 1274
-	local btnFont = 24 -- 1275
-	local rowGap = 12 -- 1276
-	local hLevel = 28 -- 1278
-	local hRockets = 42 -- 1279
-	local hTitle = 34 -- 1280
-	local hTelemetry = 24 -- 1281
-	local hChallengeRow = 30 -- 1282
-	local hChallenges = hChallengeRow * 3 -- 1283
-	local hTotal = 24 -- 1284
-	local cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7 -- 1286
-	if cardH > viewH - 24 then -- 1286
-		btnH = math.max(MinButtonHeight, btnH - (cardH - (viewH - 24)) / 2) -- 1288
-		cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7 -- 1289
-	end -- 1289
-	local card = createPanel( -- 1292
-		root, -- 1292
-		cardW, -- 1292
-		cardH, -- 1292
-		ResultCardHex, -- 1292
-		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 1292
-	) -- 1292
-	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2) -- 1297
-	local cursor = cardH - padY -- 1300
-	cursor = cursor - hLevel -- 1302
-	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 1303
-	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 1304
-	cursor = cursor - (rowGap + hRockets) -- 1306
-	local rocketsLabel = createLabel(card, "", fontRockets, 16762939) -- 1307
-	setLabelCenter(rocketsLabel, cardW / 2, cursor + hRockets / 2) -- 1308
-	cursor = cursor - (rowGap + hTitle) -- 1310
-	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 1311
-	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 1312
-	cursor = cursor - (rowGap + hTelemetry) -- 1314
-	local telemetryLabel = createLabel(card, "", fontTelemetry, ResultHintHex) -- 1315
-	setLabelCenter(telemetryLabel, cardW / 2, cursor + hTelemetry / 2) -- 1316
-	cursor = cursor - rowGap -- 1318
-	local challengeLabels = {} -- 1319
-	do -- 1319
-		local k = 0 -- 1320
-		while k < 3 do -- 1320
-			cursor = cursor - hChallengeRow -- 1321
-			local cl = createLabel(card, "", fontChallenge, 10405355) -- 1322
-			if cl ~= nil then -- 1322
-				cl.textWidth = cardW - 60 -- 1324
-				setLabelCenter(cl, cardW / 2, cursor + hChallengeRow / 2) -- 1325
-				challengeLabels[#challengeLabels + 1] = cl -- 1326
-			end -- 1326
-			k = k + 1 -- 1320
-		end -- 1320
-	end -- 1320
-	cursor = cursor - (rowGap + hTotal) -- 1330
-	local totalLabel = createLabel(card, "", fontTotal, 16766073) -- 1331
-	setLabelCenter(totalLabel, cardW / 2, cursor + hTotal / 2) -- 1332
-	cursor = cursor - (rowGap + btnH) -- 1334
-	local retryButton = createButton(card, { -- 1335
-		w = btnW, -- 1336
-		h = btnH, -- 1337
-		text = "重试本关", -- 1338
-		fontSize = btnFont, -- 1339
-		bgHex = ResultButtonBgHex, -- 1340
-		fgHex = ResultButtonFgHex, -- 1341
-		borderHex = ResultButtonBorderHex, -- 1342
-		fireOn = "press", -- 1343
-		onTap = opts.onRetry -- 1344
-	}) -- 1344
-	retryButton.root.position = Vec2(padX, cursor) -- 1346
-	cursor = cursor - (14 + btnH) -- 1348
-	local backButton = createButton(card, { -- 1349
-		w = btnW, -- 1350
-		h = btnH, -- 1351
-		text = "返回关卡选择", -- 1352
-		fontSize = btnFont, -- 1353
-		bgHex = ResultButtonAltBgHex, -- 1354
-		fgHex = ResultButtonFgHex, -- 1355
-		borderHex = ResultButtonBorderHex, -- 1356
-		fireOn = "press", -- 1357
-		onTap = opts.onBackToSelect -- 1358
-	}) -- 1358
-	backButton.root.position = Vec2(padX, cursor) -- 1360
-	root.visible = false -- 1362
-	retryButton:setEnabled(false) -- 1363
-	backButton:setEnabled(false) -- 1364
-	return { -- 1366
-		root = root, -- 1367
-		show = function(____, result, levelName, detail) -- 1368
-			retryButton:setEnabled(true) -- 1369
-			backButton:setEnabled(true) -- 1370
-			setLabelText(levelLabel, levelName) -- 1371
-			setLabelText( -- 1372
-				titleLabel, -- 1372
-				resultTitle(result) -- 1372
-			) -- 1372
-			setLabelColor( -- 1373
-				titleLabel, -- 1373
-				resultTitleColor(result) -- 1373
-			) -- 1373
-			if detail ~= nil then -- 1373
-				if detail.completionOnly == true then -- 1373
-					setLabelText( -- 1376
-						titleLabel, -- 1376
-						result == "success" and "引力借力完成" or resultTitle(result) -- 1376
-					) -- 1376
-				end -- 1376
-				local rCount = detail.rocketsGot -- 1377
-				local rStr = "☆  ☆  ☆" -- 1378
-				if rCount == 1 then -- 1378
-					rStr = "★  ☆  ☆" -- 1379
-				elseif rCount == 2 then -- 1379
-					rStr = "★  ★  ☆" -- 1380
-				elseif rCount >= 3 then -- 1380
-					rStr = "★  ★  ★" -- 1381
-				end -- 1381
-				setLabelText(rocketsLabel, detail.completionOnly == true and (result == "success" and "目标已完成" or "再试一次") or rStr) -- 1382
-				setLabelColor(rocketsLabel, rCount > 0 and 16762939 or 6322324) -- 1383
-				local pct = detail.dvBudget > 0 and math.floor(detail.burnDv / detail.dvBudget * 100) or 0 -- 1385
-				local telemText = ((((((("点火消耗 Δv: " .. __TS__NumberToFixed(detail.burnDv, 2)) .. " / ") .. __TS__NumberToFixed(detail.dvBudget, 2)) .. " (") .. __TS__NumberToFixed(pct, 0)) .. "%) · 用时: ") .. __TS__NumberToFixed(detail.flightTime, 1)) .. "s" -- 1386
-				setLabelText(telemetryLabel, telemText) -- 1387
-				do -- 1387
-					local k = 0 -- 1389
-					while k < 3 do -- 1389
-						if challengeLabels[k + 1] ~= nil then -- 1389
-							if k < #detail.challenges then -- 1389
-								local ok = detail.achieved[k + 1] -- 1392
-								local icon = ok and "★" or "☆" -- 1393
-								local rank = k == 0 and "一星" or (k == 1 and "二星" or "三星") -- 1394
-								local text = detail.completionOnly == true and (ok and "目标完成 · 记录已保存" or "尚未完成目标") or (((icon .. " [") .. rank) .. "] ") .. detail.challenges[k + 1] -- 1395
-								setLabelText(challengeLabels[k + 1], text) -- 1396
-								setLabelColor(challengeLabels[k + 1], ok and 16762939 or 6322324) -- 1397
-								challengeLabels[k + 1].visible = true -- 1398
-							else -- 1398
-								challengeLabels[k + 1].visible = false -- 1400
-							end -- 1400
-						end -- 1400
-						k = k + 1 -- 1389
-					end -- 1389
-				end -- 1389
-				setLabelText( -- 1405
-					totalLabel, -- 1405
-					((("全深空火箭勋章: " .. __TS__NumberToFixed(detail.totalRockets, 0)) .. " / ") .. __TS__NumberToFixed(detail.totalPossibleRockets, 0)) .. " ★" -- 1405
-				) -- 1405
-				if totalLabel ~= nil then -- 1405
-					totalLabel.visible = detail.completionOnly ~= true -- 1406
-				end -- 1406
-			else -- 1406
-				setLabelText(rocketsLabel, result == "success" and "★  ☆  ☆" or "☆  ☆  ☆") -- 1408
-				setLabelColor(rocketsLabel, result == "success" and 16762939 or 6322324) -- 1409
-				setLabelText( -- 1410
-					telemetryLabel, -- 1410
-					resultBody(result) -- 1410
-				) -- 1410
-				do -- 1410
-					local k = 0 -- 1411
-					while k < #challengeLabels do -- 1411
-						challengeLabels[k + 1].visible = false -- 1411
-						k = k + 1 -- 1411
-					end -- 1411
-				end -- 1411
-				if totalLabel ~= nil then -- 1411
-					totalLabel.visible = false -- 1412
-				end -- 1412
-			end -- 1412
-			root.visible = true -- 1414
-		end, -- 1368
-		hide = function() -- 1416
-			root.visible = false -- 1417
-			retryButton:setEnabled(false) -- 1418
-			backButton:setEnabled(false) -- 1419
-		end -- 1416
-	} -- 1416
-end -- 1255
-local FinaleBackdropHex = 329484 -- 1434
-local FinaleMainHex = 15398143 -- 1435
-local FinaleSubHex = 10470632 -- 1436
+function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1282
+	local root = createPanel( -- 1288
+		parent, -- 1288
+		viewW, -- 1288
+		viewH, -- 1288
+		ResultBackdropHex, -- 1288
+		{alpha = 0.78} -- 1288
+	) -- 1288
+	local cardW = clampNumber(viewW * 0.9, 360, 560) -- 1290
+	local btnW = clampNumber(cardW - 60, MinButtonWidth, 480) -- 1291
+	local btnH = clampNumber(viewH * 0.08, 48, 60) -- 1292
+	local padX = (cardW - btnW) / 2 -- 1293
+	local padY = 28 -- 1294
+	local fontLevel = 24 -- 1296
+	local fontRockets = 38 -- 1297
+	local fontTitle = 30 -- 1298
+	local fontTelemetry = 19 -- 1299
+	local fontChallenge = 18 -- 1300
+	local fontTotal = 20 -- 1301
+	local btnFont = 24 -- 1302
+	local rowGap = 12 -- 1303
+	local hLevel = 28 -- 1305
+	local hRockets = 42 -- 1306
+	local hTitle = 34 -- 1307
+	local hTelemetry = 24 -- 1308
+	local hChallengeRow = 30 -- 1309
+	local hChallenges = hChallengeRow * 3 -- 1310
+	local hTotal = 24 -- 1311
+	local cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7 -- 1313
+	if cardH > viewH - 24 then -- 1313
+		btnH = math.max(MinButtonHeight, btnH - (cardH - (viewH - 24)) / 2) -- 1315
+		cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7 -- 1316
+	end -- 1316
+	local card = createPanel( -- 1319
+		root, -- 1319
+		cardW, -- 1319
+		cardH, -- 1319
+		ResultCardHex, -- 1319
+		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 1319
+	) -- 1319
+	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2) -- 1324
+	local cursor = cardH - padY -- 1327
+	cursor = cursor - hLevel -- 1329
+	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 1330
+	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 1331
+	cursor = cursor - (rowGap + hRockets) -- 1333
+	local rocketsLabel = createLabel(card, "", fontRockets, 16762939) -- 1334
+	setLabelCenter(rocketsLabel, cardW / 2, cursor + hRockets / 2) -- 1335
+	cursor = cursor - (rowGap + hTitle) -- 1337
+	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 1338
+	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 1339
+	cursor = cursor - (rowGap + hTelemetry) -- 1341
+	local telemetryLabel = createLabel(card, "", fontTelemetry, ResultHintHex) -- 1342
+	setLabelCenter(telemetryLabel, cardW / 2, cursor + hTelemetry / 2) -- 1343
+	cursor = cursor - rowGap -- 1345
+	local challengeLabels = {} -- 1346
+	do -- 1346
+		local k = 0 -- 1347
+		while k < 3 do -- 1347
+			cursor = cursor - hChallengeRow -- 1348
+			local cl = createLabel(card, "", fontChallenge, 10405355) -- 1349
+			if cl ~= nil then -- 1349
+				cl.textWidth = cardW - 60 -- 1351
+				setLabelCenter(cl, cardW / 2, cursor + hChallengeRow / 2) -- 1352
+				challengeLabels[#challengeLabels + 1] = cl -- 1353
+			end -- 1353
+			k = k + 1 -- 1347
+		end -- 1347
+	end -- 1347
+	cursor = cursor - (rowGap + hTotal) -- 1357
+	local totalLabel = createLabel(card, "", fontTotal, 16766073) -- 1358
+	setLabelCenter(totalLabel, cardW / 2, cursor + hTotal / 2) -- 1359
+	cursor = cursor - (rowGap + btnH) -- 1361
+	local retryButton = createButton(card, { -- 1362
+		w = btnW, -- 1363
+		h = btnH, -- 1364
+		text = "重试本关", -- 1365
+		fontSize = btnFont, -- 1366
+		bgHex = ResultButtonBgHex, -- 1367
+		fgHex = ResultButtonFgHex, -- 1368
+		borderHex = ResultButtonBorderHex, -- 1369
+		fireOn = "press", -- 1370
+		onTap = opts.onRetry -- 1371
+	}) -- 1371
+	retryButton.root.position = Vec2(padX, cursor) -- 1373
+	cursor = cursor - (14 + btnH) -- 1375
+	local backButton = createButton(card, { -- 1376
+		w = btnW, -- 1377
+		h = btnH, -- 1378
+		text = "返回关卡选择", -- 1379
+		fontSize = btnFont, -- 1380
+		bgHex = ResultButtonAltBgHex, -- 1381
+		fgHex = ResultButtonFgHex, -- 1382
+		borderHex = ResultButtonBorderHex, -- 1383
+		fireOn = "press", -- 1384
+		onTap = opts.onBackToSelect -- 1385
+	}) -- 1385
+	backButton.root.position = Vec2(padX, cursor) -- 1387
+	root.visible = false -- 1389
+	retryButton:setEnabled(false) -- 1390
+	backButton:setEnabled(false) -- 1391
+	return { -- 1393
+		root = root, -- 1394
+		show = function(____, result, levelName, detail) -- 1395
+			retryButton:setEnabled(true) -- 1396
+			backButton:setEnabled(true) -- 1397
+			setLabelText(levelLabel, levelName) -- 1398
+			setLabelText( -- 1399
+				titleLabel, -- 1399
+				resultTitle(result) -- 1399
+			) -- 1399
+			setLabelColor( -- 1400
+				titleLabel, -- 1400
+				resultTitleColor(result) -- 1400
+			) -- 1400
+			if detail ~= nil then -- 1400
+				if detail.completionOnly == true then -- 1400
+					setLabelText( -- 1403
+						titleLabel, -- 1403
+						result == "success" and "引力借力完成" or resultTitle(result) -- 1403
+					) -- 1403
+				end -- 1403
+				local rCount = detail.rocketsGot -- 1404
+				local rStr = "☆  ☆  ☆" -- 1405
+				if rCount == 1 then -- 1405
+					rStr = "★  ☆  ☆" -- 1406
+				elseif rCount == 2 then -- 1406
+					rStr = "★  ★  ☆" -- 1407
+				elseif rCount >= 3 then -- 1407
+					rStr = "★  ★  ★" -- 1408
+				end -- 1408
+				setLabelText( -- 1409
+					rocketsLabel, -- 1409
+					detail.completionOnly == true and (result == "success" and "目标已完成" or "再试一次") or (detail.bonusPointCount ~= nil and (("火箭得分 " .. __TS__NumberToFixed(rCount, 0)) .. " / ") .. __TS__NumberToFixed(detail.bonusPointCount, 0) or rStr) -- 1409
+				) -- 1409
+				setLabelColor(rocketsLabel, rCount > 0 and 16762939 or 6322324) -- 1410
+				local pct = detail.dvBudget > 0 and math.floor(detail.burnDv / detail.dvBudget * 100) or 0 -- 1412
+				local telemText = ((((((("点火消耗 Δv: " .. __TS__NumberToFixed(detail.burnDv, 2)) .. " / ") .. __TS__NumberToFixed(detail.dvBudget, 2)) .. " (") .. __TS__NumberToFixed(pct, 0)) .. "%) · 用时: ") .. __TS__NumberToFixed(detail.flightTime, 1)) .. "s" -- 1413
+				setLabelText(telemetryLabel, telemText) -- 1414
+				do -- 1414
+					local k = 0 -- 1416
+					while k < 3 do -- 1416
+						if challengeLabels[k + 1] ~= nil then -- 1416
+							if k < #detail.challenges then -- 1416
+								local ok = detail.achieved[k + 1] -- 1419
+								local icon = ok and "★" or "☆" -- 1420
+								local rank = k == 0 and "一星" or (k == 1 and "二星" or "三星") -- 1421
+								local text = detail.completionOnly == true and (ok and "目标完成 · 记录已保存" or "尚未完成目标") or (((icon .. " [") .. rank) .. "] ") .. detail.challenges[k + 1] -- 1422
+								setLabelText(challengeLabels[k + 1], text) -- 1423
+								setLabelColor(challengeLabels[k + 1], ok and 16762939 or 6322324) -- 1424
+								challengeLabels[k + 1].visible = true -- 1425
+							else -- 1425
+								challengeLabels[k + 1].visible = false -- 1427
+							end -- 1427
+						end -- 1427
+						k = k + 1 -- 1416
+					end -- 1416
+				end -- 1416
+				setLabelText( -- 1432
+					totalLabel, -- 1432
+					((("全深空火箭勋章: " .. __TS__NumberToFixed(detail.totalRockets, 0)) .. " / ") .. __TS__NumberToFixed(detail.totalPossibleRockets, 0)) .. " ★" -- 1432
+				) -- 1432
+				if totalLabel ~= nil then -- 1432
+					totalLabel.visible = detail.completionOnly ~= true -- 1433
+				end -- 1433
+			else -- 1433
+				setLabelText(rocketsLabel, result == "success" and "★  ☆  ☆" or "☆  ☆  ☆") -- 1435
+				setLabelColor(rocketsLabel, result == "success" and 16762939 or 6322324) -- 1436
+				setLabelText( -- 1437
+					telemetryLabel, -- 1437
+					resultBody(result) -- 1437
+				) -- 1437
+				do -- 1437
+					local k = 0 -- 1438
+					while k < #challengeLabels do -- 1438
+						challengeLabels[k + 1].visible = false -- 1438
+						k = k + 1 -- 1438
+					end -- 1438
+				end -- 1438
+				if totalLabel ~= nil then -- 1438
+					totalLabel.visible = false -- 1439
+				end -- 1439
+			end -- 1439
+			root.visible = true -- 1441
+		end, -- 1395
+		hide = function() -- 1443
+			root.visible = false -- 1444
+			retryButton:setEnabled(false) -- 1445
+			backButton:setEnabled(false) -- 1446
+		end -- 1443
+	} -- 1443
+end -- 1282
+local FinaleBackdropHex = 329484 -- 1461
+local FinaleMainHex = 15398143 -- 1462
+local FinaleSubHex = 10470632 -- 1463
 --- 终章主文案（逐字；改之前先改 PLAN S3.18 与 docs/开发手册.md）。
-____exports.FinaleMainText = "这就是我们整颗星球的样子 —— 而你已经从那里飞到了这里。" -- 1441
+____exports.FinaleMainText = "这就是我们整颗星球的样子 —— 而你已经从那里飞到了这里。" -- 1468
 --- 终章小字：飞行距离 / 用时（纯函数，可单测）。
 -- 
 -- 距离是**平面单位**（关卡尺度，不是公里）—— 别在这里换算成天文单位，
 -- 那一换就得把整条注释重写一遍，而玩家要的只是「飞了多远、花了多久」。
-function ____exports.finaleSubtitle(distance, time) -- 1449
-	return ((("飞行 " .. __TS__NumberToFixed(distance, 0)) .. " 单位 · 用时 ") .. __TS__NumberToFixed(time, 1)) .. " 秒" -- 1450
-end -- 1449
+function ____exports.finaleSubtitle(distance, time) -- 1476
+	return ((("飞行 " .. __TS__NumberToFixed(distance, 0)) .. " 单位 · 用时 ") .. __TS__NumberToFixed(time, 1)) .. " 秒" -- 1477
+end -- 1476
 --- 建终章面板：半透明全屏底 + 主文案 + 小字 + 「返回关卡选择」。
 -- 
 -- ⚠️ 全屏底**不设** `touch: true`（与结算面板同一条规矩）：全屏 + swallowTouches
@@ -1347,56 +1395,56 @@ end -- 1449
 -- 
 -- @param viewW 视图逻辑宽（`View.size.width`）
 -- @param viewH 视图逻辑高
-function ____exports.createFinalePanel(parent, viewW, viewH, opts) -- 1480
-	local root = createPanel( -- 1486
-		parent, -- 1486
-		viewW, -- 1486
-		viewH, -- 1486
-		FinaleBackdropHex, -- 1486
-		{alpha = 0.55} -- 1486
-	) -- 1486
-	local fontMain = 34 -- 1488
-	local fontSub = 30 -- 1489
-	local btnFont = 40 -- 1490
-	local mainLabel = createLabel(root, ____exports.FinaleMainText, fontMain, FinaleMainHex) -- 1492
-	if mainLabel ~= nil then -- 1492
-		mainLabel.textWidth = viewW * 0.88 -- 1495
-		setLabelCenter(mainLabel, viewW / 2, viewH * 0.8) -- 1496
-	end -- 1496
-	local subLabel = createLabel(root, "", fontSub, FinaleSubHex) -- 1499
-	if subLabel ~= nil then -- 1499
-		setLabelCenter(subLabel, viewW / 2, viewH * 0.71) -- 1500
-	end -- 1500
-	local btnW = clampNumber(viewW * 0.62, MinButtonWidth, 560) -- 1502
-	local btnH = clampNumber(viewH * 0.085, MinButtonHeight, 120) -- 1503
-	local backButton = createButton(root, { -- 1504
-		w = btnW, -- 1505
-		h = btnH, -- 1506
-		text = "返回关卡选择", -- 1507
-		fontSize = btnFont, -- 1508
-		bgHex = ResultButtonBgHex, -- 1509
-		fgHex = ResultButtonFgHex, -- 1510
-		borderHex = ResultButtonBorderHex, -- 1511
-		fireOn = "press", -- 1513
-		onTap = opts.onBackToSelect -- 1514
-	}) -- 1514
-	backButton.root.position = Vec2((viewW - btnW) / 2, 110) -- 1516
-	root.visible = false -- 1518
-	backButton:setEnabled(false) -- 1520
-	return { -- 1522
-		root = root, -- 1523
-		show = function(____, main, sub) -- 1524
-			setLabelText(mainLabel, main) -- 1525
-			setLabelText(subLabel, sub) -- 1526
-			backButton:setEnabled(true) -- 1527
-			root.visible = true -- 1528
-		end, -- 1524
-		hide = function() -- 1530
-			root.visible = false -- 1531
-			backButton:setEnabled(false) -- 1533
-		end -- 1530
-	} -- 1530
-end -- 1480
+function ____exports.createFinalePanel(parent, viewW, viewH, opts) -- 1507
+	local root = createPanel( -- 1513
+		parent, -- 1513
+		viewW, -- 1513
+		viewH, -- 1513
+		FinaleBackdropHex, -- 1513
+		{alpha = 0.55} -- 1513
+	) -- 1513
+	local fontMain = 34 -- 1515
+	local fontSub = 30 -- 1516
+	local btnFont = 40 -- 1517
+	local mainLabel = createLabel(root, ____exports.FinaleMainText, fontMain, FinaleMainHex) -- 1519
+	if mainLabel ~= nil then -- 1519
+		mainLabel.textWidth = viewW * 0.88 -- 1522
+		setLabelCenter(mainLabel, viewW / 2, viewH * 0.8) -- 1523
+	end -- 1523
+	local subLabel = createLabel(root, "", fontSub, FinaleSubHex) -- 1526
+	if subLabel ~= nil then -- 1526
+		setLabelCenter(subLabel, viewW / 2, viewH * 0.71) -- 1527
+	end -- 1527
+	local btnW = clampNumber(viewW * 0.62, MinButtonWidth, 560) -- 1529
+	local btnH = clampNumber(viewH * 0.085, MinButtonHeight, 120) -- 1530
+	local backButton = createButton(root, { -- 1531
+		w = btnW, -- 1532
+		h = btnH, -- 1533
+		text = "返回关卡选择", -- 1534
+		fontSize = btnFont, -- 1535
+		bgHex = ResultButtonBgHex, -- 1536
+		fgHex = ResultButtonFgHex, -- 1537
+		borderHex = ResultButtonBorderHex, -- 1538
+		fireOn = "press", -- 1540
+		onTap = opts.onBackToSelect -- 1541
+	}) -- 1541
+	backButton.root.position = Vec2((viewW - btnW) / 2, 110) -- 1543
+	root.visible = false -- 1545
+	backButton:setEnabled(false) -- 1547
+	return { -- 1549
+		root = root, -- 1550
+		show = function(____, main, sub) -- 1551
+			setLabelText(mainLabel, main) -- 1552
+			setLabelText(subLabel, sub) -- 1553
+			backButton:setEnabled(true) -- 1554
+			root.visible = true -- 1555
+		end, -- 1551
+		hide = function() -- 1557
+			root.visible = false -- 1558
+			backButton:setEnabled(false) -- 1560
+		end -- 1557
+	} -- 1557
+end -- 1507
 --- 建关卡选择：标题 + 副标题 + 六关竖排按钮 + 底部提示。
 -- 
 -- 未解锁的按钮**整块不可点**（`setEnabled(false)` 会关掉 `touchEnabled`）——
@@ -1410,151 +1458,151 @@ end -- 1480
 -- 
 -- @param viewW 视图逻辑宽
 -- @param viewH 视图逻辑高
-function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 1572
-	local root = createPanel( -- 1578
-		parent, -- 1578
-		viewW, -- 1578
-		viewH, -- 1578
-		SelectBackdropHex, -- 1578
-		{alpha = 0.9} -- 1578
-	) -- 1578
-	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 1580
-	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 1581
-	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 1583
-	setLabelCenter( -- 1584
-		subtitleLabel, -- 1584
-		viewW / 2, -- 1584
-		viewH - clampNumber(viewH * 0.13, 110, 260) -- 1584
-	) -- 1584
-	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 1586
-	setLabelCenter( -- 1587
-		hintLabel, -- 1587
-		viewW / 2, -- 1587
-		clampNumber(viewH * 0.045, 36, 90) -- 1587
-	) -- 1587
-	local count = #opts.levels -- 1589
-	local cols = viewH > viewW and 2 or 1 -- 1592
-	local rows = math.max( -- 1593
-		1, -- 1593
-		math.ceil(count / cols) -- 1593
-	) -- 1593
-	local gap = 18 -- 1594
-	local headerH = clampNumber(viewH * 0.16, 120, 320) -- 1595
-	local footerH = clampNumber(viewH * 0.1, 80, 200) -- 1596
-	local availW = viewW * 0.84 -- 1597
-	local availH = viewH - headerH - footerH - gap * (rows - 1) -- 1598
-	local btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820) -- 1599
-	local btnH = clampNumber(rows > 0 and availH / rows or MinButtonHeight, MinButtonHeight, 190) -- 1600
-	local gridW = cols * btnW + gap * (cols - 1) -- 1601
-	local topY = viewH - headerH -- 1602
-	local buttons = {} -- 1604
-	do -- 1604
-		local i = 0 -- 1605
-		while i < count do -- 1605
-			local index = i -- 1607
-			local button = createButton( -- 1608
-				root, -- 1608
-				{ -- 1608
-					w = btnW, -- 1609
-					h = btnH, -- 1610
-					text = opts.levels[index + 1].name, -- 1611
-					fontSize = 38, -- 1612
-					bgHex = SelectLockedBgHex, -- 1613
-					fgHex = SelectLockedFgHex, -- 1614
-					borderHex = SelectBorderHex, -- 1615
-					fireOn = "press", -- 1617
-					onTap = function() return opts:onPick(index) end -- 1618
-				} -- 1618
-			) -- 1618
-			local col = index % cols -- 1620
-			local rowIndex = math.floor(index / cols) -- 1621
-			button.root.position = Vec2((viewW - gridW) / 2 + col * (btnW + gap), topY - (rowIndex + 1) * btnH - rowIndex * gap) -- 1622
-			buttons[#buttons + 1] = button -- 1626
-			i = i + 1 -- 1605
-		end -- 1605
-	end -- 1605
-	local replayButton = opts.onReplayIntro ~= nil and createButton( -- 1632
-		root, -- 1633
-		{ -- 1633
-			w = clampNumber(viewW * 0.36, 180, 300), -- 1634
-			h = MinButtonHeight, -- 1635
-			text = "重看开场", -- 1636
-			fontSize = 30, -- 1637
-			bgHex = SelectLockedBgHex, -- 1638
-			fgHex = SelectSubtitleHex, -- 1639
-			borderHex = SelectBorderHex, -- 1640
-			fireOn = "press", -- 1641
-			onTap = function() -- 1642
-				if opts.onReplayIntro ~= nil then -- 1642
-					opts:onReplayIntro() -- 1643
-				end -- 1643
-			end -- 1642
-		} -- 1642
-	) or nil -- 1642
-	if replayButton ~= nil then -- 1642
-		local gridBottom = topY - rows * btnH - (rows - 1) * gap -- 1648
-		local by = clampNumber(gridBottom - MinButtonHeight - 20, 8, viewH) -- 1649
-		replayButton.root.position = Vec2( -- 1650
-			(viewW - clampNumber(viewW * 0.36, 180, 300)) / 2, -- 1650
-			by -- 1650
-		) -- 1650
-	end -- 1650
-	root.visible = false -- 1653
-	do -- 1653
-		local i = 0 -- 1654
-		while i < count do -- 1654
-			buttons[i + 1]:setEnabled(false) -- 1654
-			i = i + 1 -- 1654
-		end -- 1654
-	end -- 1654
-	if replayButton ~= nil then -- 1654
-		replayButton:setEnabled(false) -- 1655
-	end -- 1655
-	return { -- 1657
-		root = root, -- 1658
-		show = function(____, unlocked) -- 1659
-			local maxUnlocked = clampNumber( -- 1660
-				math.floor(unlocked), -- 1660
-				0, -- 1660
-				count - 1 -- 1660
-			) -- 1660
-			setLabelText( -- 1661
-				subtitleLabel, -- 1661
-				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 1661
-			) -- 1661
-			do -- 1661
-				local i = 0 -- 1662
-				while i < count do -- 1662
-					local button = buttons[i + 1] -- 1663
-					local open = i <= maxUnlocked -- 1664
-					button:setEnabled(open) -- 1665
-					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 1666
-					if open then -- 1666
-						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 1667
-					else -- 1667
-						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 1668
-					end -- 1668
-					i = i + 1 -- 1662
-				end -- 1662
-			end -- 1662
-			root.visible = true -- 1670
-			if replayButton ~= nil then -- 1670
-				replayButton:setEnabled(true) -- 1671
-			end -- 1671
-		end, -- 1659
-		hide = function() -- 1673
-			root.visible = false -- 1674
-			do -- 1674
-				local i = 0 -- 1676
-				while i < count do -- 1676
-					buttons[i + 1]:setEnabled(false) -- 1676
-					i = i + 1 -- 1676
-				end -- 1676
-			end -- 1676
-			if replayButton ~= nil then -- 1676
-				replayButton:setEnabled(false) -- 1677
-			end -- 1677
-		end -- 1673
-	} -- 1673
-end -- 1572
-return ____exports -- 1572
+function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 1599
+	local root = createPanel( -- 1605
+		parent, -- 1605
+		viewW, -- 1605
+		viewH, -- 1605
+		SelectBackdropHex, -- 1605
+		{alpha = 0.9} -- 1605
+	) -- 1605
+	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 1607
+	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 1608
+	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 1610
+	setLabelCenter( -- 1611
+		subtitleLabel, -- 1611
+		viewW / 2, -- 1611
+		viewH - clampNumber(viewH * 0.13, 110, 260) -- 1611
+	) -- 1611
+	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 1613
+	setLabelCenter( -- 1614
+		hintLabel, -- 1614
+		viewW / 2, -- 1614
+		clampNumber(viewH * 0.045, 36, 90) -- 1614
+	) -- 1614
+	local count = #opts.levels -- 1616
+	local cols = viewH > viewW and 2 or 1 -- 1619
+	local rows = math.max( -- 1620
+		1, -- 1620
+		math.ceil(count / cols) -- 1620
+	) -- 1620
+	local gap = 18 -- 1621
+	local headerH = clampNumber(viewH * 0.16, 120, 320) -- 1622
+	local footerH = clampNumber(viewH * 0.1, 80, 200) -- 1623
+	local availW = viewW * 0.84 -- 1624
+	local availH = viewH - headerH - footerH - gap * (rows - 1) -- 1625
+	local btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820) -- 1626
+	local btnH = clampNumber(rows > 0 and availH / rows or MinButtonHeight, MinButtonHeight, 190) -- 1627
+	local gridW = cols * btnW + gap * (cols - 1) -- 1628
+	local topY = viewH - headerH -- 1629
+	local buttons = {} -- 1631
+	do -- 1631
+		local i = 0 -- 1632
+		while i < count do -- 1632
+			local index = i -- 1634
+			local button = createButton( -- 1635
+				root, -- 1635
+				{ -- 1635
+					w = btnW, -- 1636
+					h = btnH, -- 1637
+					text = opts.levels[index + 1].name, -- 1638
+					fontSize = 38, -- 1639
+					bgHex = SelectLockedBgHex, -- 1640
+					fgHex = SelectLockedFgHex, -- 1641
+					borderHex = SelectBorderHex, -- 1642
+					fireOn = "press", -- 1644
+					onTap = function() return opts:onPick(index) end -- 1645
+				} -- 1645
+			) -- 1645
+			local col = index % cols -- 1647
+			local rowIndex = math.floor(index / cols) -- 1648
+			button.root.position = Vec2((viewW - gridW) / 2 + col * (btnW + gap), topY - (rowIndex + 1) * btnH - rowIndex * gap) -- 1649
+			buttons[#buttons + 1] = button -- 1653
+			i = i + 1 -- 1632
+		end -- 1632
+	end -- 1632
+	local replayButton = opts.onReplayIntro ~= nil and createButton( -- 1659
+		root, -- 1660
+		{ -- 1660
+			w = clampNumber(viewW * 0.36, 180, 300), -- 1661
+			h = MinButtonHeight, -- 1662
+			text = "重看开场", -- 1663
+			fontSize = 30, -- 1664
+			bgHex = SelectLockedBgHex, -- 1665
+			fgHex = SelectSubtitleHex, -- 1666
+			borderHex = SelectBorderHex, -- 1667
+			fireOn = "press", -- 1668
+			onTap = function() -- 1669
+				if opts.onReplayIntro ~= nil then -- 1669
+					opts:onReplayIntro() -- 1670
+				end -- 1670
+			end -- 1669
+		} -- 1669
+	) or nil -- 1669
+	if replayButton ~= nil then -- 1669
+		local gridBottom = topY - rows * btnH - (rows - 1) * gap -- 1675
+		local by = clampNumber(gridBottom - MinButtonHeight - 20, 8, viewH) -- 1676
+		replayButton.root.position = Vec2( -- 1677
+			(viewW - clampNumber(viewW * 0.36, 180, 300)) / 2, -- 1677
+			by -- 1677
+		) -- 1677
+	end -- 1677
+	root.visible = false -- 1680
+	do -- 1680
+		local i = 0 -- 1681
+		while i < count do -- 1681
+			buttons[i + 1]:setEnabled(false) -- 1681
+			i = i + 1 -- 1681
+		end -- 1681
+	end -- 1681
+	if replayButton ~= nil then -- 1681
+		replayButton:setEnabled(false) -- 1682
+	end -- 1682
+	return { -- 1684
+		root = root, -- 1685
+		show = function(____, unlocked) -- 1686
+			local maxUnlocked = clampNumber( -- 1687
+				math.floor(unlocked), -- 1687
+				0, -- 1687
+				count - 1 -- 1687
+			) -- 1687
+			setLabelText( -- 1688
+				subtitleLabel, -- 1688
+				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 1688
+			) -- 1688
+			do -- 1688
+				local i = 0 -- 1689
+				while i < count do -- 1689
+					local button = buttons[i + 1] -- 1690
+					local open = i <= maxUnlocked -- 1691
+					button:setEnabled(open) -- 1692
+					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 1693
+					if open then -- 1693
+						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 1694
+					else -- 1694
+						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 1695
+					end -- 1695
+					i = i + 1 -- 1689
+				end -- 1689
+			end -- 1689
+			root.visible = true -- 1697
+			if replayButton ~= nil then -- 1697
+				replayButton:setEnabled(true) -- 1698
+			end -- 1698
+		end, -- 1686
+		hide = function() -- 1700
+			root.visible = false -- 1701
+			do -- 1701
+				local i = 0 -- 1703
+				while i < count do -- 1703
+					buttons[i + 1]:setEnabled(false) -- 1703
+					i = i + 1 -- 1703
+				end -- 1703
+			end -- 1703
+			if replayButton ~= nil then -- 1703
+				replayButton:setEnabled(false) -- 1704
+			end -- 1704
+		end -- 1700
+	} -- 1700
+end -- 1599
+return ____exports -- 1599

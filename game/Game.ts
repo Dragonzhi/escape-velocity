@@ -30,7 +30,7 @@ import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig, RigFrame } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
-import { GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalPositionAt, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { BonusPointSpec, GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalPositionAt, goalWaypoints, waypointProgress } from 'game/LevelData';
 import { CameraFocusMode, FlybyAnalysis, TargetFlybySpec, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeTransfer, nextCameraFocus, orbitalShotAt, planTransfer, successMarkerFrame, transferCinematic, transferPlaybackRate, transferShotAt } from 'game/Transfer';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
@@ -83,12 +83,15 @@ export function resolveResult(outcome: Outcome, goalIndex: number, goal: GoalSpe
 
 /** 一关的物理定义（由 LevelData 转换而来）。 */
 export interface GameLevel {
+	levelId?: number;
 	transfer?: TransferTutorial;
 	bodies: Body[];
 	probeStart: P2;
 	/** 出发时已有的速度（S3.9.3）；S5 起六关都必填 = 该点的圆轨速度。 */
 	probeVel0?: P2;
 	goal: GoalSpec;
+	bonusPoints?: BonusPointSpec[];
+	viewingSeconds?: number;
 	escapeRadius: number;
 	maxSteps: number;
 	/**
@@ -192,6 +195,8 @@ export interface GameCore {
 	starOrbits: Body[];
 	/** 街机模式：各星尘是否已收集。 */
 	collectedStars: boolean[];
+	collectedBonus: boolean[];
+	bonusRockets: number;
 	/** 街机模式：当前瞄准预览下能吃到的星数。 */
 	previewStarsCount: number;
 }
@@ -205,6 +210,7 @@ export interface FlightTelemetry {
 	eccentricity?: number;
 	/** 街机模式：收集到的星尘数 (0~3) */
 	starsCollected?: number;
+	bonusRockets?: number;
 }
 
 /** 中性瞄准（没拖过时的姿态）：朝目标、力度取这一关的下限。 */
@@ -274,6 +280,8 @@ export function createCore(dt?: number, stars?: P2[], starOrbits?: Body[]): Game
 		stars: stList,
 		starOrbits: orbits,
 		collectedStars: colList,
+		collectedBonus: [],
+		bonusRockets: 0,
 		previewStarsCount: 0,
 	};
 }
@@ -333,8 +341,11 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	core.flight = flight;
 	core.missionCompleted = false;
 	core.flyby = level.transfer !== undefined ? analyzeTransfer(flight, level.bodies, level.goal.planetIndex, level.transfer, core.dt, core.t0) : undefined;
-	core.goalIndex = core.flyby !== undefined ? core.flyby.completionIndex : findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
-	core.result = core.flyby !== undefined && core.goalIndex >= 0 ? undefined : resolveResult(flight.outcome, core.goalIndex, level.goal);
+	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
+	core.result = core.goalIndex >= 0 ? 'success' : (flight.outcome === 'crashed' ? 'crashed' : 'missed');
+	core.collectedBonus = [];
+	core.bonusRockets = 0;
+	for (let i = 0; i < (level.bonusPoints !== undefined ? level.bonusPoints.length : 0); i++) core.collectedBonus.push(false);
 	if (core.flyby !== undefined) print('[escape-velocity] flyby planned entry=' + core.flyby.entryIndex.toFixed(0)
 		+ ' peri=' + core.flyby.periapsis.toFixed(2) + ' exit=' + core.flyby.exitIndex.toFixed(0)
 		+ ' energyDrop=' + core.flyby.energyDrop.toFixed(2) + ' complete=' + core.flyby.completionIndex.toFixed(0) + ' end=' + core.flyby.viewEndIndex.toFixed(0));
@@ -511,6 +522,7 @@ export function coreProbeIndex(core: GameCore): number {
  */
 export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boolean {
 	if (core.phase !== 'Flying' || core.flight === undefined) return false;
+	const previousIndex = coreProbeIndex(core);
 	// ⚠️ 不传 level = **不判定**（不清标志）：测试与回归脚本可以直接驱动 core.slowmo。
 	//    真实游戏里 updateFlying 每帧都传 level ⇒ 标志每帧重算，不会留下陈旧值。
 	if (level !== undefined && level.transfer === undefined) {
@@ -524,9 +536,26 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 	} else {
 		core.flightTime += dt * core.playback * (core.slowmo ? SlowMoFactor : 1);
 	}
-	if (core.flyby !== undefined && !core.missionCompleted && core.flyby.completionIndex >= 0 && coreProbeIndex(core) >= core.flyby.completionIndex) {
+	if (!core.missionCompleted && core.goalIndex >= 0 && coreProbeIndex(core) >= core.goalIndex) {
 		core.missionCompleted = true;
 		core.result = 'success';
+	}
+	if (level !== undefined && level.bonusPoints !== undefined && core.flight !== undefined) {
+		const end = coreProbeIndex(core);
+		const start = Math.max(0, previousIndex);
+		for (let i = 0; i < level.bonusPoints.length; i++) if (!core.collectedBonus[i]) {
+			const point = level.bonusPoints[i];
+			const body = point.bodyIndex !== undefined ? level.bodies[point.bodyIndex] : point.orbit;
+			if (body === undefined) continue;
+			for (let k = start; k <= end && k < core.flight.points.length; k++) {
+				const target = point.position !== undefined ? point.position : goalPositionAt(body, core.t0 + k * core.dt, point.offset);
+				if (distance(core.flight.points[k], target) <= point.tolerance) {
+					core.collectedBonus[i] = true;
+					core.bonusRockets += 1;
+					break;
+				}
+			}
+		}
 	}
 
 	// 街机模式：实时星尘收集判定
@@ -546,7 +575,12 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 	}
 
 	const naturalEnd = core.flight.points.length - 1;
-	const endIdx = core.flyby !== undefined ? core.flyby.viewEndIndex : (core.goalIndex >= 0 && core.goalIndex < naturalEnd ? core.goalIndex : naturalEnd);
+	const viewingSteps = level !== undefined && level.viewingSeconds !== undefined ? Math.floor(level.viewingSeconds / core.dt) : 0;
+	let endIdx = core.goalIndex >= 0 ? Math.min(naturalEnd, core.goalIndex + viewingSteps) : naturalEnd;
+	if (core.goalIndex >= 0 && level !== undefined && level.levelId === 1 && core.flyby !== undefined && core.flyby.viewEndIndex > core.goalIndex) endIdx = Math.min(endIdx, core.flyby.viewEndIndex);
+	if (core.goalIndex >= 0 && level !== undefined && level.levelId === 2 && core.flyby?.destination !== undefined && core.flyby.destination.exitIndex >= core.goalIndex && core.flyby.destination.exitIndex < naturalEnd) {
+		endIdx = Math.min(endIdx, core.flyby.destination.exitIndex + Math.floor(6 / core.dt));
+	}
 	if (coreProbeIndex(core) >= endIdx) {
 		// 吸附到终点：回放每帧跳多个索引，可能越过终点几个采样点
 		core.flightTime = endIdx * core.dt;
@@ -634,6 +668,7 @@ export function calcFlightTelemetry(
 		maxSpeed,
 		eccentricity,
 		starsCollected: starsCollectedCount,
+		bonusRockets: core.bonusRockets,
 	};
 }
 
@@ -647,6 +682,8 @@ export function coreRetry(core: GameCore, aimMin?: number): void {
 	core.missionCompleted = false;
 	core.flyby = undefined;
 	core.goalIndex = -1;
+	core.bonusRockets = 0;
+	for (let i = 0; i < core.collectedBonus.length; i++) core.collectedBonus[i] = false;
 	core.result = undefined;
 	core.burnDuration = 0;
 	core.slowmo = false;
@@ -767,6 +804,7 @@ export interface GameDeps {
 	onResult: (r: ResultKind, telemetry?: FlightTelemetry) => void;
 	/** 非模态里程碑：首次安全离开月球时记通关，仍继续 Flying。 */
 	onMissionCompleted?: (telemetry: FlightTelemetry) => void;
+	onBonusCollected?: (score: number, pointId: string) => void;
 	/**
 	 * 这一关成功之后是否进**终章「暗淡蓝点」**（S3.18）。
 	 *
@@ -857,6 +895,8 @@ export interface Game {
 	burnNow: () => number;
 	/** 这一帧要显示的星数：飞行中是已拾取，瞄准中是预测线能吃到的。 */
 	starsNow: () => number;
+	bonusScore: () => number;
+	bonusTotal: () => number;
 	/** 跳过 3D 入场倒叙运镜。 */
 	skipIntroTour: () => void;
 	/** 当前是否正在进行 3D 入场倒叙运镜。 */
@@ -1016,6 +1056,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let obsZoom = 1;
 	let focusMode: CameraFocusMode = 'Auto';
 	let markerElapsed = -1;
+	let reportedBonusIds: Record<string, boolean> = {};
+	let bonusEffectElapsed: number[] = [];
 	let cineKey = '';
 	let cineFrame: RigFrame | undefined = undefined;
 	let cineFrom: RigFrame | undefined = undefined;
@@ -1199,6 +1241,29 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	/** 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。 */
 	const goalRingsAt = (t: number, upto?: number): GoalRing[] => {
 		const marker = successMarkerFrame(markerElapsed);
+		if (level.goal.region !== undefined) {
+			const out: GoalRing[] = [];
+			const region = level.goal.region;
+			const body = level.bodies[region.bodyIndex];
+			if (body !== undefined && (markerElapsed < 0 || marker.visible)) {
+				const center = bodyPositionAt(body, t);
+				const alpha = markerElapsed >= 0 ? marker.alpha : 0.55;
+				out.push({ center, radius: body.radius + region.minAltitude, bandOuterRadius: body.radius + region.maxAltitude, passed: false, pointAlpha: alpha });
+				out.push({ center, radius: body.radius + region.maxAltitude, passed: false, pointAlpha: alpha });
+				out.push({ center, radius: body.radius + region.maxAltitude, passed: false, pointAlpha: alpha });
+			}
+			if (level.bonusPoints !== undefined) for (let i = 0; i < level.bonusPoints.length; i++) {
+				const collected = core.collectedBonus[i];
+				if (collected && (bonusEffectElapsed[i] === undefined || bonusEffectElapsed[i] >= 0.6)) continue;
+				const p = level.bonusPoints[i];
+				const targetBody = p.bodyIndex !== undefined ? level.bodies[p.bodyIndex] : p.orbit;
+				if (targetBody !== undefined) {
+					const effect = collected ? bonusEffectElapsed[i] : -1;
+					out.push({ center: goalPositionAt(targetBody, t, p.offset), radius: p.tolerance, passed: false, point: true, showRange: !collected, pulse: collected ? 1 + effect * 2 : 1 + 0.1 * Math.sin(t * 4), pointAlpha: collected ? 1 - effect / 0.6 : 1, burstRadius: collected ? p.tolerance * effect / 0.6 : undefined });
+				}
+			}
+			return out;
+		}
 		if (level.transfer !== undefined && !marker.visible) return [];
 		const wps = goalWaypoints(level.goal);
 		if (wps.length === 0) return [];
@@ -1324,7 +1389,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	/** 日心关卡按配置逐站取景，手动选择保持到回到自动。 */
 	const orbitalCamera = (pos: P2, t: number, wallDt: number): RigFrame => {
 		const cfg = level.transfer!.orbital!;
-		const autoShot = orbitalShotAt(core.flightTime, core.burnDuration, core.flyby, cfg, core.dt);
+		let autoShot = orbitalShotAt(core.flightTime, core.burnDuration, core.flyby, cfg, core.dt);
+		if (level.levelId === 3 && core.missionCompleted) autoShot = core.flightTime - core.goalIndex * core.dt < 2 ? 'Cruise' : 'Overview';
 		const shot: TransferShot = focusMode === 'Auto' ? autoShot : (focusMode === 'Probe' ? 'Cruise' : focusMode);
 		const key = focusMode + ':' + shot;
 		const velocity = core.flight!.velocities[coreProbeIndex(core)];
@@ -1733,12 +1799,20 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// S3.17：慢动作判定在 coreUpdate 里做（要 level：天体位置随时间动），
 		// 结果写回 core.slowmo / core.slowmoBody —— 这一帧的取景与日志读它们
 		const wasCompleted = core.missionCompleted;
+		const oldBonusScore = core.bonusRockets;
 		const entered = coreUpdate(core, dt, level);
 		if (!wasCompleted && core.missionCompleted) {
 			markerElapsed = 0;
 			print('[escape-velocity] success marker triggered once');
 			print('[escape-velocity] mission completed (continue viewing) t=' + core.flightTime.toFixed(3));
 			if (deps.onMissionCompleted !== undefined) deps.onMissionCompleted(calcFlightTelemetry(core, level));
+		}
+		if (core.bonusRockets > oldBonusScore && deps.onBonusCollected !== undefined && level.bonusPoints !== undefined) {
+			for (let i = 0; i < core.collectedBonus.length; i++) if (core.collectedBonus[i] && !reportedBonusIds[level.bonusPoints[i].id]) {
+				reportedBonusIds[level.bonusPoints[i].id] = true;
+				bonusEffectElapsed[i] = 0;
+				deps.onBonusCollected(core.bonusRockets, level.bonusPoints[i].id);
+			}
 		}
 		if (core.flight === undefined) return entered;
 
@@ -1882,6 +1956,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	const update = (dt: number): void => {
 		if (markerElapsed >= 0 && markerElapsed < 0.6) markerElapsed = Math.min(0.6, markerElapsed + dt);
+		for (let i = 0; i < bonusEffectElapsed.length; i++) if (bonusEffectElapsed[i] >= 0 && bonusEffectElapsed[i] < 0.6) bonusEffectElapsed[i] = Math.min(0.6, bonusEffectElapsed[i] + dt);
 		// 视图也必须**状态驱动**（AGENTS 硬约束 5）：每帧按 core.viewMode 对一次节点，
 		// 别只靠"点按钮时切一下" —— 切关/重建/自动回归序列会留下一个对不上的视图。
 		applyView();
@@ -1969,6 +2044,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			resetCinematic();
 			applyFlightSpeed(); // B 修复④：玩家按的那颗「发射」按钮走的也是这条路，档位必须在这里提
 			handoffDate(true); // ⚠️ 必须在 coreLaunch 之前：飞行/结算只认 core.t0
+			reportedBonusIds = {};
+			bonusEffectElapsed = [];
+			for (let i = 0; i < (level.bonusPoints !== undefined ? level.bonusPoints.length : 0); i++) bonusEffectElapsed.push(-1);
 			coreLaunch(core, core.aim.velocity, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
 			deps.plan.clearPrediction();
@@ -2024,6 +2102,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
 			resetCinematic();
 			handoffDate(true); // ⚠️ 同上：日期必须在 coreLaunch 之前交给 t0
+			reportedBonusIds = {};
+			bonusEffectElapsed = [];
+			for (let i = 0; i < (level.bonusPoints !== undefined ? level.bonusPoints.length : 0); i++) bonusEffectElapsed.push(-1);
 			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）
 			coreLaunch(core, v, level, probePos, probeVel);
 			deps.trajectory.clearPrediction();
@@ -2118,6 +2199,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			}
 			return core.previewStarsCount;
 		},
+		bonusScore: (): number => core.bonusRockets,
+		bonusTotal: (): number => level.bonusPoints !== undefined ? level.bonusPoints.length : 0,
 		// 包一层箭头函数：简写属性会触发 TS100016（见 Hud.ts 同名注释）
 		update: (frameDt: number): void => update(frameDt),
 	};

@@ -545,14 +545,20 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			if (ring.point === true) {
 				const alpha = ring.pointAlpha !== undefined ? ring.pointAlpha : 1;
 				const scale = ring.pulse !== undefined ? ring.pulse : 1;
-				ringDraw.drawDot(Vec2(s.x, s.y), 10 * scale, Color(70, 220, 190, Math.floor(45 * alpha * Math.min(2, scale))));
-				ringDraw.drawDot(Vec2(s.x, s.y), 3.5 * scale, Color(170, 255, 230, Math.floor(255 * alpha)));
-				if (ring.burstRadius !== undefined && ring.burstRadius > 0) ringDraw.drawPolygon(circleVerts(s.x, s.y, ring.burstRadius, 32), noFill, 1.5, Color(140, 255, 215, Math.floor(160 * alpha)));
+				ringDraw.drawDot(Vec2(s.x, s.y), 10 * scale, Color(70, 245, 105, Math.floor(55 * alpha * Math.min(2, scale))));
+				ringDraw.drawDot(Vec2(s.x, s.y), 3.5 * scale, Color(200, 255, 205, Math.floor(255 * alpha)));
+				if (ring.burstRadius !== undefined && ring.burstRadius > 0) ringDraw.drawPolygon(circleVerts(s.x, s.y, ring.burstRadius, 32), noFill, 1.5, Color(120, 255, 145, Math.floor(180 * alpha)));
 			}
 			if (ring.showRange === false) continue;
 			const rPx = ring.radius * map.scale;
 			if (rPx < 1) continue;
-			ringDraw.drawPolygon(circleVerts(s.x, s.y, rPx, options.ringSegments), noFill, options.ringWidth, ringColor);
+			if (ring.bandOuterRadius !== undefined && ring.bandOuterRadius > ring.radius) {
+				const inner = circleVerts(s.x, s.y, rPx, options.ringSegments);
+				const outer = circleVerts(s.x, s.y, ring.bandOuterRadius * map.scale, options.ringSegments);
+				for (let i = 1; i < inner.length && i < outer.length; i++) ringDraw.drawPolygon([inner[i - 1], outer[i - 1], outer[i], inner[i]], Color(80, 255, 130, 18), 0, Color(80, 255, 130, 0));
+			}
+			const ringTint = ring.point === true ? colorFromHex(0x66ff88, ring.pointAlpha !== undefined ? ring.pointAlpha : 1) : (ring.pointAlpha !== undefined ? colorFromHex(options.ringHex, ring.pointAlpha) : ringColor);
+			ringDraw.drawPolygon(circleVerts(s.x, s.y, rPx, options.ringSegments), noFill, options.ringWidth, ringTint);
 		}
 
 		// ③ 轨迹：尾迹在下、预测线在上（预测线是玩家此刻要发的那一发，必须压在最上面）

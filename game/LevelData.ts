@@ -109,7 +109,11 @@ export interface GoalSpec {
 	 * 给了 chain 就以它为准（planetIndex/tolerance 只作兼容/工具用）。
 	 */
 	chain?: WaypointSpec[];
+	/** 以天体实体表面为基准的到达圆环。 */
+	region?: { bodyIndex: number; minAltitude: number; maxAltitude: number; direction?: 'outward' | 'inward'; requiresEscape?: boolean };
 }
+
+export interface BonusPointSpec { id: string; bodyIndex?: number; orbit?: Body; offset?: P2; position?: P2; tolerance: number; }
 
 /** 单个火箭挑战定义（S7）。 */
 export interface RocketChallengeDef {
@@ -189,6 +193,7 @@ export interface LevelDef {
 	/** 街机模式：沿途 3 颗金色星尘的平面位置。 */
 	stars?: P2[];
 	goal: GoalSpec;
+	bonusPoints?: BonusPointSpec[];
 	/**
 	 * Δv 预算（S3.9.2b，用户要求）：满力对应的速度就是它 —— "力大砖飞要被挡住"。
 	 * 有效上限 = `min(Tuning.LEVEL_RUNTIME.aimMax, dvBudget)`，用于出发点火。
@@ -431,11 +436,44 @@ export function waypointProgress(
 
 /** 到达目标的采样点索引；没到返回 -1。 */
 export function findGoalIndex(points: P2[], bodies: Body[], goal: GoalSpec, dt: number, t0?: number, velocities?: P2[]): number {
+	if (goal.region !== undefined) return findGoalRegionIndex(points, velocities, bodies, goal.region, dt, t0 !== undefined ? t0 : 0);
 	if (goal.marker !== undefined) return -1; // 日心任务由顺序会遇与轨道区域判定，光点只有引导作用。
 	const wps = goalWaypoints(goal);
 	if (wps.length === 0) return -1;
 	const st = waypointProgress(points, bodies, goal, dt, t0, undefined, velocities);
 	return st.passed >= wps.length ? st.lastIndex : -1;
+}
+
+/** 固定步长轨迹首次进入目标高度环；使用线段距离覆盖两采样间的薄环。 */
+export function findGoalRegionIndex(points: P2[], velocities: P2[] | undefined, bodies: Body[], region: NonNullable<GoalSpec['region']>, dt: number, t0: number): number {
+	const body = bodies[region.bodyIndex];
+	if (body === undefined) return -1;
+	const inner = body.radius + region.minAltitude;
+	const outer = body.radius + region.maxAltitude;
+	for (let i = 0; i < points.length; i++) {
+		const p = points[i];
+		const c = bodyPositionAt(body, t0 + i * dt);
+		const dx = p.x - c.x, dy = p.y - c.y;
+		const r = Math.sqrt(dx * dx + dy * dy);
+		if (r < inner || r > outer) continue;
+		if (region.direction === 'outward' && i > 0) {
+			const prev = points[i - 1], pc = bodyPositionAt(body, t0 + (i - 1) * dt);
+			if (r < Math.sqrt((prev.x - pc.x) * (prev.x - pc.x) + (prev.y - pc.y) * (prev.y - pc.y))) continue;
+		}
+		if (region.direction === 'inward' && i > 0) {
+			const prev = points[i - 1], pc = bodyPositionAt(body, t0 + (i - 1) * dt);
+			if (r > Math.sqrt((prev.x - pc.x) * (prev.x - pc.x) + (prev.y - pc.y) * (prev.y - pc.y))) continue;
+		}
+		if (region.requiresEscape) {
+			const v = velocities !== undefined ? velocities[i] : undefined;
+			if (v === undefined || body.gm <= 0) continue;
+			const bv = bodyVelocityAt(body, t0 + i * dt);
+			const vx = v.x - bv.x, vy = v.y - bv.y;
+			if ((vx * vx + vy * vy) / 2 - body.gm / Math.max(r, 1e-9) < 0) continue;
+		}
+		return i;
+	}
+	return -1;
 }
 
 

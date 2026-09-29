@@ -12,7 +12,7 @@
  * 本模块纯函数、不 import Dora，单测可以直接喂 JSON 文本。
  */
 import { Body, P2 } from 'game/Gravity';
-import type { LevelDef, PlanetVisualDef } from 'game/LevelData';
+import type { BonusPointSpec, LevelDef, PlanetVisualDef } from 'game/LevelData';
 import type { TransferTutorial } from 'game/Transfer';
 
 /** gm = 0 的公转体没写 spin 时用的角速度（rad/s）。内圈陨石必须转，否则「抓住空隙」不存在。 */
@@ -72,6 +72,8 @@ export interface StarJson {
 }
 
 export interface LevelJson {
+	goal?: { body: string; minAltitude: number; maxAltitude: number; direction?: 'outward' | 'inward'; requiresEscape?: boolean };
+	bonusPoints?: { id: string; body?: string; offset?: P2; orbitRadius?: number; angleDeg?: number; direction?: 1 | -1; tolerance: number }[];
 	bodyOverrides?: { [key: string]: { gm?: number; radius?: number } };
 	marker?: { orbitRadius: number; angleDeg: number; tolerance: number };
 	transfer?: TransferTutorial;
@@ -188,6 +190,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 
 	const planets: Body[] = [];
 	const visuals: PlanetVisualDef[] = [];
+	const bodyKeys: string[] = [];
 
 	planets.push({
 		gm: center.gm,
@@ -200,6 +203,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 		name: center.name,
 	});
 	visuals.push(visualOf(center));
+	bodyKeys.push(json.centerBody);
 
 	let targetIndex = -1;
 	let tolerance = 65;
@@ -213,6 +217,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 		if (proto.gm <= 0) body.isObstacle = true;
 		planets.push(body);
 		visuals.push(visualOf(proto));
+		bodyKeys.push(o.body);
 		if (o.type === 'target' && targetIndex < 0) {
 			targetIndex = planets.length - 1;
 			goalOffset = o.offset;
@@ -231,7 +236,26 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 		const target = orbital.targetFlyby;
 		if (target !== undefined && (target.planetIndex < 1 || target.planetIndex >= planets.length)) return undefined;
 	}
+	let region: LevelDef['goal']['region'];
+	if (json.goal !== undefined) {
+		const bodyIndex = bodyKeys.indexOf(json.goal.body);
+		if (bodyIndex < 0 || json.goal.minAltitude < 0 || json.goal.maxAltitude < json.goal.minAltitude) return undefined;
+		region = { bodyIndex, minAltitude: json.goal.minAltitude, maxAltitude: json.goal.maxAltitude, direction: json.goal.direction, requiresEscape: json.goal.requiresEscape };
+		if (targetIndex < 0) { targetIndex = bodyIndex; tolerance = json.goal.maxAltitude; }
+	}
 	if (targetIndex < 0) return undefined;
+	const bonusPoints: BonusPointSpec[] = [];
+	if (json.bonusPoints !== undefined) for (const point of json.bonusPoints) {
+		if (point.id.length === 0 || point.tolerance <= 0) return undefined;
+		if (point.body !== undefined) {
+			const bodyIndex = bodyKeys.indexOf(point.body);
+			if (bodyIndex < 0) return undefined;
+			bonusPoints.push({ id: point.id, bodyIndex, offset: point.offset, tolerance: point.tolerance });
+		} else if (point.orbitRadius !== undefined && point.angleDeg !== undefined) {
+			const orbit = orbitBody({ name: point.id, gm: 0, radius: 0, model: '', color: [0, 1, 0] }, point.orbitRadius, point.angleDeg, point.direction === -1 ? -1 : 1, center.gm, undefined);
+			bonusPoints.push({ id: point.id, orbit, tolerance: point.tolerance });
+		} else return undefined;
+	}
 
 	const stars: P2[] = [];
 	if (json.stars !== undefined) {
@@ -269,7 +293,8 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 		stars,
 		planets,
 		visuals,
-		goal: { kind: 'planet', planetIndex: targetIndex, tolerance, offset: goalOffset, marker },
+		goal: { kind: 'planet', planetIndex: targetIndex, tolerance, offset: goalOffset, marker, region },
+		bonusPoints,
 		dvBudget: json.probe.dvBudget,
 		escapeRadius,
 		maxSteps,

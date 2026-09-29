@@ -71,10 +71,10 @@ export function runTests(): string {
 	});
 	testFormatRockets();
 	testStationMappings();
-	check('completion-empty', formatProgressSummary({unlocked: 0}) === '任务完成: 0 / 3', '新存档不得显示三星计数');
-	check('completion-legacy-unlocked', formatProgressSummary({unlocked: 2}) === '任务完成: 2 / 3', '旧解锁存档应保留通关');
-	check('completion-old-multiple-rockets', formatProgressSummary({unlocked: 0, rockets: {L1: 3, L2: 2, L3: 0}}) === '任务完成: 2 / 3', '历史火箭数不能多算通关数量');
-	check('completion-all', formatProgressSummary({unlocked: 2, rockets: {L1: 1, L2: 1, L3: 1}}) === '任务完成: 3 / 3', '最终关完成应计入统计');
+	check('completion-empty', formatProgressSummary({unlocked: 0}) === '已完成 0 / 3 · 火箭 0 / 6', '新存档应分别显示完成与新得分');
+	check('completion-legacy-unlocked', formatProgressSummary({unlocked: 2}) === '已完成 2 / 3 · 火箭 2 / 6', '旧解锁存档应保留通关');
+	check('completion-old-multiple-rockets', formatProgressSummary({unlocked: 0, rockets: {L1: 3, L2: 2, L3: 0}}) === '已完成 2 / 3 · 火箭 5 / 6', '旧火箭记录应保留历史但单独展示完成');
+	check('completion-all', formatProgressSummary({unlocked: 2, rockets: {L1: 1, L2: 1, L3: 1}}) === '已完成 3 / 3 · 火箭 3 / 6', '完成数不得依赖新火箭得分');
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

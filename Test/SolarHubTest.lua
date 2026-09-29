@@ -127,23 +127,23 @@ function ____exports.runTests() -- 64
 	testStationMappings() -- 73
 	check( -- 74
 		"completion-empty", -- 74
-		formatProgressSummary({unlocked = 0}) == "任务完成: 0 / 3", -- 74
-		"新存档不得显示三星计数" -- 74
+		formatProgressSummary({unlocked = 0}) == "已完成 0 / 3 · 火箭 0 / 6", -- 74
+		"新存档应分别显示完成与新得分" -- 74
 	) -- 74
 	check( -- 75
 		"completion-legacy-unlocked", -- 75
-		formatProgressSummary({unlocked = 2}) == "任务完成: 2 / 3", -- 75
+		formatProgressSummary({unlocked = 2}) == "已完成 2 / 3 · 火箭 2 / 6", -- 75
 		"旧解锁存档应保留通关" -- 75
 	) -- 75
 	check( -- 76
 		"completion-old-multiple-rockets", -- 76
-		formatProgressSummary({unlocked = 0, rockets = {L1 = 3, L2 = 2, L3 = 0}}) == "任务完成: 2 / 3", -- 76
-		"历史火箭数不能多算通关数量" -- 76
+		formatProgressSummary({unlocked = 0, rockets = {L1 = 3, L2 = 2, L3 = 0}}) == "已完成 2 / 3 · 火箭 5 / 6", -- 76
+		"旧火箭记录应保留历史但单独展示完成" -- 76
 	) -- 76
 	check( -- 77
 		"completion-all", -- 77
-		formatProgressSummary({unlocked = 2, rockets = {L1 = 1, L2 = 1, L3 = 1}}) == "任务完成: 3 / 3", -- 77
-		"最终关完成应计入统计" -- 77
+		formatProgressSummary({unlocked = 2, rockets = {L1 = 1, L2 = 1, L3 = 1}}) == "已完成 3 / 3 · 火箭 3 / 6", -- 77
+		"完成数不得依赖新火箭得分" -- 77
 	) -- 77
 	local lines = {} -- 79
 	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 80

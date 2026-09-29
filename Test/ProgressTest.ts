@@ -13,7 +13,7 @@
 import { Content } from 'Dora';
 import { GameLevel, coreBackToSelect, coreLaunch, coreUpdate, createCore } from 'game/Game';
 import { getLevel, scaledPlanets } from 'game/LevelData';
-import { advanceUnlocked, clampUnlocked, getMissionRockets, getTotalRockets, loadProgress, progressFilePath, recordMissionResult, saveProgress } from 'game/Progress';
+import { advanceUnlocked, clampUnlocked, getMissionCompleted, getMissionRockets, getTotalRockets, loadProgress, progressFilePath, recordMissionResult, saveProgress } from 'game/Progress';
 
 interface Failure {
 	name: string;
@@ -158,9 +158,11 @@ function testRockets(): void {
 
 	// 兼容性：旧存档 unlocked=2，没写 rockets 字段时，前两关应默认至少 1 枚火箭
 	const pLegacy = { unlocked: 2 };
-	check('rocket-legacy-l0', getMissionRockets(pLegacy, 0) === 1, '旧存档第 1 关应兜底 1');
-	check('rocket-legacy-l1', getMissionRockets(pLegacy, 1) === 1, '旧存档第 2 关应兜底 1');
+	check('rocket-legacy-l0', getMissionRockets(pLegacy, 0) === 1, '纯旧内存结构应兼容旧火箭读取');
+	check('rocket-legacy-l1', getMissionRockets(pLegacy, 1) === 1, '纯旧内存结构应兼容旧火箭读取');
 	check('rocket-legacy-l2', getMissionRockets(pLegacy, 2) === 0, '旧存档未通关的关卡应为 0');
+	const zeroScoreClear = recordMissionResult({ unlocked: 0 }, 0, 0, 6, true);
+	check('zero-score-clear', getMissionCompleted(zeroScoreClear, 0) && getMissionRockets(zeroScoreClear, 0) === 0 && zeroScoreClear.unlocked === 1, '零火箭成功应独立保存完成与解锁');
 
 	// 存档往返测试
 	const levelCountForSave = 6;
@@ -170,6 +172,10 @@ function testRockets(): void {
 	check('rocket-save-roundtrip-l0', getMissionRockets(reloaded, 0) === 2, '写盘读回 L1 应为 2');
 	check('rocket-save-roundtrip-l1', getMissionRockets(reloaded, 1) === 3, '写盘读回 L2 应为 3');
 	check('rocket-save-roundtrip-unlocked', reloaded.unlocked === 2, '写盘读回 unlocked 应为 2');
+	saveProgress({ unlocked: 2, rockets: { L1: 3, L2: 2 } });
+	const migrated = loadProgress(levelCountForSave);
+	check('legacy-completion-migrates', getMissionCompleted(migrated, 0) && getMissionCompleted(migrated, 1), '旧火箭记录应迁移为已完成');
+	check('legacy-score-starts-zero', getMissionRockets(migrated, 0) === 0 && getMissionRockets(migrated, 1) === 0, '旧火箭评价不能折算为新点位分数');
 	saveProgress(before);
 }
 

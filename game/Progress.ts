@@ -12,10 +12,12 @@
 import { Content, Path } from 'Dora';
 import { ResultKind } from 'game/Game';
 
-/** 进度。`unlocked` 为最高关卡，`rockets` 为各关卡火箭数。 */
+/** 进度：完成记录与新点位最高分分开；rockets 保留旧版本历史字段。 */
 export interface Progress {
 	unlocked: number;
 	rockets?: Record<string, number>;
+	completed?: Record<string, boolean>;
+	bestScores?: Record<string, number>;
 }
 
 /** 存档文件名（相对 `Content.writablePath`）。 */
@@ -57,9 +59,10 @@ export function advanceUnlocked(
 	return clampUnlocked(keep, levelCount);
 }
 
-/** 获取关卡的火箭数（0 ~ 3），自动处理兼容性。 */
+/** 获取关卡点位火箭最高分；未迁移的旧内存结构仍可读取历史火箭字段。 */
 export function getMissionRockets(p: Progress, levelIndex: number): number {
 	const key = 'L' + (levelIndex + 1).toFixed(0);
+	if (p.bestScores !== undefined && typeof p.bestScores[key] === 'number') return Math.max(0, Math.min(99, Math.floor(p.bestScores[key])));
 	if (p.rockets !== undefined && typeof p.rockets[key] === 'number') {
 		const r = Math.floor(p.rockets[key]);
 		if (r >= 0 && r <= 3) return r;
@@ -77,13 +80,14 @@ export function recordMissionResult(
 	levelIndex: number,
 	rocketCount: number,
 	levelCount: number,
+	completed?: boolean,
 ): Progress {
-	const clampedRockets = Math.max(0, Math.min(3, Math.floor(rocketCount)));
+	const didComplete = completed !== undefined ? completed : rocketCount > 0;
+	const clampedRockets = didComplete ? Math.max(0, Math.min(99, Math.floor(rocketCount))) : 0;
 	const key = 'L' + (levelIndex + 1).toFixed(0);
-	const oldRockets = getMissionRockets(p, levelIndex);
+	const oldRockets = p.bestScores !== undefined && p.bestScores[key] !== undefined ? p.bestScores[key] : 0;
 	const bestRockets = Math.max(oldRockets, clampedRockets);
-
-	const nextUnlocked = clampedRockets > 0
+	const nextUnlocked = didComplete
 		? advanceUnlocked(p.unlocked, 'success', levelIndex, levelCount)
 		: clampUnlocked(p.unlocked, levelCount);
 
@@ -93,12 +97,27 @@ export function recordMissionResult(
 			nextMap[k] = p.rockets[k];
 		}
 	}
-	nextMap[key] = bestRockets;
+	const completedMap: Record<string, boolean> = {};
+	if (p.completed !== undefined) for (const k in p.completed) completedMap[k] = p.completed[k];
+	const bestMap: Record<string, number> = {};
+	if (p.bestScores !== undefined) for (const k in p.bestScores) bestMap[k] = p.bestScores[k];
+	completedMap[key] = didComplete || getMissionCompleted(p, levelIndex);
+	bestMap[key] = bestRockets;
+	// Preserve legacy rocket records for old clients/statistics without treating them as new point scores.
+	if (nextMap[key] === undefined) nextMap[key] = p.rockets !== undefined && p.rockets[key] !== undefined ? p.rockets[key] : 0;
 
 	return {
 		unlocked: nextUnlocked,
 		rockets: nextMap,
+		completed: completedMap,
+		bestScores: bestMap,
 	};
+}
+
+export function getMissionCompleted(p: Progress, levelIndex: number): boolean {
+	const key = 'L' + (levelIndex + 1).toFixed(0);
+	if (p.completed !== undefined && p.completed[key] !== undefined) return p.completed[key];
+	return (p.rockets !== undefined && (p.rockets[key] || 0) > 0) || levelIndex < p.unlocked;
 }
 
 /** 统计全太阳系获得的火箭总数。 */
@@ -130,11 +149,13 @@ export function loadProgress(levelCount: number): Progress {
 	try {
 		if (Content.exist(file)) text = Content.load(file);
 	} catch (e) {
-		return { unlocked: 0, rockets: {} };
+		return { unlocked: 0, rockets: {}, completed: {}, bestScores: {} };
 	}
 
 	let unlocked = 0;
 	const rockets: Record<string, number> = {};
+	const completed: Record<string, boolean> = {};
+	const bestScores: Record<string, number> = {};
 
 	const lines = text.split('\n');
 	for (const rawLine of lines) {
@@ -142,6 +163,12 @@ export function loadProgress(levelCount: number): Progress {
 		if (line.startsWith(ProgressKey)) {
 			const val = parseDigits(line.substring(ProgressKey.length));
 			if (!isNaN(val)) unlocked = clampUnlocked(val, levelCount);
+		} else if (line.startsWith('complete:')) {
+			const parts = line.substring(8).split('=');
+			if (parts.length === 2) completed[parts[0]] = parts[1] === '1';
+		} else if (line.startsWith('best:')) {
+			const parts = line.substring(5).split('=');
+			if (parts.length === 2) { const val = parseDigits(parts[1]); if (!isNaN(val)) bestScores[parts[0]] = Math.max(0, val); }
 		} else if (line.startsWith('L') && line.indexOf('=') > 0) {
 			const parts = line.split('=');
 			if (parts.length === 2) {
@@ -154,17 +181,23 @@ export function loadProgress(levelCount: number): Progress {
 		}
 	}
 
-	return { unlocked, rockets };
+	for (let i = 0; i < levelCount; i++) {
+		const key = 'L' + (i + 1).toFixed(0);
+		if (completed[key] === undefined) completed[key] = (rockets[key] !== undefined && rockets[key] > 0) || i < unlocked;
+		// Existing rocket counts are historical only; new bonus-point scores start at zero.
+		if (bestScores[key] === undefined) bestScores[key] = 0;
+	}
+	return { unlocked, rockets, completed, bestScores };
 }
 
 /**
- * 写进度。首行严格为 `unlocked=N`，后续各行记录 `L1=X`...
+ * 写进度。保留旧 `unlocked`/`L1` 行，并增加 `complete:L1=1`、`best:L1=N`。
  */
 export function saveProgress(p: Progress): void {
 	let value = Math.floor(p.unlocked);
 	if (value !== value || value === Infinity || value === -Infinity) value = 0;
 
-	const lines: string[] = [ProgressKey + value.toFixed(0)];
+	const lines: string[] = [ProgressKey + value.toFixed(0), 'version=2'];
 	if (p.rockets !== undefined) {
 		for (const k in p.rockets) {
 			const r = p.rockets[k];
@@ -173,6 +206,8 @@ export function saveProgress(p: Progress): void {
 			}
 		}
 	}
+	if (p.completed !== undefined) for (const k in p.completed) lines.push('complete:' + k + '=' + (p.completed[k] ? '1' : '0'));
+	if (p.bestScores !== undefined) for (const k in p.bestScores) lines.push('best:' + k + '=' + Math.max(0, Math.floor(p.bestScores[k])).toFixed(0));
 	Content.save(progressFilePath(), lines.join('\n'));
 }
 

@@ -40,473 +40,509 @@ function ____exports.projectPolyline(points, y, basis, originX, originY) -- 38
 	end -- 54
 	return out -- 59
 end -- 38
-function ____exports.defaultOptions() -- 178
-	return { -- 179
-		y = 0.02, -- 180
-		layerOriginX = View.size.width / 2, -- 182
-		layerOriginY = View.size.height / 2, -- 183
-		maxPoints = 240, -- 184
-		predictRadius = 2, -- 185
-		dashOn = 12, -- 187
-		dashOff = 9, -- 188
-		predictFadeMin = 0.1, -- 189
-		glowRadiusFactor = 1.9, -- 190
-		glowAlpha = 0.13, -- 191
-		tailPoints = 280, -- 192
-		trailHeadRadius = 3.4, -- 193
-		trailHeadAlpha = 0.85, -- 194
-		predictR = 120, -- 195
-		predictG = 200, -- 196
-		predictB = 255, -- 197
-		ringR = 150, -- 199
-		ringG = 235, -- 200
-		ringB = 220, -- 201
-		ringRadius = 1.6, -- 202
-		ringGlowAlpha = 0.2, -- 203
-		ringSegments = 56, -- 204
-		orbitRingR = 138, -- 207
-		orbitRingG = 176, -- 208
-		orbitRingB = 205, -- 209
-		orbitRingRadius = 1.5, -- 210
-		orbitRingAlpha = 0.5, -- 211
-		orbitRingFarAlpha = 0.16, -- 212
-		orbitRingSegments = 72, -- 213
-		trailR = 255, -- 214
-		trailG = 236, -- 215
-		trailB = 170 -- 216
-	} -- 216
-end -- 178
+function ____exports.defaultOptions() -- 179
+	return { -- 180
+		y = 0.02, -- 181
+		layerOriginX = View.size.width / 2, -- 183
+		layerOriginY = View.size.height / 2, -- 184
+		maxPoints = 240, -- 185
+		predictRadius = 2, -- 186
+		dashOn = 12, -- 188
+		dashOff = 9, -- 189
+		predictFadeMin = 0.1, -- 190
+		glowRadiusFactor = 1.9, -- 191
+		glowAlpha = 0.13, -- 192
+		tailPoints = 280, -- 193
+		trailHeadRadius = 3.4, -- 194
+		trailHeadAlpha = 0.85, -- 195
+		predictR = 120, -- 196
+		predictG = 200, -- 197
+		predictB = 255, -- 198
+		ringR = 150, -- 200
+		ringG = 235, -- 201
+		ringB = 220, -- 202
+		ringRadius = 1.6, -- 203
+		ringGlowAlpha = 0.2, -- 204
+		ringSegments = 56, -- 205
+		orbitRingR = 138, -- 208
+		orbitRingG = 176, -- 209
+		orbitRingB = 205, -- 210
+		orbitRingRadius = 1.5, -- 211
+		orbitRingAlpha = 0.5, -- 212
+		orbitRingFarAlpha = 0.16, -- 213
+		orbitRingSegments = 72, -- 214
+		trailR = 255, -- 215
+		trailG = 236, -- 216
+		trailB = 170 -- 217
+	} -- 217
+end -- 179
 --- 均匀抽稀到不超过 maxPoints 个点（保留首尾）。
-function ____exports.decimate(points, maxPoints) -- 221
-	if maxPoints <= 0 or #points <= maxPoints then -- 221
-		return points -- 222
-	end -- 222
-	local out = {} -- 223
-	local step = (#points - 1) / (maxPoints - 1) -- 224
-	do -- 224
-		local i = 0 -- 225
-		while i < maxPoints do -- 225
-			local idx = math.floor(i * step) -- 226
-			local safe = idx < #points and idx or #points - 1 -- 227
-			out[#out + 1] = points[safe + 1] -- 228
-			i = i + 1 -- 225
-		end -- 225
-	end -- 225
-	out[maxPoints] = points[#points] -- 231
-	return out -- 232
-end -- 221
+function ____exports.decimate(points, maxPoints) -- 222
+	if maxPoints <= 0 or #points <= maxPoints then -- 222
+		return points -- 223
+	end -- 223
+	local out = {} -- 224
+	local step = (#points - 1) / (maxPoints - 1) -- 225
+	do -- 225
+		local i = 0 -- 226
+		while i < maxPoints do -- 226
+			local idx = math.floor(i * step) -- 227
+			local safe = idx < #points and idx or #points - 1 -- 228
+			out[#out + 1] = points[safe + 1] -- 229
+			i = i + 1 -- 226
+		end -- 226
+	end -- 226
+	out[maxPoints] = points[#points] -- 232
+	return out -- 233
+end -- 222
 --- 沿线 alpha 渐变（0 = 起点，1 = 末端）：平滑衰减，末端保留 `minA`。
 -- 幂次 1.35 让前半段基本保持实色、后半段加速变淡（愤怒小鸟的观感）。
-local function fadeAlpha(t, minA) -- 239
-	local u = t < 0 and 0 or (t > 1 and 1 or t) -- 240
-	return minA + (1 - minA) * (1 - u) ^ 1.35 -- 241
-end -- 239
-local function segColor(rgb, alpha) -- 246
-	local a = alpha < 0 and 0 or (alpha > 1 and 1 or alpha) -- 249
-	return Color( -- 250
-		math.floor(rgb.r * a + 0.5), -- 250
-		math.floor(rgb.g * a + 0.5), -- 250
-		math.floor(rgb.b * a + 0.5), -- 250
-		255 -- 250
-	) -- 250
-end -- 246
+local function fadeAlpha(t, minA) -- 240
+	local u = t < 0 and 0 or (t > 1 and 1 or t) -- 241
+	return minA + (1 - minA) * (1 - u) ^ 1.35 -- 242
+end -- 240
+local function segColor(rgb, alpha) -- 247
+	local a = alpha < 0 and 0 or (alpha > 1 and 1 or alpha) -- 250
+	return Color( -- 251
+		math.floor(rgb.r * a + 0.5), -- 251
+		math.floor(rgb.g * a + 0.5), -- 251
+		math.floor(rgb.b * a + 0.5), -- 251
+		255 -- 251
+	) -- 251
+end -- 247
 --- 虚线 + 渐隐 + 光晕：沿折线按"实段/空段"节奏走笔，
 -- 每个实段按其中点的沿线比例取 alpha（光晕层同 alpha、更宽）。
 -- 
 -- 导出给 S3.3 开场复用（太阳系轨道虚线圈）——轨道是**整圈均匀**的，
 -- 调 `fadeMin = 1` 即可关掉沿线渐隐；`clearFirst = false` 让同一个 DrawNode
 -- 上叠多条环（预测线/尾迹每帧重画，仍用默认的 clear）。
-function ____exports.drawDashedPolyline(draw, verts, coreRadius, rgb, fadeMin, glowRadiusFactor, glowAlpha, dashOn, dashOff, clearFirst) -- 261
-	local maxSeg = 800 -- 276
-	if clearFirst ~= false then -- 276
-		draw:clear() -- 277
-	end -- 277
-	local n = #verts -- 278
-	if n < 2 then -- 278
-		return -- 279
-	end -- 279
-	local segLen = {} -- 282
-	local total = 0 -- 283
-	do -- 283
-		local i = 1 -- 284
-		while i < n do -- 284
-			local dx = verts[i + 1].x - verts[i].x -- 285
-			local dy = verts[i + 1].y - verts[i].y -- 286
-			local l = math.sqrt(dx * dx + dy * dy) -- 287
-			segLen[#segLen + 1] = l -- 288
-			total = total + l -- 289
-			i = i + 1 -- 284
-		end -- 284
-	end -- 284
-	if total < 0.001 then -- 284
-		return -- 291
-	end -- 291
-	local cycle = dashOn + dashOff -- 293
-	local glowRadius = coreRadius * glowRadiusFactor -- 294
-	local pen = 0 -- 295
-	do -- 295
-		local i = 1 -- 296
-		while i < n do -- 296
-			do -- 296
-				local ax = verts[i].x -- 297
-				local ay = verts[i].y -- 297
-				local bx = verts[i + 1].x -- 298
-				local by = verts[i + 1].y -- 298
-				local len = segLen[i] -- 299
-				if len < 0.001 or len > maxSeg then -- 299
-					goto __continue20 -- 301
-				end -- 301
-				local s = 0 -- 302
-				while s < len - 0.001 do -- 302
-					local c = pen % cycle -- 304
-					local run = math.min(cycle - c, len - s) -- 305
-					if c < dashOn then -- 305
-						local t0 = s / len -- 307
-						local t1 = (s + run) / len -- 308
-						local x0 = ax + (bx - ax) * t0 -- 309
-						local y0 = ay + (by - ay) * t0 -- 310
-						local x1 = ax + (bx - ax) * t1 -- 311
-						local y1 = ay + (by - ay) * t1 -- 312
-						local al = fadeAlpha((pen + run * 0.5) / total, fadeMin) -- 313
-						local p0 = Vec2(x0, y0) -- 314
-						local p1 = Vec2(x1, y1) -- 315
-						draw:drawSegment( -- 316
-							p0, -- 316
-							p1, -- 316
-							glowRadius, -- 316
-							segColor(rgb, glowAlpha * al) -- 316
-						) -- 316
+function ____exports.drawDashedPolyline(draw, verts, coreRadius, rgb, fadeMin, glowRadiusFactor, glowAlpha, dashOn, dashOff, clearFirst) -- 262
+	local maxSeg = 800 -- 277
+	if clearFirst ~= false then -- 277
+		draw:clear() -- 278
+	end -- 278
+	local n = #verts -- 279
+	if n < 2 then -- 279
+		return -- 280
+	end -- 280
+	local segLen = {} -- 283
+	local total = 0 -- 284
+	do -- 284
+		local i = 1 -- 285
+		while i < n do -- 285
+			local dx = verts[i + 1].x - verts[i].x -- 286
+			local dy = verts[i + 1].y - verts[i].y -- 287
+			local l = math.sqrt(dx * dx + dy * dy) -- 288
+			segLen[#segLen + 1] = l -- 289
+			total = total + l -- 290
+			i = i + 1 -- 285
+		end -- 285
+	end -- 285
+	if total < 0.001 then -- 285
+		return -- 292
+	end -- 292
+	local cycle = dashOn + dashOff -- 294
+	local glowRadius = coreRadius * glowRadiusFactor -- 295
+	local pen = 0 -- 296
+	do -- 296
+		local i = 1 -- 297
+		while i < n do -- 297
+			do -- 297
+				local ax = verts[i].x -- 298
+				local ay = verts[i].y -- 298
+				local bx = verts[i + 1].x -- 299
+				local by = verts[i + 1].y -- 299
+				local len = segLen[i] -- 300
+				if len < 0.001 or len > maxSeg then -- 300
+					goto __continue20 -- 302
+				end -- 302
+				local s = 0 -- 303
+				while s < len - 0.001 do -- 303
+					local c = pen % cycle -- 305
+					local run = math.min(cycle - c, len - s) -- 306
+					if c < dashOn then -- 306
+						local t0 = s / len -- 308
+						local t1 = (s + run) / len -- 309
+						local x0 = ax + (bx - ax) * t0 -- 310
+						local y0 = ay + (by - ay) * t0 -- 311
+						local x1 = ax + (bx - ax) * t1 -- 312
+						local y1 = ay + (by - ay) * t1 -- 313
+						local al = fadeAlpha((pen + run * 0.5) / total, fadeMin) -- 314
+						local p0 = Vec2(x0, y0) -- 315
+						local p1 = Vec2(x1, y1) -- 316
 						draw:drawSegment( -- 317
 							p0, -- 317
 							p1, -- 317
-							coreRadius, -- 317
-							segColor(rgb, al) -- 317
+							glowRadius, -- 317
+							segColor(rgb, glowAlpha * al) -- 317
 						) -- 317
-					end -- 317
-					pen = pen + run -- 319
-					s = s + run -- 320
-				end -- 320
-			end -- 320
-			::__continue20:: -- 320
-			i = i + 1 -- 296
-		end -- 296
-	end -- 296
-end -- 261
+						draw:drawSegment( -- 318
+							p0, -- 318
+							p1, -- 318
+							coreRadius, -- 318
+							segColor(rgb, al) -- 318
+						) -- 318
+					end -- 318
+					pen = pen + run -- 320
+					s = s + run -- 321
+				end -- 321
+			end -- 321
+			::__continue20:: -- 321
+			i = i + 1 -- 297
+		end -- 297
+	end -- 297
+end -- 262
 --- 彗星拖尾：宽度与 alpha 从头部向尾部收窄 + 光晕 + 头部亮点。
-local function drawComet(draw, verts, headRadius, rgb, headAlpha, glowRadiusFactor, glowAlpha) -- 326
-	draw:clear() -- 335
-	local n = #verts -- 336
-	if n < 2 then -- 336
-		return -- 337
-	end -- 337
-	local tailRadius = headRadius * 0.15 -- 338
-	local glowRadius = headRadius * glowRadiusFactor -- 339
-	local maxSeg = 800 -- 340
-	do -- 340
-		local i = 1 -- 341
-		while i < n do -- 341
-			do -- 341
-				local u = i / (n - 1) -- 343
-				local up = u ^ 1.2 -- 344
-				local r = tailRadius + (headRadius - tailRadius) * up -- 345
-				local al = headAlpha * u ^ 1.6 -- 346
-				local dxv = verts[i + 1].x - verts[i].x -- 347
-				local dyv = verts[i + 1].y - verts[i].y -- 348
-				if dxv * dxv + dyv * dyv > maxSeg * maxSeg then -- 348
-					goto __continue27 -- 349
-				end -- 349
-				draw:drawSegment( -- 350
-					verts[i], -- 350
-					verts[i + 1], -- 350
-					r * glowRadiusFactor, -- 350
-					segColor(rgb, glowAlpha * al) -- 350
-				) -- 350
+local function drawComet(draw, verts, headRadius, rgb, headAlpha, glowRadiusFactor, glowAlpha) -- 327
+	draw:clear() -- 336
+	local n = #verts -- 337
+	if n < 2 then -- 337
+		return -- 338
+	end -- 338
+	local tailRadius = headRadius * 0.15 -- 339
+	local glowRadius = headRadius * glowRadiusFactor -- 340
+	local maxSeg = 800 -- 341
+	do -- 341
+		local i = 1 -- 342
+		while i < n do -- 342
+			do -- 342
+				local u = i / (n - 1) -- 344
+				local up = u ^ 1.2 -- 345
+				local r = tailRadius + (headRadius - tailRadius) * up -- 346
+				local al = headAlpha * u ^ 1.6 -- 347
+				local dxv = verts[i + 1].x - verts[i].x -- 348
+				local dyv = verts[i + 1].y - verts[i].y -- 349
+				if dxv * dxv + dyv * dyv > maxSeg * maxSeg then -- 349
+					goto __continue27 -- 350
+				end -- 350
 				draw:drawSegment( -- 351
 					verts[i], -- 351
 					verts[i + 1], -- 351
-					r, -- 351
-					segColor(rgb, al) -- 351
+					r * glowRadiusFactor, -- 351
+					segColor(rgb, glowAlpha * al) -- 351
 				) -- 351
-			end -- 351
-			::__continue27:: -- 351
-			i = i + 1 -- 341
-		end -- 341
-	end -- 341
-	draw:drawDot( -- 354
-		verts[n], -- 354
-		headRadius * 1.5, -- 354
-		segColor(rgb, headAlpha) -- 354
-	) -- 354
-end -- 326
+				draw:drawSegment( -- 352
+					verts[i], -- 352
+					verts[i + 1], -- 352
+					r, -- 352
+					segColor(rgb, al) -- 352
+				) -- 352
+			end -- 352
+			::__continue27:: -- 352
+			i = i + 1 -- 342
+		end -- 342
+	end -- 342
+	draw:drawDot( -- 355
+		verts[n], -- 355
+		headRadius * 1.5, -- 355
+		segColor(rgb, headAlpha) -- 355
+	) -- 355
+end -- 327
 --- 创建轨迹视图。
 -- 
 -- @param parent 挂载的父节点。必须是 **2D** 节点（通常是 `Director.ui`）——
 -- `Director.entry` 是 `View3D`，不能挂 2D 绘制节点。
-function ____exports.createTrajectoryView(parent, opts) -- 363
-	local options = opts ~= nil and opts or ____exports.defaultOptions() -- 367
-	local root = Node() -- 370
-	local orbitDraw = DrawNode() -- 373
-	orbitDraw.blendFunc = BlendFunc("One", "One") -- 374
-	root:addChild(orbitDraw) -- 375
-	local ringDraw = DrawNode() -- 377
-	local burnDraw = DrawNode() -- 378
-	root:addChild(burnDraw) -- 379
-	ringDraw.blendFunc = BlendFunc("One", "One") -- 380
-	root:addChild(ringDraw) -- 381
-	local trailDraw = DrawNode() -- 383
-	trailDraw.blendFunc = BlendFunc("One", "One") -- 385
-	root:addChild(trailDraw) -- 386
-	local predictDraw = DrawNode() -- 388
-	predictDraw.blendFunc = BlendFunc("One", "One") -- 389
-	root:addChild(predictDraw) -- 390
-	parent:addChild(root) -- 392
-	local predictRGB = {r = options.predictR, g = options.predictG, b = options.predictB} -- 394
-	local trailRGB = {r = options.trailR, g = options.trailG, b = options.trailB} -- 395
-	return { -- 397
-		setPrediction = function(self, points, basis) -- 398
-			local verts = ____exports.projectPolyline( -- 399
-				____exports.decimate(points, options.maxPoints), -- 399
-				options.y, -- 399
-				basis, -- 399
-				options.layerOriginX, -- 399
-				options.layerOriginY -- 399
-			) -- 399
-			____exports.drawDashedPolyline( -- 400
-				predictDraw, -- 401
-				verts, -- 402
-				options.predictRadius, -- 403
-				predictRGB, -- 404
-				options.predictFadeMin, -- 405
-				options.glowRadiusFactor, -- 406
-				options.glowAlpha, -- 407
-				options.dashOn, -- 408
-				options.dashOff -- 409
-			) -- 409
-		end, -- 398
-		clearPrediction = function(self) -- 412
-			predictDraw:clear() -- 413
-		end, -- 412
-		setTrail = function(self, points, basis) -- 415
-			if #points < 2 then -- 415
-				trailDraw:clear() -- 419
-				return -- 420
-			end -- 420
-			local tail = #points > options.tailPoints and __TS__ArraySlice(points, #points - options.tailPoints) or points -- 422
-			local verts = ____exports.projectPolyline( -- 425
-				____exports.decimate(tail, options.maxPoints), -- 425
-				options.y, -- 425
-				basis, -- 425
-				options.layerOriginX, -- 425
-				options.layerOriginY -- 425
-			) -- 425
-			drawComet( -- 426
-				trailDraw, -- 427
-				verts, -- 428
-				options.trailHeadRadius, -- 429
-				trailRGB, -- 430
-				options.trailHeadAlpha, -- 431
-				options.glowRadiusFactor, -- 432
-				options.glowAlpha -- 433
-			) -- 433
-		end, -- 415
-		clearTrail = function(self) -- 436
-			trailDraw:clear() -- 437
-			burnDraw:clear() -- 438
-		end, -- 436
-		setGoalRings = function(self, rings, basis) -- 440
-			ringDraw:clear() -- 441
-			for ____, ring in ipairs(rings) do -- 442
-				do -- 442
-					if ring.point == true then -- 442
-						local pts = ____exports.projectPolyline( -- 444
-							{ring.center}, -- 444
-							options.y, -- 444
-							basis, -- 444
-							options.layerOriginX, -- 444
-							options.layerOriginY -- 444
-						) -- 444
-						if #pts > 0 then -- 444
-							local alpha = ring.pointAlpha ~= nil and ring.pointAlpha or 1 -- 446
-							local scale = ring.pulse ~= nil and ring.pulse or 1 -- 447
-							ringDraw:drawDot( -- 448
-								pts[1], -- 448
-								10 * scale, -- 448
-								Color( -- 448
-									70, -- 448
-									220, -- 448
-									190, -- 448
-									math.floor(45 * alpha * math.min(2, scale)) -- 448
-								) -- 448
-							) -- 448
+function ____exports.createTrajectoryView(parent, opts) -- 364
+	local options = opts ~= nil and opts or ____exports.defaultOptions() -- 368
+	local root = Node() -- 371
+	local orbitDraw = DrawNode() -- 374
+	orbitDraw.blendFunc = BlendFunc("One", "One") -- 375
+	root:addChild(orbitDraw) -- 376
+	local ringDraw = DrawNode() -- 378
+	local burnDraw = DrawNode() -- 379
+	root:addChild(burnDraw) -- 380
+	ringDraw.blendFunc = BlendFunc("One", "One") -- 381
+	root:addChild(ringDraw) -- 382
+	local trailDraw = DrawNode() -- 384
+	trailDraw.blendFunc = BlendFunc("One", "One") -- 386
+	root:addChild(trailDraw) -- 387
+	local predictDraw = DrawNode() -- 389
+	predictDraw.blendFunc = BlendFunc("One", "One") -- 390
+	root:addChild(predictDraw) -- 391
+	parent:addChild(root) -- 393
+	local predictRGB = {r = options.predictR, g = options.predictG, b = options.predictB} -- 395
+	local trailRGB = {r = options.trailR, g = options.trailG, b = options.trailB} -- 396
+	return { -- 398
+		setPrediction = function(self, points, basis) -- 399
+			local verts = ____exports.projectPolyline( -- 400
+				____exports.decimate(points, options.maxPoints), -- 400
+				options.y, -- 400
+				basis, -- 400
+				options.layerOriginX, -- 400
+				options.layerOriginY -- 400
+			) -- 400
+			____exports.drawDashedPolyline( -- 401
+				predictDraw, -- 402
+				verts, -- 403
+				options.predictRadius, -- 404
+				predictRGB, -- 405
+				options.predictFadeMin, -- 406
+				options.glowRadiusFactor, -- 407
+				options.glowAlpha, -- 408
+				options.dashOn, -- 409
+				options.dashOff -- 410
+			) -- 410
+		end, -- 399
+		clearPrediction = function(self) -- 413
+			predictDraw:clear() -- 414
+		end, -- 413
+		setTrail = function(self, points, basis) -- 416
+			if #points < 2 then -- 416
+				trailDraw:clear() -- 420
+				return -- 421
+			end -- 421
+			local tail = #points > options.tailPoints and __TS__ArraySlice(points, #points - options.tailPoints) or points -- 423
+			local verts = ____exports.projectPolyline( -- 426
+				____exports.decimate(tail, options.maxPoints), -- 426
+				options.y, -- 426
+				basis, -- 426
+				options.layerOriginX, -- 426
+				options.layerOriginY -- 426
+			) -- 426
+			drawComet( -- 427
+				trailDraw, -- 428
+				verts, -- 429
+				options.trailHeadRadius, -- 430
+				trailRGB, -- 431
+				options.trailHeadAlpha, -- 432
+				options.glowRadiusFactor, -- 433
+				options.glowAlpha -- 434
+			) -- 434
+		end, -- 416
+		clearTrail = function(self) -- 437
+			trailDraw:clear() -- 438
+			burnDraw:clear() -- 439
+		end, -- 437
+		setGoalRings = function(self, rings, basis) -- 441
+			ringDraw:clear() -- 442
+			for ____, ring in ipairs(rings) do -- 443
+				do -- 443
+					if ring.point == true then -- 443
+						local pts = ____exports.projectPolyline( -- 445
+							{ring.center}, -- 445
+							options.y, -- 445
+							basis, -- 445
+							options.layerOriginX, -- 445
+							options.layerOriginY -- 445
+						) -- 445
+						if #pts > 0 then -- 445
+							local alpha = ring.pointAlpha ~= nil and ring.pointAlpha or 1 -- 447
+							local scale = ring.pulse ~= nil and ring.pulse or 1 -- 448
 							ringDraw:drawDot( -- 449
 								pts[1], -- 449
-								3.5 * scale, -- 449
+								10 * scale, -- 449
 								Color( -- 449
-									170, -- 449
-									255, -- 449
-									230, -- 449
-									math.floor(255 * alpha) -- 449
+									70, -- 449
+									245, -- 449
+									105, -- 449
+									math.floor(55 * alpha * math.min(2, scale)) -- 449
 								) -- 449
 							) -- 449
-							if ring.burstRadius ~= nil and ring.burstRadius > 0 then -- 449
-								local circle = {} -- 451
-								do -- 451
-									local i = 0 -- 452
-									while i < 32 do -- 452
-										local a = i * math.pi / 16 -- 452
-										circle[#circle + 1] = Vec2( -- 452
-											pts[1].x + ring.burstRadius * math.cos(a), -- 452
-											pts[1].y + ring.burstRadius * math.sin(a) -- 452
-										) -- 452
-										i = i + 1 -- 452
-									end -- 452
-								end -- 452
-								ringDraw:drawPolygon( -- 453
-									circle, -- 453
-									Color(0, 0, 0, 0), -- 453
-									1.5, -- 453
-									Color( -- 453
-										140, -- 453
-										255, -- 453
-										215, -- 453
-										math.floor(160 * alpha) -- 453
-									) -- 453
-								) -- 453
-							end -- 453
-						end -- 453
-					end -- 453
-					if ring.showRange == false then -- 453
-						goto __continue36 -- 457
-					end -- 457
-					if ring.radius <= 0 then -- 457
+							ringDraw:drawDot( -- 450
+								pts[1], -- 450
+								3.5 * scale, -- 450
+								Color( -- 450
+									200, -- 450
+									255, -- 450
+									205, -- 450
+									math.floor(255 * alpha) -- 450
+								) -- 450
+							) -- 450
+							if ring.burstRadius ~= nil and ring.burstRadius > 0 then -- 450
+								local circle = {} -- 452
+								do -- 452
+									local i = 0 -- 453
+									while i < 32 do -- 453
+										local a = i * math.pi / 16 -- 453
+										circle[#circle + 1] = Vec2( -- 453
+											pts[1].x + ring.burstRadius * math.cos(a), -- 453
+											pts[1].y + ring.burstRadius * math.sin(a) -- 453
+										) -- 453
+										i = i + 1 -- 453
+									end -- 453
+								end -- 453
+								ringDraw:drawPolygon( -- 454
+									circle, -- 454
+									Color(0, 0, 0, 0), -- 454
+									1.5, -- 454
+									Color( -- 454
+										120, -- 454
+										255, -- 454
+										145, -- 454
+										math.floor(180 * alpha) -- 454
+									) -- 454
+								) -- 454
+							end -- 454
+						end -- 454
+					end -- 454
+					if ring.showRange == false then -- 454
 						goto __continue36 -- 458
 					end -- 458
-					local n = options.ringSegments -- 460
-					local circle = {} -- 461
-					do -- 461
-						local i = 0 -- 462
-						while i <= n do -- 462
-							local a = i / n * 2 * math.pi -- 463
-							circle[#circle + 1] = { -- 464
-								x = ring.center.x + ring.radius * math.cos(a), -- 464
-								y = ring.center.y + ring.radius * math.sin(a) -- 464
-							} -- 464
-							i = i + 1 -- 462
-						end -- 462
-					end -- 462
-					local verts = ____exports.projectPolyline( -- 466
-						circle, -- 466
-						options.y, -- 466
-						basis, -- 466
-						options.layerOriginX, -- 466
-						options.layerOriginY -- 466
-					) -- 466
-					if #verts < 3 then -- 466
-						goto __continue36 -- 467
-					end -- 467
-					local rgb = ring.passed and ({r = options.ringR * 0.35, g = options.ringG * 0.35, b = options.ringB * 0.35}) or ({r = options.ringR, g = options.ringG, b = options.ringB}) -- 468
-					____exports.drawDashedPolyline( -- 471
-						ringDraw, -- 471
-						verts, -- 471
-						options.ringRadius, -- 471
-						rgb, -- 471
-						1, -- 471
-						options.glowRadiusFactor, -- 471
-						options.ringGlowAlpha, -- 471
-						options.dashOn * 1.5, -- 471
-						options.dashOff, -- 471
-						false -- 471
-					) -- 471
-				end -- 471
-				::__continue36:: -- 471
-			end -- 471
-		end, -- 440
-		clearGoalRings = function(self) -- 474
-			ringDraw:clear() -- 475
-		end, -- 474
-		setBurn = function(____, p, direction, on, basis) -- 477
-			burnDraw:clear() -- 478
-			if not on then -- 478
-				return -- 479
+					if ring.radius <= 0 then -- 458
+						goto __continue36 -- 459
+					end -- 459
+					local n = options.ringSegments -- 461
+					local circle = {} -- 462
+					do -- 462
+						local i = 0 -- 463
+						while i <= n do -- 463
+							local a = i / n * 2 * math.pi -- 464
+							circle[#circle + 1] = { -- 465
+								x = ring.center.x + ring.radius * math.cos(a), -- 465
+								y = ring.center.y + ring.radius * math.sin(a) -- 465
+							} -- 465
+							i = i + 1 -- 463
+						end -- 463
+					end -- 463
+					local verts = ____exports.projectPolyline( -- 467
+						circle, -- 467
+						options.y, -- 467
+						basis, -- 467
+						options.layerOriginX, -- 467
+						options.layerOriginY -- 467
+					) -- 467
+					if #verts < 3 then -- 467
+						goto __continue36 -- 468
+					end -- 468
+					if ring.bandOuterRadius ~= nil and ring.bandOuterRadius > ring.radius then -- 468
+						local outer = {} -- 470
+						do -- 470
+							local i = 0 -- 471
+							while i <= n do -- 471
+								local a = i / n * 2 * math.pi -- 471
+								outer[#outer + 1] = { -- 471
+									x = ring.center.x + ring.bandOuterRadius * math.cos(a), -- 471
+									y = ring.center.y + ring.bandOuterRadius * math.sin(a) -- 471
+								} -- 471
+								i = i + 1 -- 471
+							end -- 471
+						end -- 471
+						local ov = ____exports.projectPolyline( -- 472
+							outer, -- 472
+							options.y, -- 472
+							basis, -- 472
+							options.layerOriginX, -- 472
+							options.layerOriginY -- 472
+						) -- 472
+						do -- 472
+							local i = 1 -- 473
+							while i < #verts and i < #ov do -- 473
+								ringDraw:drawPolygon( -- 473
+									{verts[i], ov[i], ov[i + 1], verts[i + 1]}, -- 473
+									Color(80, 255, 130, 15), -- 473
+									0, -- 473
+									Color(80, 255, 130, 0) -- 473
+								) -- 473
+								i = i + 1 -- 473
+							end -- 473
+						end -- 473
+					end -- 473
+					local opacity = ring.pointAlpha ~= nil and ring.pointAlpha or 1 -- 475
+					local base = ring.point == true and ({r = 90, g = 255, b = 125}) or ({r = options.ringR, g = options.ringG, b = options.ringB}) -- 476
+					local dim = ring.passed and 0.35 or 1 -- 477
+					local rgb = {r = base.r * dim * opacity, g = base.g * dim * opacity, b = base.b * dim * opacity} -- 478
+					____exports.drawDashedPolyline( -- 479
+						ringDraw, -- 479
+						verts, -- 479
+						options.ringRadius, -- 479
+						rgb, -- 479
+						1, -- 479
+						options.glowRadiusFactor, -- 479
+						options.ringGlowAlpha, -- 479
+						options.dashOn * 1.5, -- 479
+						options.dashOff, -- 479
+						false -- 479
+					) -- 479
+				end -- 479
+				::__continue36:: -- 479
 			end -- 479
-			local mag = math.sqrt(direction.x * direction.x + direction.y * direction.y) -- 480
-			if mag <= 0 then -- 480
-				return -- 481
-			end -- 481
-			local length = options.burnLength ~= nil and options.burnLength or 32 -- 482
-			local pts = ____exports.projectPolyline( -- 483
-				{p, {x = p.x - direction.x * length / mag, y = p.y - direction.y * length / mag}}, -- 483
-				options.y, -- 483
-				basis, -- 483
-				options.layerOriginX, -- 483
-				options.layerOriginY -- 483
-			) -- 483
-			if #pts == 2 then -- 483
-				burnDraw:drawSegment( -- 485
-					pts[1], -- 485
-					pts[2], -- 485
-					5, -- 485
-					Color(255, 135, 35, 140) -- 485
-				) -- 485
-				burnDraw:drawSegment( -- 486
-					pts[1], -- 486
-					pts[2], -- 486
-					2, -- 486
-					Color(255, 235, 145, 255) -- 486
-				) -- 486
-			end -- 486
-		end, -- 477
-		setOrbitRing = function(self, center, radius, basis) -- 489
-			orbitDraw:clear() -- 490
-			if radius <= 0 then -- 490
-				return -- 491
-			end -- 491
-			local n = options.orbitRingSegments -- 492
-			local circle = {} -- 493
-			do -- 493
-				local i = 0 -- 494
-				while i <= n do -- 494
-					local a = i / n * 2 * math.pi -- 495
-					circle[#circle + 1] = { -- 496
-						x = center.x + radius * math.cos(a), -- 496
-						y = center.y + radius * math.sin(a) -- 496
-					} -- 496
-					i = i + 1 -- 494
-				end -- 494
+		end, -- 441
+		clearGoalRings = function(self) -- 482
+			ringDraw:clear() -- 483
+		end, -- 482
+		setBurn = function(____, p, direction, on, basis) -- 485
+			burnDraw:clear() -- 486
+			if not on then -- 486
+				return -- 487
+			end -- 487
+			local mag = math.sqrt(direction.x * direction.x + direction.y * direction.y) -- 488
+			if mag <= 0 then -- 488
+				return -- 489
+			end -- 489
+			local length = options.burnLength ~= nil and options.burnLength or 32 -- 490
+			local pts = ____exports.projectPolyline( -- 491
+				{p, {x = p.x - direction.x * length / mag, y = p.y - direction.y * length / mag}}, -- 491
+				options.y, -- 491
+				basis, -- 491
+				options.layerOriginX, -- 491
+				options.layerOriginY -- 491
+			) -- 491
+			if #pts == 2 then -- 491
+				burnDraw:drawSegment( -- 493
+					pts[1], -- 493
+					pts[2], -- 493
+					5, -- 493
+					Color(255, 135, 35, 140) -- 493
+				) -- 493
+				burnDraw:drawSegment( -- 494
+					pts[1], -- 494
+					pts[2], -- 494
+					2, -- 494
+					Color(255, 235, 145, 255) -- 494
+				) -- 494
 			end -- 494
-			local verts = ____exports.projectPolyline( -- 498
-				circle, -- 498
-				options.y, -- 498
-				basis, -- 498
-				options.layerOriginX, -- 498
-				options.layerOriginY -- 498
-			) -- 498
-			if #verts < 2 then -- 498
+		end, -- 485
+		setOrbitRing = function(self, center, radius, basis) -- 497
+			orbitDraw:clear() -- 498
+			if radius <= 0 then -- 498
 				return -- 499
 			end -- 499
-			local vx = basis.forward.x -- 501
-			local vy = basis.forward.z -- 502
-			local vl = math.sqrt(vx * vx + vy * vy) -- 503
-			if vl > 1e-9 then -- 503
-				vx = vx / vl -- 505
-				vy = vy / vl -- 506
-			end -- 506
-			local rgb = {r = options.orbitRingR, g = options.orbitRingG, b = options.orbitRingB} -- 508
-			local nearCol = segColor(rgb, options.orbitRingAlpha) -- 509
-			local farCol = segColor(rgb, options.orbitRingFarAlpha) -- 510
-			do -- 510
-				local i = 1 -- 511
-				while i < #verts and i < #circle do -- 511
-					local far = (circle[i + 1].x - center.x) * vx + (circle[i + 1].y - center.y) * vy > 0 -- 512
-					orbitDraw:drawSegment(verts[i], verts[i + 1], options.orbitRingRadius, far and farCol or nearCol) -- 513
-					i = i + 1 -- 511
-				end -- 511
-			end -- 511
-		end, -- 489
-		clearOrbitRing = function(self) -- 516
-			orbitDraw:clear() -- 517
-		end, -- 516
-		root = root -- 519
-	} -- 519
-end -- 363
-return ____exports -- 363
+			local n = options.orbitRingSegments -- 500
+			local circle = {} -- 501
+			do -- 501
+				local i = 0 -- 502
+				while i <= n do -- 502
+					local a = i / n * 2 * math.pi -- 503
+					circle[#circle + 1] = { -- 504
+						x = center.x + radius * math.cos(a), -- 504
+						y = center.y + radius * math.sin(a) -- 504
+					} -- 504
+					i = i + 1 -- 502
+				end -- 502
+			end -- 502
+			local verts = ____exports.projectPolyline( -- 506
+				circle, -- 506
+				options.y, -- 506
+				basis, -- 506
+				options.layerOriginX, -- 506
+				options.layerOriginY -- 506
+			) -- 506
+			if #verts < 2 then -- 506
+				return -- 507
+			end -- 507
+			local vx = basis.forward.x -- 509
+			local vy = basis.forward.z -- 510
+			local vl = math.sqrt(vx * vx + vy * vy) -- 511
+			if vl > 1e-9 then -- 511
+				vx = vx / vl -- 513
+				vy = vy / vl -- 514
+			end -- 514
+			local rgb = {r = options.orbitRingR, g = options.orbitRingG, b = options.orbitRingB} -- 516
+			local nearCol = segColor(rgb, options.orbitRingAlpha) -- 517
+			local farCol = segColor(rgb, options.orbitRingFarAlpha) -- 518
+			do -- 518
+				local i = 1 -- 519
+				while i < #verts and i < #circle do -- 519
+					local far = (circle[i + 1].x - center.x) * vx + (circle[i + 1].y - center.y) * vy > 0 -- 520
+					orbitDraw:drawSegment(verts[i], verts[i + 1], options.orbitRingRadius, far and farCol or nearCol) -- 521
+					i = i + 1 -- 519
+				end -- 519
+			end -- 519
+		end, -- 497
+		clearOrbitRing = function(self) -- 524
+			orbitDraw:clear() -- 525
+		end, -- 524
+		root = root -- 527
+	} -- 527
+end -- 364
+return ____exports -- 364

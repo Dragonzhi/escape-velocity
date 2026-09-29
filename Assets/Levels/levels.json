@@ -7,6 +7,7 @@
       "subtitle": "借月球减速返回",
       "brief": "拖动抬高远地点，等待地月窗口。短时点火后，安全掠过月球，观察引力如何让航线弯回地球。",
       "centerBody": "earth",
+      "goal": { "body": "moon", "minAltitude": 14, "maxAltitude": 57 },
       "transfer": {
         "apoapsisMax": 520, "thrustAcceleration": 50, "coastPlayback": 3,
         "flyby": {
@@ -26,6 +27,7 @@
         { "body": "moon", "type": "target", "orbitRadius": 390, "angleDeg": 341.020715805128, "direction": 1, "tolerance": 15, "offset": { "x": 52.2, "y": 6.5 } }
       ],
       "stars": [],
+      "bonusPoints": [ { "id": "moon-pass", "body": "moon", "offset": { "x": 52.2, "y": 6.5 }, "tolerance": 15 } ],
       "environment": { "escapeRadius": 900, "maxSteps": 3600 }
     },
     {
@@ -34,6 +36,7 @@
       "subtitle": "借金星减速，飞掠水星",
       "brief": "拖动降低近日点，短时逆行点火。借金星减速后安全飞掠水星，观察航线在两颗行星附近弯折。",
       "centerBody": "sun",
+      "goal": { "body": "mercury", "minAltitude": 6, "maxAltitude": 22 },
       "transfer": {
         "mode": "lowerPeriapsis",
         "apoapsisMax": 400,
@@ -93,6 +96,10 @@
         }
       ],
       "stars": [],
+      "bonusPoints": [
+        { "id": "venus-assist", "body": "venus", "offset": { "x": -17.2, "y": 65.6 }, "tolerance": 10 },
+        { "id": "mercury-pass", "body": "mercury", "offset": { "x": -9.8, "y": 15.2 }, "tolerance": 6 }
+      ],
       "environment": {
         "escapeRadius": 1400,
         "maxSteps": 3600
@@ -114,10 +121,11 @@
     },
     {
       "id": 3,
-      "title": "第 3 关 · 双星甩尾",
-      "subtitle": "木星交棒土星",
-      "brief": "拖动抬高远日点，顺行点火后依次安全掠过木星、土星，连续借力加速进入外圈目标区域。",
+      "title": "第 3 关 · 单程",
+      "subtitle": "借力驶向深空",
+      "brief": "从日心轨道出发，借助木星与土星驶向深空。进入太阳逃逸轨道并穿过目标环即可完成；精准掠过绿点可取得火箭。",
       "centerBody": "sun",
+      "goal": { "body": "sun", "minAltitude": 828, "maxAltitude": 888, "direction": "outward", "requiresEscape": true },
       "transfer": {
         "mode": "raiseApoapsis", "apoapsisMax": 560, "thrustAcceleration": 17, "coastPlayback": 3,
         "orbital": {
@@ -142,6 +150,12 @@
         { "body": "saturn", "orbitRadius": 650, "angleDeg": 316, "direction": 1 }
       ],
       "stars": [],
+      "bonusPoints": [
+        { "id": "jupiter-assist", "body": "jupiter", "offset": { "x": 35.9, "y": -62.6 }, "tolerance": 12 },
+        { "id": "saturn-assist", "body": "saturn", "offset": { "x": 25.9, "y": -62.4 }, "tolerance": 12 },
+        { "id": "deep-space", "orbitRadius": 930, "angleDeg": 341.7163, "direction": 1, "tolerance": 15 }
+      ],
+      "bodyOverrides": { "sun": { "radius": 72 }, "jupiter": { "radius": 24 }, "saturn": { "radius": 20 } },
       "environment": { "escapeRadius": 1600, "maxSteps": 3600 }
     }
   ]

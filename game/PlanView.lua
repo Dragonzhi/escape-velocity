@@ -469,18 +469,18 @@ function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) 
 						10 * scale, -- 548
 						Color( -- 548
 							70, -- 548
-							220, -- 548
-							190, -- 548
-							math.floor(45 * alpha * math.min(2, scale)) -- 548
+							245, -- 548
+							105, -- 548
+							math.floor(55 * alpha * math.min(2, scale)) -- 548
 						) -- 548
 					) -- 548
 					ringDraw:drawDot( -- 549
 						Vec2(s.x, s.y), -- 549
 						3.5 * scale, -- 549
 						Color( -- 549
-							170, -- 549
+							200, -- 549
 							255, -- 549
-							230, -- 549
+							205, -- 549
 							math.floor(255 * alpha) -- 549
 						) -- 549
 					) -- 549
@@ -490,10 +490,10 @@ function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) 
 							noFill, -- 550
 							1.5, -- 550
 							Color( -- 550
-								140, -- 550
+								120, -- 550
 								255, -- 550
-								215, -- 550
-								math.floor(160 * alpha) -- 550
+								145, -- 550
+								math.floor(180 * alpha) -- 550
 							) -- 550
 						) -- 550
 					end -- 550
@@ -505,364 +505,381 @@ function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) 
 				if rPx < 1 then -- 553
 					goto __continue77 -- 554
 				end -- 554
-				ringDraw:drawPolygon( -- 555
-					circleVerts(s.x, s.y, rPx, options.ringSegments), -- 555
-					noFill, -- 555
-					options.ringWidth, -- 555
-					ringColor -- 555
-				) -- 555
-			end -- 555
-			::__continue77:: -- 555
-		end -- 555
-		drawPolyline(trail, trailColor, options.trailWidth) -- 559
-		drawPolyline(pred, predictColor, options.predictWidth) -- 560
-		do -- 560
-			local i = 0 -- 568
-			while i < #bodies do -- 568
-				do -- 568
-					local b = bodies[i + 1] -- 569
-					local s = ____exports.planeToScreen( -- 570
-						bodyPositionAt(b, tWorld), -- 570
-						map -- 570
-					) -- 570
-					local r = i < #visuals and visuals[i + 1].model == "Sun" and options.sunPinRadius or options.pinRadius -- 571
-					if i < #visuals then -- 571
-						local v = visuals[i + 1] -- 573
-						local vr = v.displayRadius > 0 and v.displayRadius * map.scale or 0 -- 574
-						if vr > r then -- 574
-							r = vr -- 575
-						end -- 575
-						if options.actualBodySizes then -- 575
-							r = vr -- 576
-						elseif r > options.maxPinRadius then -- 576
-							r = options.maxPinRadius -- 577
-						end -- 577
-					end -- 577
-					local col = orbitColor -- 579
-					if i < #visuals then -- 579
-						local v = visuals[i + 1] -- 581
-						col = Color( -- 582
-							math.floor(v.r * 255), -- 582
-							math.floor(v.g * 255), -- 582
-							math.floor(v.b * 255), -- 582
-							255 -- 582
-						) -- 582
-					end -- 582
-					pinDraw:drawDot( -- 584
-						Vec2(s.x, s.y), -- 584
-						r, -- 584
-						col -- 584
-					) -- 584
-					if i < #bodyLabels then -- 584
-						local lb = bodyLabels[i + 1] -- 589
-						local near = s.x > -60 and s.x < viewW + 60 and s.y > -60 and s.y < viewH + 60 -- 593
-						setLabelVisible(lb, near) -- 594
-						if not near then -- 594
-							goto __continue84 -- 595
-						end -- 595
-						local name = i < #visuals and bodyLabel(visuals[i + 1].model) or "天体" -- 596
-						local text = name -- 597
-						if i >= #lastBodyReadout or lastBodyReadout[i + 1] ~= text then -- 597
-							lastBodyReadout[i + 1] = text -- 599
-							setLabelText(lb, text) -- 600
-						end -- 600
-						setLabelCenter( -- 602
-							lb, -- 602
-							clampLabelX(s.x), -- 602
-							clampLabelY(s.y + r + options.labelGapY) -- 602
-						) -- 602
-					end -- 602
-				end -- 602
-				::__continue84:: -- 602
-				i = i + 1 -- 568
-			end -- 568
-		end -- 568
-		local ps = ____exports.planeToScreen(probe, map) -- 607
-		local pr = options.probePinRadius -- 608
-		local pvr = options.probeVisualRadius ~= nil and options.probeVisualRadius or PROBE_VISUAL_RADIUS -- 609
-		if pvr > 0 and pvr * map.scale > pr then -- 609
-			pr = pvr * map.scale -- 610
-		end -- 610
-		if pr > options.maxPinRadius then -- 610
-			pr = options.maxPinRadius -- 611
-		end -- 611
-		pinDraw:drawDot( -- 612
-			Vec2(ps.x, ps.y), -- 612
-			pr, -- 612
-			probeColor -- 612
-		) -- 612
-		pinDraw:drawPolygon( -- 613
-			circleVerts(ps.x, ps.y, pr + 5, 24), -- 613
-			noFill, -- 613
-			1.5, -- 613
-			probeColor -- 613
-		) -- 613
-		local vlen = math.sqrt(probeVel.x * probeVel.x + probeVel.y * probeVel.y) -- 614
-		if vlen > 0.000001 then -- 614
-			local dx = probeVel.x / vlen -- 616
-			local dy = probeVel.y / vlen -- 617
-			pinDraw:drawSegment( -- 618
-				Vec2(ps.x, ps.y), -- 619
-				Vec2(ps.x + dx * options.probeTickLen, ps.y - dy * options.probeTickLen), -- 620
-				2, -- 621
-				probeColor -- 622
-			) -- 622
-		end -- 622
-		local burnMag = math.sqrt(burnDirection.x * burnDirection.x + burnDirection.y * burnDirection.y) -- 627
-		if burning and burnMag > 0 then -- 627
-			local ____end = ____exports.planeToScreen({x = probe.x - burnDirection.x * 32 / burnMag, y = probe.y - burnDirection.y * 32 / burnMag}, map) -- 629
-			pinDraw:drawSegment( -- 630
-				Vec2(ps.x, ps.y), -- 630
-				Vec2(____end.x, ____end.y), -- 630
-				4, -- 630
-				Color(255, 135, 35, 160) -- 630
-			) -- 630
-			pinDraw:drawSegment( -- 631
-				Vec2(ps.x, ps.y), -- 631
-				Vec2(____end.x, ____end.y), -- 631
-				1.5, -- 631
-				Color(255, 235, 145, 255) -- 631
-			) -- 631
-		end -- 631
-		do -- 631
-			local i = 0 -- 633
-			while i < #stars do -- 633
-				local st = stars[i + 1] -- 634
-				local isCol = i < #collectedStars and collectedStars[i + 1] -- 635
-				local ss = ____exports.planeToScreen(st, map) -- 636
-				if not isCol then -- 636
-					pinDraw:drawDot( -- 638
-						Vec2(ss.x, ss.y), -- 638
-						8, -- 638
-						Color(255, 215, 0, 255) -- 638
-					) -- 638
-					pinDraw:drawPolygon( -- 639
-						circleVerts(ss.x, ss.y, 14, 16), -- 639
-						noFill, -- 639
-						1.5, -- 639
-						Color(255, 230, 100, 200) -- 639
-					) -- 639
-				else -- 639
-					pinDraw:drawDot( -- 641
-						Vec2(ss.x, ss.y), -- 641
-						5, -- 641
-						Color(120, 120, 120, 100) -- 641
-					) -- 641
-				end -- 641
-				i = i + 1 -- 633
-			end -- 633
-		end -- 633
-		if probeLabel == nil then -- 633
-			probeLabel = createLabel(labelRoot, probeReadout, options.labelFontSize, options.labelHex) -- 647
-			lastProbeReadout = probeReadout -- 648
-		elseif lastProbeReadout ~= probeReadout then -- 648
-			lastProbeReadout = probeReadout -- 650
-			setLabelText(probeLabel, probeReadout) -- 651
-		end -- 651
-		setLabelVisible(probeLabel, ps.x > -60 and ps.x < viewW + 60 and ps.y > -60 and ps.y < viewH + 60) -- 653
-		setLabelCenter( -- 654
-			probeLabel, -- 654
-			clampLabelX(ps.x), -- 654
-			clampLabelY(ps.y - pr - options.labelGapY) -- 654
-		) -- 654
-		if #rings > 0 then -- 654
-			local targetScreen = ____exports.planeToScreen(rings[1].center, map) -- 658
-			local pad = 48 -- 659
-			local isOffscreen = targetScreen.x < pad or targetScreen.x > viewW - pad or targetScreen.y < pad or targetScreen.y > viewH - pad -- 660
-			if isOffscreen then -- 660
-				local cx = viewW / 2 -- 662
-				local cy = viewH / 2 -- 663
-				local dirX = targetScreen.x - cx -- 664
-				local dirY = targetScreen.y - cy -- 665
-				local len = math.sqrt(dirX * dirX + dirY * dirY) -- 666
-				if len > 0.0001 then -- 666
-					local ux = dirX / len -- 668
-					local uy = dirY / len -- 669
-					local halfW = viewW / 2 - pad -- 670
-					local halfH = viewH / 2 - pad -- 671
-					local scaleX = math.abs(ux) > 0.000001 and halfW / math.abs(ux) or 1000000000 -- 672
-					local scaleY = math.abs(uy) > 0.000001 and halfH / math.abs(uy) or 1000000000 -- 673
-					local tHit = math.min(scaleX, scaleY) -- 674
-					local hitX = cx + ux * tHit -- 675
-					local hitY = cy + uy * tHit -- 676
-					local arrowLen = 18 -- 677
-					local arrowHalf = 9 -- 678
-					local tip = Vec2(hitX + ux * 6, hitY + uy * 6) -- 679
-					local back = Vec2(hitX - ux * arrowLen, hitY - uy * arrowLen) -- 680
-					local left = Vec2(back.x - uy * arrowHalf, back.y + ux * arrowHalf) -- 681
-					local right = Vec2(back.x + uy * arrowHalf, back.y - ux * arrowHalf) -- 682
-					beaconDraw:drawPolygon({tip, left, right}, ringColor, 1.5, ringColor) -- 683
-					beaconDraw:drawDot( -- 684
-						Vec2(hitX, hitY), -- 684
-						4, -- 684
-						ringColor -- 684
-					) -- 684
-				end -- 684
-			end -- 684
-		end -- 684
-		dirty = false -- 688
+				if ring.bandOuterRadius ~= nil and ring.bandOuterRadius > ring.radius then -- 554
+					local inner = circleVerts(s.x, s.y, rPx, options.ringSegments) -- 556
+					local outer = circleVerts(s.x, s.y, ring.bandOuterRadius * map.scale, options.ringSegments) -- 557
+					do -- 557
+						local i = 1 -- 558
+						while i < #inner and i < #outer do -- 558
+							ringDraw:drawPolygon( -- 558
+								{inner[i], outer[i], outer[i + 1], inner[i + 1]}, -- 558
+								Color(80, 255, 130, 18), -- 558
+								0, -- 558
+								Color(80, 255, 130, 0) -- 558
+							) -- 558
+							i = i + 1 -- 558
+						end -- 558
+					end -- 558
+				end -- 558
+				local ringTint = ring.point == true and colorFromHex(6750088, ring.pointAlpha ~= nil and ring.pointAlpha or 1) or (ring.pointAlpha ~= nil and colorFromHex(options.ringHex, ring.pointAlpha) or ringColor) -- 560
+				ringDraw:drawPolygon( -- 561
+					circleVerts(s.x, s.y, rPx, options.ringSegments), -- 561
+					noFill, -- 561
+					options.ringWidth, -- 561
+					ringTint -- 561
+				) -- 561
+			end -- 561
+			::__continue77:: -- 561
+		end -- 561
+		drawPolyline(trail, trailColor, options.trailWidth) -- 565
+		drawPolyline(pred, predictColor, options.predictWidth) -- 566
+		do -- 566
+			local i = 0 -- 574
+			while i < #bodies do -- 574
+				do -- 574
+					local b = bodies[i + 1] -- 575
+					local s = ____exports.planeToScreen( -- 576
+						bodyPositionAt(b, tWorld), -- 576
+						map -- 576
+					) -- 576
+					local r = i < #visuals and visuals[i + 1].model == "Sun" and options.sunPinRadius or options.pinRadius -- 577
+					if i < #visuals then -- 577
+						local v = visuals[i + 1] -- 579
+						local vr = v.displayRadius > 0 and v.displayRadius * map.scale or 0 -- 580
+						if vr > r then -- 580
+							r = vr -- 581
+						end -- 581
+						if options.actualBodySizes then -- 581
+							r = vr -- 582
+						elseif r > options.maxPinRadius then -- 582
+							r = options.maxPinRadius -- 583
+						end -- 583
+					end -- 583
+					local col = orbitColor -- 585
+					if i < #visuals then -- 585
+						local v = visuals[i + 1] -- 587
+						col = Color( -- 588
+							math.floor(v.r * 255), -- 588
+							math.floor(v.g * 255), -- 588
+							math.floor(v.b * 255), -- 588
+							255 -- 588
+						) -- 588
+					end -- 588
+					pinDraw:drawDot( -- 590
+						Vec2(s.x, s.y), -- 590
+						r, -- 590
+						col -- 590
+					) -- 590
+					if i < #bodyLabels then -- 590
+						local lb = bodyLabels[i + 1] -- 595
+						local near = s.x > -60 and s.x < viewW + 60 and s.y > -60 and s.y < viewH + 60 -- 599
+						setLabelVisible(lb, near) -- 600
+						if not near then -- 600
+							goto __continue87 -- 601
+						end -- 601
+						local name = i < #visuals and bodyLabel(visuals[i + 1].model) or "天体" -- 602
+						local text = name -- 603
+						if i >= #lastBodyReadout or lastBodyReadout[i + 1] ~= text then -- 603
+							lastBodyReadout[i + 1] = text -- 605
+							setLabelText(lb, text) -- 606
+						end -- 606
+						setLabelCenter( -- 608
+							lb, -- 608
+							clampLabelX(s.x), -- 608
+							clampLabelY(s.y + r + options.labelGapY) -- 608
+						) -- 608
+					end -- 608
+				end -- 608
+				::__continue87:: -- 608
+				i = i + 1 -- 574
+			end -- 574
+		end -- 574
+		local ps = ____exports.planeToScreen(probe, map) -- 613
+		local pr = options.probePinRadius -- 614
+		local pvr = options.probeVisualRadius ~= nil and options.probeVisualRadius or PROBE_VISUAL_RADIUS -- 615
+		if pvr > 0 and pvr * map.scale > pr then -- 615
+			pr = pvr * map.scale -- 616
+		end -- 616
+		if pr > options.maxPinRadius then -- 616
+			pr = options.maxPinRadius -- 617
+		end -- 617
+		pinDraw:drawDot( -- 618
+			Vec2(ps.x, ps.y), -- 618
+			pr, -- 618
+			probeColor -- 618
+		) -- 618
+		pinDraw:drawPolygon( -- 619
+			circleVerts(ps.x, ps.y, pr + 5, 24), -- 619
+			noFill, -- 619
+			1.5, -- 619
+			probeColor -- 619
+		) -- 619
+		local vlen = math.sqrt(probeVel.x * probeVel.x + probeVel.y * probeVel.y) -- 620
+		if vlen > 0.000001 then -- 620
+			local dx = probeVel.x / vlen -- 622
+			local dy = probeVel.y / vlen -- 623
+			pinDraw:drawSegment( -- 624
+				Vec2(ps.x, ps.y), -- 625
+				Vec2(ps.x + dx * options.probeTickLen, ps.y - dy * options.probeTickLen), -- 626
+				2, -- 627
+				probeColor -- 628
+			) -- 628
+		end -- 628
+		local burnMag = math.sqrt(burnDirection.x * burnDirection.x + burnDirection.y * burnDirection.y) -- 633
+		if burning and burnMag > 0 then -- 633
+			local ____end = ____exports.planeToScreen({x = probe.x - burnDirection.x * 32 / burnMag, y = probe.y - burnDirection.y * 32 / burnMag}, map) -- 635
+			pinDraw:drawSegment( -- 636
+				Vec2(ps.x, ps.y), -- 636
+				Vec2(____end.x, ____end.y), -- 636
+				4, -- 636
+				Color(255, 135, 35, 160) -- 636
+			) -- 636
+			pinDraw:drawSegment( -- 637
+				Vec2(ps.x, ps.y), -- 637
+				Vec2(____end.x, ____end.y), -- 637
+				1.5, -- 637
+				Color(255, 235, 145, 255) -- 637
+			) -- 637
+		end -- 637
+		do -- 637
+			local i = 0 -- 639
+			while i < #stars do -- 639
+				local st = stars[i + 1] -- 640
+				local isCol = i < #collectedStars and collectedStars[i + 1] -- 641
+				local ss = ____exports.planeToScreen(st, map) -- 642
+				if not isCol then -- 642
+					pinDraw:drawDot( -- 644
+						Vec2(ss.x, ss.y), -- 644
+						8, -- 644
+						Color(255, 215, 0, 255) -- 644
+					) -- 644
+					pinDraw:drawPolygon( -- 645
+						circleVerts(ss.x, ss.y, 14, 16), -- 645
+						noFill, -- 645
+						1.5, -- 645
+						Color(255, 230, 100, 200) -- 645
+					) -- 645
+				else -- 645
+					pinDraw:drawDot( -- 647
+						Vec2(ss.x, ss.y), -- 647
+						5, -- 647
+						Color(120, 120, 120, 100) -- 647
+					) -- 647
+				end -- 647
+				i = i + 1 -- 639
+			end -- 639
+		end -- 639
+		if probeLabel == nil then -- 639
+			probeLabel = createLabel(labelRoot, probeReadout, options.labelFontSize, options.labelHex) -- 653
+			lastProbeReadout = probeReadout -- 654
+		elseif lastProbeReadout ~= probeReadout then -- 654
+			lastProbeReadout = probeReadout -- 656
+			setLabelText(probeLabel, probeReadout) -- 657
+		end -- 657
+		setLabelVisible(probeLabel, ps.x > -60 and ps.x < viewW + 60 and ps.y > -60 and ps.y < viewH + 60) -- 659
+		setLabelCenter( -- 660
+			probeLabel, -- 660
+			clampLabelX(ps.x), -- 660
+			clampLabelY(ps.y - pr - options.labelGapY) -- 660
+		) -- 660
+		if #rings > 0 then -- 660
+			local targetScreen = ____exports.planeToScreen(rings[1].center, map) -- 664
+			local pad = 48 -- 665
+			local isOffscreen = targetScreen.x < pad or targetScreen.x > viewW - pad or targetScreen.y < pad or targetScreen.y > viewH - pad -- 666
+			if isOffscreen then -- 666
+				local cx = viewW / 2 -- 668
+				local cy = viewH / 2 -- 669
+				local dirX = targetScreen.x - cx -- 670
+				local dirY = targetScreen.y - cy -- 671
+				local len = math.sqrt(dirX * dirX + dirY * dirY) -- 672
+				if len > 0.0001 then -- 672
+					local ux = dirX / len -- 674
+					local uy = dirY / len -- 675
+					local halfW = viewW / 2 - pad -- 676
+					local halfH = viewH / 2 - pad -- 677
+					local scaleX = math.abs(ux) > 0.000001 and halfW / math.abs(ux) or 1000000000 -- 678
+					local scaleY = math.abs(uy) > 0.000001 and halfH / math.abs(uy) or 1000000000 -- 679
+					local tHit = math.min(scaleX, scaleY) -- 680
+					local hitX = cx + ux * tHit -- 681
+					local hitY = cy + uy * tHit -- 682
+					local arrowLen = 18 -- 683
+					local arrowHalf = 9 -- 684
+					local tip = Vec2(hitX + ux * 6, hitY + uy * 6) -- 685
+					local back = Vec2(hitX - ux * arrowLen, hitY - uy * arrowLen) -- 686
+					local left = Vec2(back.x - uy * arrowHalf, back.y + ux * arrowHalf) -- 687
+					local right = Vec2(back.x + uy * arrowHalf, back.y - ux * arrowHalf) -- 688
+					beaconDraw:drawPolygon({tip, left, right}, ringColor, 1.5, ringColor) -- 689
+					beaconDraw:drawDot( -- 690
+						Vec2(hitX, hitY), -- 690
+						4, -- 690
+						ringColor -- 690
+					) -- 690
+				end -- 690
+			end -- 690
+		end -- 690
+		dirty = false -- 694
 	end -- 494
-	return { -- 691
-		setVisible = function(self, on) -- 692
-			isVisible = on -- 693
-			root.visible = on -- 694
-			if not on then -- 694
-				clearAll() -- 697
-				dirty = false -- 698
-			else -- 698
-				dirty = true -- 700
-			end -- 700
-		end, -- 692
-		visible = function(self) -- 703
-			return isVisible -- 704
-		end, -- 703
-		fitTo = function(self, radius) -- 706
-			baseFitRadius = radius -- 707
-			recomputeMap() -- 708
-		end, -- 706
-		syncBodies = function(self, bs, vs, t) -- 710
-			bodies = bs -- 711
-			visuals = vs -- 712
-			tWorld = t -- 713
-			if #bodyLabels ~= #bs then -- 713
-				bodyLabels = {} -- 716
-				do -- 716
-					local i = 0 -- 717
-					while i < #bs do -- 717
-						bodyLabels[#bodyLabels + 1] = createLabel(labelRoot, "", options.labelFontSize, options.labelHex) -- 718
-						i = i + 1 -- 717
-					end -- 717
-				end -- 717
-			end -- 717
-			if centerBodyIndex ~= nil and centerBodyIndex >= 0 and centerBodyIndex < #bs then -- 717
-				local cp = bodyPositionAt(bs[centerBodyIndex + 1], t) -- 724
-				map.centerX = cp.x -- 725
-				map.centerY = cp.y -- 726
-				dirty = true -- 728
-			end -- 728
-			dirty = true -- 730
-		end, -- 710
-		syncProbe = function(self, p, v) -- 732
-			probe = p -- 733
-			probeVel = v -- 734
-			dirty = true -- 735
-			local best = -1 -- 741
-			local bestPull = 0 -- 742
-			local bestDist = 0 -- 743
-			do -- 743
-				local i = 0 -- 744
-				while i < #bodies do -- 744
-					do -- 744
-						local b = bodies[i + 1] -- 745
-						local d = distance( -- 746
-							p, -- 746
-							bodyPositionAt(b, tWorld) -- 746
-						) -- 746
-						if d < 1e-9 then -- 746
-							goto __continue118 -- 747
-						end -- 747
-						local pull = b.gm / (d * d) -- 748
-						if pull > bestPull then -- 748
-							bestPull = pull -- 750
-							best = i -- 751
-							bestDist = d -- 752
-						end -- 752
-					end -- 752
-					::__continue118:: -- 752
-					i = i + 1 -- 744
-				end -- 744
-			end -- 744
-			if best >= 0 then -- 744
-				local alt = bestDist - bodies[best + 1].radius -- 756
-				probeReadout = "探测器 · " .. __TS__NumberToFixed(alt > 0 and alt or 0, 0) -- 757
-			else -- 757
-				probeReadout = "探测器" -- 759
-			end -- 759
-		end, -- 732
-		setPrediction = function(self, points) -- 762
-			pred = points -- 763
-			dirty = true -- 764
-		end, -- 762
-		clearPrediction = function(self) -- 766
-			pred = {} -- 767
-			dirty = true -- 768
-		end, -- 766
-		setTrail = function(self, points) -- 770
-			trail = points -- 771
-			dirty = true -- 772
-		end, -- 770
-		clearTrail = function(self) -- 774
-			trail = {} -- 775
-			dirty = true -- 776
-		end, -- 774
-		setProbeOrbit = function(self, center, radius) -- 778
-			probeOrbitCenter = center -- 779
-			probeOrbitRadius = radius -- 780
-			dirty = true -- 781
-		end, -- 778
-		clearProbeOrbit = function(self) -- 783
-			probeOrbitRadius = 0 -- 784
-			dirty = true -- 785
-		end, -- 783
-		setGoalRings = function(self, rs) -- 787
-			rings = rs -- 788
-			dirty = true -- 789
-		end, -- 787
-		setBurn = function(____, direction, on) -- 791
-			burnDirection = direction -- 791
-			burning = on -- 791
-		end, -- 791
-		clearGoalRings = function(self) -- 792
-			rings = {} -- 793
-			dirty = true -- 794
-		end, -- 792
-		setStars = function(self, s, c) -- 796
-			stars = s -- 797
-			collectedStars = c -- 798
-			dirty = true -- 799
-		end, -- 796
-		flush = function(self) -- 801
-			if not isVisible then -- 801
-				return -- 803
-			end -- 803
-			if not dirty then -- 803
-				return -- 804
-			end -- 804
-			redraw() -- 805
-		end, -- 801
-		clear = function(self) -- 807
-			clearAll() -- 808
-			dirty = true -- 809
+	return { -- 697
+		setVisible = function(self, on) -- 698
+			isVisible = on -- 699
+			root.visible = on -- 700
+			if not on then -- 700
+				clearAll() -- 703
+				dirty = false -- 704
+			else -- 704
+				dirty = true -- 706
+			end -- 706
+		end, -- 698
+		visible = function(self) -- 709
+			return isVisible -- 710
+		end, -- 709
+		fitTo = function(self, radius) -- 712
+			baseFitRadius = radius -- 713
+			recomputeMap() -- 714
+		end, -- 712
+		syncBodies = function(self, bs, vs, t) -- 716
+			bodies = bs -- 717
+			visuals = vs -- 718
+			tWorld = t -- 719
+			if #bodyLabels ~= #bs then -- 719
+				bodyLabels = {} -- 722
+				do -- 722
+					local i = 0 -- 723
+					while i < #bs do -- 723
+						bodyLabels[#bodyLabels + 1] = createLabel(labelRoot, "", options.labelFontSize, options.labelHex) -- 724
+						i = i + 1 -- 723
+					end -- 723
+				end -- 723
+			end -- 723
+			if centerBodyIndex ~= nil and centerBodyIndex >= 0 and centerBodyIndex < #bs then -- 723
+				local cp = bodyPositionAt(bs[centerBodyIndex + 1], t) -- 730
+				map.centerX = cp.x -- 731
+				map.centerY = cp.y -- 732
+				dirty = true -- 734
+			end -- 734
+			dirty = true -- 736
+		end, -- 716
+		syncProbe = function(self, p, v) -- 738
+			probe = p -- 739
+			probeVel = v -- 740
+			dirty = true -- 741
+			local best = -1 -- 747
+			local bestPull = 0 -- 748
+			local bestDist = 0 -- 749
+			do -- 749
+				local i = 0 -- 750
+				while i < #bodies do -- 750
+					do -- 750
+						local b = bodies[i + 1] -- 751
+						local d = distance( -- 752
+							p, -- 752
+							bodyPositionAt(b, tWorld) -- 752
+						) -- 752
+						if d < 1e-9 then -- 752
+							goto __continue121 -- 753
+						end -- 753
+						local pull = b.gm / (d * d) -- 754
+						if pull > bestPull then -- 754
+							bestPull = pull -- 756
+							best = i -- 757
+							bestDist = d -- 758
+						end -- 758
+					end -- 758
+					::__continue121:: -- 758
+					i = i + 1 -- 750
+				end -- 750
+			end -- 750
+			if best >= 0 then -- 750
+				local alt = bestDist - bodies[best + 1].radius -- 762
+				probeReadout = "探测器 · " .. __TS__NumberToFixed(alt > 0 and alt or 0, 0) -- 763
+			else -- 763
+				probeReadout = "探测器" -- 765
+			end -- 765
+		end, -- 738
+		setPrediction = function(self, points) -- 768
+			pred = points -- 769
+			dirty = true -- 770
+		end, -- 768
+		clearPrediction = function(self) -- 772
+			pred = {} -- 773
+			dirty = true -- 774
+		end, -- 772
+		setTrail = function(self, points) -- 776
+			trail = points -- 777
+			dirty = true -- 778
+		end, -- 776
+		clearTrail = function(self) -- 780
+			trail = {} -- 781
+			dirty = true -- 782
+		end, -- 780
+		setProbeOrbit = function(self, center, radius) -- 784
+			probeOrbitCenter = center -- 785
+			probeOrbitRadius = radius -- 786
+			dirty = true -- 787
+		end, -- 784
+		clearProbeOrbit = function(self) -- 789
+			probeOrbitRadius = 0 -- 790
+			dirty = true -- 791
+		end, -- 789
+		setGoalRings = function(self, rs) -- 793
+			rings = rs -- 794
+			dirty = true -- 795
+		end, -- 793
+		setBurn = function(____, direction, on) -- 797
+			burnDirection = direction -- 797
+			burning = on -- 797
+		end, -- 797
+		clearGoalRings = function(self) -- 798
+			rings = {} -- 799
+			dirty = true -- 800
+		end, -- 798
+		setStars = function(self, s, c) -- 802
+			stars = s -- 803
+			collectedStars = c -- 804
+			dirty = true -- 805
+		end, -- 802
+		flush = function(self) -- 807
+			if not isVisible then -- 807
+				return -- 809
+			end -- 809
+			if not dirty then -- 809
+				return -- 810
+			end -- 810
+			redraw() -- 811
 		end, -- 807
-		probeScreen = function(self) -- 811
-			return ____exports.planeToScreen(probe, map) -- 812
-		end, -- 811
-		mapping = function(self) -- 814
-			return map -- 815
-		end, -- 814
-		zoomIn = function(self) -- 817
-			currentZoom = math.min(60, currentZoom * 1.5) -- 820
-			recomputeMap() -- 821
+		clear = function(self) -- 813
+			clearAll() -- 814
+			dirty = true -- 815
+		end, -- 813
+		probeScreen = function(self) -- 817
+			return ____exports.planeToScreen(probe, map) -- 818
 		end, -- 817
-		zoomOut = function(self) -- 823
-			currentZoom = math.max(0.25, currentZoom / 1.5) -- 824
-			recomputeMap() -- 825
+		mapping = function(self) -- 820
+			return map -- 821
+		end, -- 820
+		zoomIn = function(self) -- 823
+			currentZoom = math.min(60, currentZoom * 1.5) -- 826
+			recomputeMap() -- 827
 		end, -- 823
-		resetView = function(self) -- 827
-			currentZoom = 1 -- 828
-			panOffsetX = 0 -- 829
-			panOffsetY = 0 -- 830
+		zoomOut = function(self) -- 829
+			currentZoom = math.max(0.25, currentZoom / 1.5) -- 830
 			recomputeMap() -- 831
-		end, -- 827
-		pan = function(self, dx, dy) -- 833
-			panOffsetX = panOffsetX + dx -- 834
-			panOffsetY = panOffsetY + dy -- 835
-			recomputeMap() -- 836
+		end, -- 829
+		resetView = function(self) -- 833
+			currentZoom = 1 -- 834
+			panOffsetX = 0 -- 835
+			panOffsetY = 0 -- 836
+			recomputeMap() -- 837
 		end, -- 833
-		getZoom = function(self) -- 838
-			return currentZoom -- 839
-		end, -- 838
-		root = root -- 841
-	} -- 841
+		pan = function(self, dx, dy) -- 839
+			panOffsetX = panOffsetX + dx -- 840
+			panOffsetY = panOffsetY + dy -- 841
+			recomputeMap() -- 842
+		end, -- 839
+		getZoom = function(self) -- 844
+			return currentZoom -- 845
+		end, -- 844
+		root = root -- 847
+	} -- 847
 end -- 365
 return ____exports -- 365
