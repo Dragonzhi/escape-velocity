@@ -30,19 +30,41 @@
     },
     {
       "id": 2,
-      "title": "第 2 关 · 金星逆向",
-      "subtitle": "迎面借力减速",
-      "brief": "拖动降低近日点，逆行点火后滑向金星。安全掠过金星减速，再向内进入目标轨道区域。",
+      "title": "第 2 关 · 前往水星",
+      "subtitle": "借金星减速，飞掠水星",
+      "brief": "拖动降低近日点，短时逆行点火。借金星减速后安全飞掠水星，观察航线在两颗行星附近弯折。",
       "centerBody": "sun",
       "transfer": {
-        "mode": "lowerPeriapsis", "apoapsisMax": 400, "periapsisMin": 120, "thrustAcceleration": 32, "coastPlayback": 3,
+        "mode": "lowerPeriapsis",
+        "apoapsisMax": 400,
+        "periapsisMin": 120,
+        "thrustAcceleration": 32,
+        "coastPlayback": 3,
         "orbital": {
-          "standbyPlayback": 0.25, "slowWindow": 2, "maxViewingTime": 6,
-          "encounters": [{ "planetIndex": 1, "focus": "Venus", "encounterRadius": 110, "minPeriapsis": 52, "maxPeriapsis": 90, "energyDirection": "loss", "minEnergyChange": 75, "minWork": 75 }],
-          "region": { "minRadius": 150, "maxRadius": 170, "direction": "inward" }
+          "standbyPlayback": 0.25,
+          "slowWindow": 2,
+          "maxViewingTime": 6,
+          "encounters": [
+            {
+              "planetIndex": 1,
+              "focus": "Venus",
+              "encounterRadius": 110,
+              "minPeriapsis": 52,
+              "maxPeriapsis": 90,
+              "energyDirection": "loss",
+              "minEnergyChange": 75,
+              "minWork": 75
+            }
+          ],
+          "targetFlyby": {
+            "planetIndex": 2,
+            "focus": "Mercury",
+            "encounterRadius": 42,
+            "minPeriapsis": 12,
+            "maxPeriapsis": 28
+          }
         }
       },
-      "marker": { "orbitRadius": 160, "angleDeg": 39.44137827425129, "tolerance": 15 },
       "probe": {
         "orbitRadius": 400,
         "startAngleDeg": 90,
@@ -51,10 +73,44 @@
         "dvBudget": 12
       },
       "orbiters": [
-        { "body": "venus", "orbitRadius": 220, "angleDeg": 312, "direction": 1 }
+        {
+          "body": "venus",
+          "orbitRadius": 220,
+          "angleDeg": 312,
+          "direction": 1
+        },
+        {
+          "body": "mercury",
+          "type": "target",
+          "orbitRadius": 160,
+          "angleDeg": 213,
+          "direction": 1,
+          "offset": {
+            "x": 14,
+            "y": 0
+          },
+          "tolerance": 6
+        }
       ],
       "stars": [],
-      "environment": { "escapeRadius": 1400, "maxSteps": 3600 }
+      "environment": {
+        "escapeRadius": 1400,
+        "maxSteps": 3600
+      },
+      "bodyOverrides": {
+        "sun": {
+          "gm": 800000,
+          "radius": 72
+        },
+        "venus": {
+          "gm": 12000,
+          "radius": 12
+        },
+        "mercury": {
+          "gm": 800,
+          "radius": 6
+        }
+      }
     },
     {
       "id": 3,

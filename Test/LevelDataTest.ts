@@ -8,9 +8,9 @@
  */
 import { Body, P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { SunGm } from 'game/Scale';
-import { GoalSpec, bodyVelocityAt, captureThreshold, evaluateRockets, evaluateRocketsDetailed, findGoalIndex, getLevel, goalWaypoints, installArcadeLevels, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
+import { GoalSpec, bodyVelocityAt, evaluateRockets, evaluateRocketsDetailed, findGoalIndex, getLevel, goalWaypoints, installArcadeLevels, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
 import { Content, json } from 'Dora';
-import { AimMaxSpeed, AimMinSpeed, BrakeShare, PhysicsStep } from 'game/Config';
+import { AimMaxSpeed, AimMinSpeed, PhysicsStep } from 'game/Config';
 import { levelRuntime } from 'game/Tuning';
 import { resolveResult } from 'game/Game';
 import { analyzeTransfer, planTransfer } from 'game/Transfer';
@@ -153,53 +153,6 @@ function testFindGoalIndex(): void {
 }
 
 
-/** 4) 捕获入轨（S3.9.2）：进环还不够，还得"慢到能被抓住"。 */
-function testCapture(): void {
-	const bodies: Body[] = [
-		{ gm: 4000, radius: 4, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 },
-	];
-	const goal: GoalSpec = {
-		kind: 'planet', planetIndex: 0, tolerance: 30,
-		chain: [{ planetIndex: 0, tolerance: 30, capture: true }],
-	};
-	const every = 4;
-	const pass = (speed: number, steps: number): number => {
-		const sim = simulate(
-			{ pos: { x: 0, y: 60 }, vel: { x: 0, y: -speed } },
-			bodies,
-			{ steps, dt: PhysicsStep, sampleEvery: every, escapeRadius: 0 },
-		);
-		return findGoalIndex(sim.points, bodies, goal, PhysicsStep * every, 0, sim.velocities);
-	};
-	// 诊断（失败明细里会打出来）：手工走一遍与判据**相同**的规则，报告「模块 vs 手工」
-	const fastIdx = pass(40, 900);
-	const manualWalk = (speed: number, steps: number): string => {
-		const sim = simulate(
-			{ pos: { x: 0, y: 60 }, vel: { x: 0, y: -speed } },
-			bodies,
-			{ steps, dt: PhysicsStep, sampleEvery: every, escapeRadius: 0 },
-		);
-		const limit = sim.points.length - 1;
-		const st = waypointProgress(sim.points, bodies, goal, PhysicsStep * every, 0, undefined, sim.velocities);
-		let best = -1;
-		let bestRel = 0;
-		let bestThr = 0;
-		for (let i = 0; i <= limit; i++) {
-			const d = distance(sim.points[i], { x: 0, y: 0 });
-			if (d < 30) {
-				const rel = relativeSpeedAt(sim.points, i, bodies[0], PhysicsStep * every, 0, limit, sim.velocities);
-				const thr = captureThreshold(bodies[0], d, 1.4142135623730951);
-				if (d <= bodies[0].radius) continue; // 撞上去不叫入轨（与判据同一条规则）
-				if (rel <= thr) { best = i; bestRel = rel; bestThr = thr; break; }
-			}
-		}
-		return `模块 passed=${st.passed} lastIndex=${st.lastIndex}；手工可捕获点=${best}（rel=${bestRel.toFixed(1)} thr=${bestThr.toFixed(1)}）`;
-	};
-	check('capture-rejects-fast', fastIdx === -1, `快速掠过不应该算捕获：idx=${fastIdx} ${manualWalk(40, 900)}`);
-	// 慢：3 单位/秒飘进去 ⇒ 被束缚住 ⇒ 算捕获
-	check('capture-accepts-slow', pass(3, 2400) >= 0, '远低于逃逸速度的接近应该算捕获');
-}
-
 /** 扫掠统计（返回值给「时间轴确实有影响」那条判据复用）。 */
 interface SweepStat {
 	solutions: number;
@@ -246,11 +199,7 @@ let sweepSteps = 0;
 let sweepEvery = 4;
 /** 出发时已有的速度（S3.9.3，L1 = 绕地球的圆轨道）；扫掠的初速度 = 它 + 这一次点火。 */
 let levelVel0: P2 = { x: 0, y: 0 };
-/** 这一遍扫掠用不用**刹车模式**（S3.9.2：两次点火共享 Δv ⇒ 点火只拿一半）。 */
-let levelBrake = false;
-
-/** 一个采样：初速度向量 + 留给后半程反推的 Δv（0 = 纯惯性）。 */
-interface Sample { vel: P2; brakeDv: number }
+interface Sample { vel: P2 }
 
 function grid(dirCount: number, powerCount: number): Sample[] {
 	const out: Sample[] = [];
@@ -262,13 +211,7 @@ function grid(dirCount: number, powerCount: number): Sample[] {
 			const p = powerCount === 4 ? [0.35, 0.6, 0.85, 1.0][k] : (powerCount === 1 ? 1 : 0.35 + (0.65 * k) / (powerCount - 1));
 			// ⚠️ 上限要跟着**这一关的 Δv 预算**走，否则扫掠会给出玩家根本打不出来的解（S3.9.2b）
 			const speed = levelDvMin + (levelDvTop - levelDvMin) * p;
-			// 与 Game.burnToMotion 同一套折算：刹车模式下点火只拿 BrakeShare，其余留给反推段。
-			// （这段镜像关系由 tools/level-sweep.mjs 与 GameTest 一起守着 —— 两边不一致会让扫掠骗人。）
-			const share = levelBrake ? BrakeShare : 1;
-			out.push({
-				vel: { x: Math.cos(angle) * speed * share + levelVel0.x, y: Math.sin(angle) * speed * share + levelVel0.y },
-				brakeDv: levelBrake ? speed * (1 - share) : 0,
-			});
+			out.push({ vel: { x: Math.cos(angle) * speed + levelVel0.x, y: Math.sin(angle) * speed + levelVel0.y } });
 		}
 	}
 	return out;
@@ -299,7 +242,6 @@ function sweepLevel(lv: ReturnType<typeof getLevel>, dirCount: number, powerCoun
 				bodies,
 				{
 					steps, dt: sweepDt, sampleEvery: sampleEvery, escapeRadius: lv.escapeRadius, t0,
-					brake: sample.brakeDv > 0 ? { dv: sample.brakeDv, startStep: Math.floor(steps / 2) } : undefined,
 				},
 			);
 			// ⚠️ 有效步长必须是 sampleEvery · dt：传 PhysicsStep 会让移动目标的时间轴错位
@@ -311,7 +253,7 @@ function sweepLevel(lv: ReturnType<typeof getLevel>, dirCount: number, powerCoun
 				hits += 1;
 				if (stat.best === '') {
 					const angle = Math.atan2(sample.vel.y, sample.vel.x) * 180 / Math.PI;
-					stat.best = `dir=${angle.toFixed(0)}deg v=${Math.sqrt(sample.vel.x * sample.vel.x + sample.vel.y * sample.vel.y).toFixed(1)} t0=${t0.toFixed(1)}${levelBrake ? ' brake' : ''}`;
+					stat.best = `dir=${angle.toFixed(0)}deg v=${Math.sqrt(sample.vel.x * sample.vel.x + sample.vel.y * sample.vel.y).toFixed(1)} t0=${t0.toFixed(1)}`;
 				}
 			}
 		}
@@ -368,7 +310,6 @@ function testReachability(): SweepStat[] {
 		sweepDt = 1 / 60;
 		sweepEvery = 2;
 		sweepSteps = lv.maxSteps;
-		levelBrake = false;
 		let stat = sweepLevel(lv, 18, 5, t0Count);
 		if (stat.solutions === 0) {
 			stat = sweepLevel(lv, 36, 6, 1);
@@ -484,7 +425,6 @@ export function runTests(): string {
 	testFindGoalIndex();
 	const stats = testReachability();
 	testTimeWindow(stats);
-	testCapture();
 	testMissionMeta();
 	testEvaluateRockets();
 

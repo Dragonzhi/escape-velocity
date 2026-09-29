@@ -12,15 +12,18 @@ export interface TransferTutorial {
 	flyby?: FlybyTutorial;
 }
 
-export interface EncounterSpec {
+export interface EncounterSpec extends TargetFlybySpec {
+	energyDirection: 'gain' | 'loss';
+	minEnergyChange: number;
+	minWork: number;
+}
+
+export interface TargetFlybySpec {
 	planetIndex: number;
 	focus: CameraFocusMode;
 	encounterRadius: number;
 	minPeriapsis: number;
 	maxPeriapsis: number;
-	energyDirection: 'gain' | 'loss';
-	minEnergyChange: number;
-	minWork: number;
 }
 
 export interface OrbitalTutorial {
@@ -28,7 +31,8 @@ export interface OrbitalTutorial {
 	slowWindow: number;
 	maxViewingTime: number;
 	encounters: EncounterSpec[];
-	region: { minRadius: number; maxRadius: number; direction: 'inward' | 'outward' };
+	targetFlyby?: TargetFlybySpec;
+	region?: { minRadius: number; maxRadius: number; direction: 'inward' | 'outward' };
 }
 
 export interface EncounterAnalysis {
@@ -58,6 +62,7 @@ export interface FlybyTutorial {
 
 export interface FlybyAnalysis {
 	encounters?: EncounterAnalysis[];
+	destination?: EncounterAnalysis;
 	entryIndex: number;
 	periapsisIndex: number;
 	exitIndex: number;
@@ -101,15 +106,32 @@ export function analyzeOrbitalMission(flight: SimResult, bodies: Body[], cfg: Or
 		stages.push({ planetIndex: spec.planetIndex, entryIndex: entry, periapsisIndex: peri, exitIndex: exit, periapsis: nearest, energyChange: change, work, passed });
 		ordered = passed; after = exit;
 	}
-	let complete = -1;
-	if (ordered && stages.length > 0) for (let i = Math.max(1, after + 1); i <= last; i++) {
+	let destination: EncounterAnalysis | undefined = undefined;
+	const target = cfg.targetFlyby;
+	if (target !== undefined) {
+		const body = bodies[target.planetIndex];
+		let entry = -1, peri = -1, exit = -1, nearest = 1e9;
+		if (body !== undefined && after >= 0) for (let i = after + 1; i <= last; i++) {
+			const d = distance(flight.points[i], bodyPositionAt(body, t0 + i * dt));
+			const prev = distance(flight.points[i - 1], bodyPositionAt(body, t0 + (i - 1) * dt));
+			if (entry < 0 && prev > target.encounterRadius && d <= target.encounterRadius) entry = i;
+			if (entry < 0) continue;
+			if (d < nearest) { nearest = d; peri = i; }
+			if (i > entry && d >= target.encounterRadius) { exit = i; break; }
+		}
+		const passed: boolean = ordered && body !== undefined && entry > after && peri > entry && exit > peri
+			&& nearest >= Math.max(body.radius, target.minPeriapsis) && nearest <= target.maxPeriapsis;
+		destination = { planetIndex: target.planetIndex, entryIndex: entry, periapsisIndex: peri, exitIndex: exit, periapsis: nearest, energyChange: 0, work: 0, passed };
+	}
+	let complete = destination !== undefined && destination.passed ? destination.exitIndex : -1;
+	if (cfg.region !== undefined && ordered && stages.length > 0) for (let i = Math.max(1, after + 1); i <= last; i++) {
 		const r = distance(flight.points[i], bodyPositionAt(bodies[0], t0 + i * dt));
 		const prev = distance(flight.points[i - 1], bodyPositionAt(bodies[0], t0 + (i - 1) * dt));
 		const rg = cfg.region;
 		if (r >= rg.minRadius && r <= rg.maxRadius && (rg.direction === 'inward' ? prev > rg.maxRadius && r < prev : prev < rg.minRadius && r > prev)) { complete = i; break; }
 	}
 	const first = stages.length > 0 ? stages[0] : undefined;
-	return { encounters: stages, entryIndex: first !== undefined ? first.entryIndex : -1, periapsisIndex: first !== undefined ? first.periapsisIndex : -1,
+	return { encounters: stages, destination, entryIndex: first !== undefined ? first.entryIndex : -1, periapsisIndex: first !== undefined ? first.periapsisIndex : -1,
 		exitIndex: first !== undefined ? first.exitIndex : -1, periapsis: first !== undefined ? first.periapsis : 1e9, energyDrop: first !== undefined ? -first.energyChange : 0,
 		completionIndex: complete, viewEndIndex: complete >= 0 ? Math.min(last, complete + Math.floor(cfg.maxViewingTime / dt)) : last };
 }
@@ -129,6 +151,7 @@ function slowTimes(tr: TransferTutorial, analysis: FlybyAnalysis | undefined, dt
 	const cfg = tr.orbital !== undefined ? tr.orbital : tr.flyby;
 	if (cfg === undefined) return out;
 	const indices = analysis.encounters !== undefined ? analysis.encounters.map(e => e.periapsisIndex) : [analysis.periapsisIndex];
+	if (analysis.destination !== undefined) indices.push(analysis.destination.periapsisIndex);
 	for (const i of indices) if (i >= 0) out.push(i * dt - cfg.slowWindow, i * dt + cfg.slowWindow);
 	return out;
 }
@@ -196,8 +219,8 @@ export function advanceTransferPlayback(time: number, wallDt: number, baseRate: 
 	return time;
 }
 
-export type CameraFocusMode = 'Auto' | 'Probe' | 'Moon' | 'Earth' | 'Venus' | 'Jupiter' | 'Saturn' | 'Sun' | 'Overview';
-export type TransferShot = 'Launch' | 'Cruise' | 'Moon' | 'Overview' | 'Earth' | 'Venus' | 'Jupiter' | 'Saturn' | 'Sun';
+export type CameraFocusMode = 'Auto' | 'Probe' | 'Moon' | 'Earth' | 'Venus' | 'Mercury' | 'Jupiter' | 'Saturn' | 'Sun' | 'Overview';
+export type TransferShot = 'Launch' | 'Cruise' | 'Moon' | 'Overview' | 'Earth' | 'Venus' | 'Mercury' | 'Jupiter' | 'Saturn' | 'Sun';
 
 export function nextCameraFocus(mode: CameraFocusMode, modes?: CameraFocusMode[]): CameraFocusMode {
 	if (modes !== undefined) {
@@ -243,6 +266,11 @@ export function orbitalShotAt(time: number, burn: number, analysis: FlybyAnalysi
 	if (analysis !== undefined && analysis.encounters !== undefined) for (let i = 0; i < analysis.encounters.length; i++) {
 		const e = analysis.encounters[i];
 		if (e.entryIndex >= 0 && time >= e.entryIndex * dt && (e.exitIndex < 0 || time <= e.exitIndex * dt)) return cfg.encounters[i].focus as TransferShot;
+	}
+	if (cfg.targetFlyby !== undefined) {
+		const e = analysis !== undefined ? analysis.destination : undefined;
+		if (e !== undefined && e.entryIndex >= 0 && time >= e.entryIndex * dt && (e.exitIndex < 0 || time <= e.exitIndex * dt)) return cfg.targetFlyby.focus as TransferShot;
+		return e !== undefined && e.passed && time > e.exitIndex * dt ? 'Overview' : 'Cruise';
 	}
 	return analysis !== undefined && analysis.exitIndex >= 0 && analysis.encounters !== undefined && analysis.encounters.every(e => e.passed && time > e.exitIndex * dt) ? 'Overview' : 'Cruise';
 }

@@ -58,9 +58,9 @@ export interface OrbiterJson {
 	 * 单位 rad/s。省略 = DEFAULT_SPIN。
 	 */
 	spin?: number;
-	/** `'target'` = 这一颗是终点星门。一关只认第一颗。 */
+	/** `'target'` = 引导光点相对定位的天体。一关只认第一颗。 */
 	type?: 'target';
-	/** 星门容差（平面单位）。只在 type = target 时有效，省略 = 65。 */
+	/** 光点提示范围（平面单位）。只在 type = target 时有效，省略 = 65。 */
 	tolerance?: number;
 }
 
@@ -72,6 +72,7 @@ export interface StarJson {
 }
 
 export interface LevelJson {
+	bodyOverrides?: { [key: string]: { gm?: number; radius?: number } };
 	marker?: { orbitRadius: number; angleDeg: number; tolerance: number };
 	transfer?: TransferTutorial;
 	id: number;
@@ -127,9 +128,13 @@ export function tangentialVelocity(mu: number, radius: number, phaseRad: number,
 	return { x: direction * tx * speed, y: direction * ty * speed };
 }
 
-function protoOf(table: BodiesConfigJson, key: string): BodyProtoJson | undefined {
+function protoOf(table: BodiesConfigJson, key: string, json: LevelJson): BodyProtoJson | undefined {
 	if (table.bodies === undefined) return undefined;
-	return table.bodies[key];
+	const base = table.bodies[key];
+	if (base === undefined) return undefined;
+	const override = json.bodyOverrides !== undefined ? json.bodyOverrides[key] : undefined;
+	if (override === undefined) return base;
+	return { ...base, gm: override.gm !== undefined ? override.gm : base.gm, radius: override.radius !== undefined ? override.radius : base.radius };
 }
 
 function visualOf(proto: BodyProtoJson): PlanetVisualDef {
@@ -178,7 +183,7 @@ function orbitBody(
 
 /** 把一份关卡 JSON 收成运行时 LevelDef。原型缺失时返回 undefined（这一关整关丢弃）。 */
 export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): LevelDef | undefined {
-	const center = protoOf(table, json.centerBody);
+	const center = protoOf(table, json.centerBody, json);
 	if (center === undefined) return undefined;
 
 	const planets: Body[] = [];
@@ -201,7 +206,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 	let goalOffset: P2 | undefined = undefined;
 	for (let i = 0; i < json.orbiters.length; i++) {
 		const o = json.orbiters[i];
-		const proto = protoOf(table, o.body);
+		const proto = protoOf(table, o.body, json);
 		if (proto === undefined) return undefined;
 		const dir: 1 | -1 = o.direction === -1 ? -1 : 1;
 		const body = orbitBody(proto, o.orbitRadius, o.angleDeg, dir, center.gm, o.spin);
@@ -218,7 +223,13 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 	if (json.marker !== undefined && json.transfer !== undefined && json.transfer.orbital !== undefined) {
 		marker = orbitBody({ name: '目标光点', gm: 0, radius: 0, model: '', color: [0, 1, 1] }, json.marker.orbitRadius, json.marker.angleDeg, 1, center.gm, undefined);
 		targetIndex = 0; tolerance = json.marker.tolerance;
-		for (const e of json.transfer.orbital.encounters) if (e.planetIndex < 1 || e.planetIndex >= planets.length) return undefined;
+	}
+	const orbital = json.transfer !== undefined ? json.transfer.orbital : undefined;
+	if (orbital !== undefined) {
+		if ((orbital.region === undefined) === (orbital.targetFlyby === undefined)) return undefined;
+		for (const e of orbital.encounters) if (e.planetIndex < 1 || e.planetIndex >= planets.length) return undefined;
+		const target = orbital.targetFlyby;
+		if (target !== undefined && (target.planetIndex < 1 || target.planetIndex >= planets.length)) return undefined;
 	}
 	if (targetIndex < 0) return undefined;
 
@@ -267,8 +278,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 			codeName: 'ArcadeSlingshot' + json.id.toFixed(0),
 			historicalRef: '街机引力弹弓',
 			subtitle: json.subtitle !== undefined ? json.subtitle : json.title,
-			vehicle: 'flyby',
-			challenges: json.transfer !== undefined ? [{ desc: json.transfer.orbital !== undefined ? '依次借力后进入目标轨道区域' : (json.transfer.flyby !== undefined ? '安全完成月球减速掠过' : '抵达月球旁的目标光点'), type: 'success' }] : [
+			challenges: json.transfer !== undefined ? [{ desc: json.transfer.orbital !== undefined ? (json.transfer.orbital.targetFlyby !== undefined ? '借金星减速，飞掠水星' : '依次借力后进入目标轨道区域') : (json.transfer.flyby !== undefined ? '安全完成月球减速掠过' : '抵达月球旁的目标光点'), type: 'success' }] : [
 				{ desc: '穿透星门', type: 'success' },
 				{ desc: '收集至少 2 颗星尘', type: 'stars', threshold: 2 },
 				{ desc: '收集全部 3 颗星尘', type: 'stars', threshold: 3 },
@@ -279,7 +289,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 
 /** 星尘轨道（与 stars 数组顺序一致）。中心 gm 取该关第 0 颗天体。 */
 export function starOrbitsOf(json: LevelJson, table: BodiesConfigJson): Body[] {
-	const center = protoOf(table, json.centerBody);
+	const center = protoOf(table, json.centerBody, json);
 	const mu = center !== undefined ? center.gm : 0;
 	const out: Body[] = [];
 	if (json.stars === undefined) return out;

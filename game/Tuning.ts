@@ -342,11 +342,11 @@ export const LEVEL_RUNTIME: LevelRuntime[] = [
 		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
 		cameraNear: 0.1, cameraFar: 5000,
 	},
-	{ // L2 金星逆向漂移 (Venus Drift)
+	{ // L2 借金星减速，安全飞掠水星
 		physicsStep: 0.016, maxStepsPerFrame: 4, sampleEvery: 1, predictSteps: 3600,
 		playback: 1.0, playbackSpeeds: [0.5, 1.0, 2.0],
 		cameraMin: 200, cameraMax: 4000, aimMin: 0, introCloseDist: 100,
-		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 10,
+		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 2,
 		aimFraming: 'local', tiltDeg: 0, orbitFlowDots: false, orbitRings: false,
 		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
 		cameraNear: 0.1, cameraFar: 12000,

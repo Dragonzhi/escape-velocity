@@ -561,11 +561,8 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 		setLabelText(bTitleLabel, 'L' + (levelIndex + 1).toFixed(0) + ' · ' + lv.title + ' · ' + m.subtitle);
 		setLabelText(bSubtitleLabel, m.historicalRef + ' (' + m.codeName + ')');
 
-		const vehText = m.vehicle === 'orbiter'
-			? '【 轨道器型 · 具备变轨制动引擎 】'
-			: '【 飞掠型探测器 · 深空高速引力借力 】';
-		setLabelText(bVehicleLabel, vehText);
-		setLabelColor(bVehicleLabel, m.vehicle === 'orbiter' ? 0xffd479 : 0x7fe3a0);
+		setLabelText(bVehicleLabel, '【 飞掠型探测器 · 深空高速引力借力 】');
+		setLabelColor(bVehicleLabel, 0x7fe3a0);
 
 		const rocketsGot = getMissionRockets(progress, levelIndex);
 		for (let k = 0; k < 3; k++) {

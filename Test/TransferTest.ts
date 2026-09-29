@@ -3,7 +3,7 @@ import { Content, json } from 'Dora';
 import { P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { getLevel, goalPositionAt, installArcadeLevels, findGoalIndex, evaluateRocketsDetailed } from 'game/LevelData';
 import { advanceTransferPlayback, analyzeFlyby, nextCameraFocus, planTransfer, successMarkerFrame, transferPlaybackRate, transferShotAt } from 'game/Transfer';
-import { GameLevel, createCore, coreEndViewing, coreLaunch, coreUpdate, coreRetry, selectIdleHost, isBrakeWindowActive, applyInFlightBrake } from 'game/Game';
+import { GameLevel, createCore, coreEndViewing, coreLaunch, coreUpdate, coreRetry, selectIdleHost } from 'game/Game';
 
 export function runTests(): string {
 	let checks = 0;
@@ -48,8 +48,6 @@ export function runTests(): string {
 	check('planned-safe-flyby', core.flyby !== undefined && core.goalIndex >= 0 && core.flyby.energyDrop >= cfg.minEnergyDrop);
 	check('completion-not-visible-at-launch', !core.missionCompleted && core.result === undefined);
 	check('cannot-end-before-completion', !coreEndViewing(core));
-	check('no-brake-window', !isBrakeWindowActive(core, level));
-	check('cannot-brake', !applyInFlightBrake(core, level));
 	const actual = core.flight;
 	if (actual === undefined) return 'failed\nmissing flight';
 	check('no-instant-impulse', distance(actual.velocities[0], start.vel) < 1e-10);

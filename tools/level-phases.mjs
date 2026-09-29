@@ -21,7 +21,7 @@
  *     phase0_i = θ_A,i − ω_i · (t_A,i + t0*)        ω_i = orbitDirection · 2π / orbitPeriod
  *
  * （= "让弧线 A 在第 t0* 秒正好撞上它"），那么另一条弧线 B 想在第 i 站被接受就要
- * \`r_i · angdiff(θ_B,i, phase0_i + ω_i·t_B,i) ≤ tol_i\`（+ 捕获站还要满足相对速度阈值）。
+ * \`r_i · angdiff(θ_B,i, phase0_i + ω_i·t_B,i) ≤ tol_i\`。
  * 于是"有多少条弧线能走通" = **这一关有多少条路线**，正是设计稿第五章要的"多条路线"。
  * 最后对 phase0 做局部爬坡，取路线数最多的那一组。
  *
@@ -33,10 +33,10 @@
  *   node tools/level-phases.mjs 5                    # 解 L5：最佳相位 + 有多少条路线
  *   node tools/level-phases.mjs 4 --t0 180           # 解"第 180 秒才对齐"的相位（L4/L6 用）
  *   node tools/level-phases.mjs 5 --tol 40,50,60,70  # 试算把容差放宽到这套值的效果
- *   node tools/level-phases.mjs 6 --nocapture --json .agent/tmp/l6.json   # 导出候选给 level-sweep --file
+ *   node tools/level-phases.mjs 6 --json .agent/tmp/l6.json   # 导出候选给 level-sweep --file
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Module from "node:module";
@@ -53,14 +53,19 @@ function opt(name, dflt) {
 	return argv[i + 1];
 }
 const levelArg = Number(argv[0]);
+// 日心教学关使用完整行星引力与有限燃烧，旧的无引力航点近似不适用。
+const configured = JSON.parse(readFileSync(path.join(root, 'Assets/Levels/levels.json'), 'utf8')).levels.find(l => l.id === levelArg);
+if (configured?.transfer?.orbital) {
+	execFileSync(process.execPath, [path.join(here, 'orbital-check.mjs'), '--level', String(levelArg), '--phases'], { cwd: root, stdio: 'inherit' });
+	process.exit(0);
+}
 if (!Number.isFinite(levelArg) || levelArg < 1) {
-	console.log("用法：node tools/level-phases.mjs <关卡号 1-6> [--dirs N] [--dvs N] [--tol a,b,c] [--nocapture] [--t0 N] [--json out.json]");
+	console.log("用法：node tools/level-phases.mjs <关卡号 1-6> [--dirs N] [--dvs N] [--tol a,b,c] [--t0 N] [--json out.json]");
 	process.exit(0);
 }
 const dirCount = Number(opt("dirs", "360"));
 const dvCount = Number(opt("dvs", "41"));
 const t0Target = Number(opt("t0", "0"));
-const noCapture = opt("nocapture", false) !== false;
 const tolArg = opt("tol", null);
 const jsonOut = opt("json", null);
 
@@ -103,7 +108,6 @@ const rings = wps.map((w, i) => {
 		wp: w, body: b, or: b.orbitRadius,
 		tol: tolArg !== null ? Number(String(tolArg).split(",")[i]) : w.tolerance,
 		omega: (b.orbitDirection * TAU) / b.orbitPeriod,
-		capture: noCapture ? false : w.capture === true,
 	};
 });
 const dvTop = lv.dvBudget !== undefined && lv.dvBudget < AimMaxSpeed ? lv.dvBudget : AimMaxSpeed;
@@ -158,7 +162,7 @@ for (let d = 0; d < dirCount; d++) {
 console.log("L" + lv.id + " " + lv.title + "：采样 " + dirCount + "×" + dvCount + " 条弧线，其中 " +
 	samples.length + " 条能**依次**穿过全部 " + rings.length + " 个环" +
 	"（环 " + rings.map((r) => r.or).join("/") + "，容差 " + rings.map((r) => r.tol.toFixed(0)).join("/") +
-	(rings.some((r) => r.capture) ? "，含捕获站" : "") + "）");
+	"" + "）");
 if (samples.length === 0) { console.log("没有任何弧线能穿过全部环 ⇒ 这一关的几何根本不通"); process.exit(1); }
 
 /**
@@ -174,10 +178,6 @@ function scoreAt(phi, t0Launch) {
 		for (let i = 0; i < rings.length; i++) {
 			const R = rings[i], c = s.cross[i];
 			if (Math.abs(angDiff(c.angle, phi[i] + R.omega * (c.t + t0Launch))) * R.or > R.tol) { ok = false; break; }
-			if (i === rings.length - 1 && R.capture) {
-				const vp = R.body.orbitRadius * Math.abs(R.omega);
-				if (Math.abs(c.speed - vp) > Math.sqrt((2 * R.body.gm) / R.tol)) { ok = false; break; }
-			}
 		}
 		if (ok) n++;
 	}
@@ -227,13 +227,12 @@ console.log("建议 phase0（写进 game/LevelData.ts 的 orbiter 第 4 个参�
 for (let i = 0; i < rings.length; i++) {
 	console.log("  " + ((rings[i].wp.label || ("天体" + rings[i].wp.planetIndex)) + "        ").slice(0, 8) +
 		" orbitRadius=" + rings[i].or + "  容差=" + rings[i].tol.toFixed(1) +
-		(rings[i].capture ? "  [捕获]" : "") + "  ==>  phase0 = " + deg(phi[i]).toFixed(1) + "°");
+		"" + "  ==>  phase0 = " + deg(phi[i]).toFixed(1) + "°");
 }
 const okList = samples.filter((s) => score([s.cross[0].angle - rings[0].omega * s.cross[0].t]) >= 0 && (() => {
 	for (let i = 0; i < rings.length; i++) {
 		const R = rings[i], c = s.cross[i];
 		if (Math.abs(angDiff(c.angle, phi[i] + R.omega * c.t)) * R.or > R.tol) return false;
-		if (i === rings.length - 1 && R.capture && Math.abs(c.speed - R.body.orbitRadius * Math.abs(R.omega)) > Math.sqrt((2 * R.body.gm) / R.tol)) return false;
 	}
 	return true;
 })());

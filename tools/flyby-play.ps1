@@ -1,6 +1,6 @@
 # L1 真实鼠标验收：0.25× 待机 -> 拖动/发射 -> 暂停 -> 手动机位 -> 掠月 -> 返回/手动结束 -> 重试。
 # GameShot 只读状态用于等实际时机；所有玩法动作都走窗口中的鼠标命中。
-param([switch]$ManualEnd, [ValidateRange(1,3)][int]$Level = 1)
+param([switch]$ManualEnd, [ValidateRange(1,3)][int]$Level = 1, [ValidateSet('','LowPower','WrongDate')][string]$RejectCase = '')
 $ErrorActionPreference = 'Stop'
 $flybyRoot = Split-Path $PSScriptRoot -Parent
 $flybyResults = Join-Path $flybyRoot '.agent/test-results'
@@ -67,6 +67,7 @@ $flybyShotId = 0
 function Capture([string]$name) {
 	if ($Level -gt 1) { $name = $name.Replace('flyby-', "orbital-L$Level-") }
 	if ($ManualEnd) { $name = $name.Replace('flyby-', 'flyby-manual-') }
+  if ($RejectCase -ne '') { $name += '-' + $RejectCase.ToLower() }
   $script:flybyShotId++
   Remove-Item -LiteralPath $flybyDone -ErrorAction SilentlyContinue
   $requestTmp = $flybyReq + '.tmp'
@@ -126,12 +127,14 @@ try {
   $standbyB = State
   $delta = [double]$standbyB.date - [double]$standbyA.date
   if ($delta -lt 0.10 -or $delta -gt 0.20 -or [double]$standbyB.rate -ne 0.25) { throw 'standby not moving at 0.25x' }
-  $null = Wait-State { param($s) [double]$s.date -ge 0.99 }
+  $nominalDate = if ($RejectCase -eq 'WrongDate') { 3.0 } else { 1.0 }
+  $null = Wait-State { param($s) [double]$s.date -ge ($nominalDate - 0.01) }
   $null = Pause
   $launchDate = [double](State).date
-  if ($launchDate -lt 0.97 -or $launchDate -gt 1.06) { throw "missed nominal date: $launchDate" }
+  if ($launchDate -lt ($nominalDate - 0.03) -or $launchDate -gt ($nominalDate + 0.06)) { throw "missed nominal date: $launchDate" }
   Write-Output "Observed standby delta=$delta launchDate=$launchDate"
   $nominalPower = if ($Level -eq 1) { 0.875 } elseif ($Level -eq 2) { 11.0 / 14.0 } else { 0.5 }
+  if ($RejectCase -eq 'LowPower') { $nominalPower = 0.04 }
   # 基准力度；原生鼠标拖动，不能用 Game.launch 代替。
   Move-Cursor ($flybyVW * 0.20) ($flybyVH * 0.5)
   Start-Sleep -Milliseconds 100
@@ -149,10 +152,19 @@ try {
   Click ($flybyVW - 134) 152
   Click 149 202
   $ignition = Wait-State { param($s) $s.phase -eq 'Flying' -and $s.paused -eq '1' }
-  if ((FlightTime $ignition) -ge 0.30) { throw 'missed actual burn' }
+  if ($RejectCase -eq '' -and (FlightTime $ignition) -ge 0.30) { throw 'missed actual burn' }
   Capture 'flyby-ignition'
+  if ($RejectCase -ne '') {
+    $null = Resume
+    $null = Wait-State { param($s) $s.phase -eq 'Result' } 40
+    if ((State).completed -ne '0' -or (Logs) -match 'result = success') { throw 'negative input completed mission' }
+    Capture ('flyby-rejected-' + $RejectCase.ToLower())
+    Set-Content -LiteralPath (Join-Path $flybyResults "L$Level-$RejectCase-input-log.txt") -Value (Logs)
+    Write-Output "RESULT=PASS real input rejects $RejectCase"
+    return
+  }
   # 按钮循环机位，暂停期间也应可观察；手动选择不被自动分镜覆盖。
-  $focusModes = if ($Level -eq 1) { @('Probe', 'Moon', 'Earth', 'Overview', 'Auto') } elseif ($Level -eq 2) { @('Probe', 'Venus', 'Sun', 'Overview', 'Auto') } else { @('Probe', 'Jupiter', 'Saturn', 'Sun', 'Overview', 'Auto') }
+  $focusModes = if ($Level -eq 1) { @('Probe', 'Moon', 'Earth', 'Overview', 'Auto') } elseif ($Level -eq 2) { @('Probe', 'Venus', 'Mercury', 'Sun', 'Overview', 'Auto') } else { @('Probe', 'Jupiter', 'Saturn', 'Sun', 'Overview', 'Auto') }
   foreach ($mode in $focusModes) {
     $null = Click-State 154 295 { param($s) $s.focus -eq $mode }
     Start-Sleep -Milliseconds 700
@@ -185,6 +197,14 @@ try {
   $null = Pause
   Capture 'flyby-periapsis'
   if ((State).completed -ne '0') { throw 'mission ended at guidance light' }
+  if ($Level -eq 2) {
+    $null = Resume
+    $null = Wait-State { param($s) (FlightTime $s) -ge 19.2 }
+    $null = Pause
+    Capture 'flyby-mercury-periapsis'
+    if ((State).completed -ne '0') { throw 'mission completed before Mercury exit' }
+    if ((Logs) -notmatch 'camera shot -> Auto:Mercury') { throw 'Mercury encounter camera missing' }
+  }
   if ($Level -eq 3) {
     $null = Resume
     $null = Wait-State { param($s) (FlightTime $s) -ge 14.2 }
@@ -214,7 +234,7 @@ try {
     if ((Logs) -notmatch 'end viewing \(manual\)') { throw 'manual end not delivered' }
   } else {
     $null = Resume
-    $viewTime = if ($Level -eq 1) { 29 } elseif ($Level -eq 2) { 37 } else { 20 }
+    $viewTime = if ($Level -eq 1) { 29 } elseif ($Level -eq 2) { 24 } else { 20 }
     $null = Wait-State { param($s) (FlightTime $s) -ge $viewTime }
     $null = Pause
     Capture 'flyby-return'
@@ -228,11 +248,11 @@ try {
   if ($retry.completed -ne '0' -or $retry.focus -ne 'Auto' -or $retry.view -ne '2D' -or [double]$retry.marker -ne -1) { throw 'retry left stale viewing state' }
   Capture 'flyby-retry'
   $logName = if ($ManualEnd) { 'flyby-manual-input-log.txt' } else { 'flyby-input-log.txt' }
-  if ($Level -gt 1) { $logName = "orbital-L$Level-input-log.txt" }
+  if ($Level -gt 1) { $logName = if ($ManualEnd) { "orbital-L$Level-manual-input-log.txt" } else { "orbital-L$Level-input-log.txt" } }
   $log = Logs
   Set-Content -LiteralPath (Join-Path $flybyResults $logName) -Value $log
   Write-Output ($log -split "`n" | Select-String 'flyby planned|mission completed|camera shot|camera focus|completion saved|end viewing|result =|phase ->' | ForEach-Object { $_.Line })
-  Write-Output ('RESULT=PASS real standby / drag / launch / pause / five camera modes / flyby / ' + $(if ($ManualEnd) { 'manual end' } else { 'return' }) + ' / retry')
+  Write-Output ('RESULT=PASS real standby / drag / launch / pause / camera modes / flyby / ' + $(if ($ManualEnd) { 'manual end' } else { 'return' }) + ' / retry')
 } finally {
   Get-Process Dora -ErrorAction SilentlyContinue | Stop-Process -Force
   Remove-Item -LiteralPath $flybyEnter,$flybyReq,$flybyDone,$flybyObserve -ErrorAction SilentlyContinue

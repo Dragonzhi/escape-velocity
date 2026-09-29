@@ -31,8 +31,6 @@ local coreLaunch = ____Game.coreLaunch -- 6
 local coreUpdate = ____Game.coreUpdate -- 6
 local coreRetry = ____Game.coreRetry -- 6
 local selectIdleHost = ____Game.selectIdleHost -- 6
-local isBrakeWindowActive = ____Game.isBrakeWindowActive -- 6
-local applyInFlightBrake = ____Game.applyInFlightBrake -- 6
 function ____exports.runTests() -- 8
 	local checks = 0 -- 9
 	local failures = {} -- 10
@@ -168,404 +166,396 @@ function ____exports.runTests() -- 8
 		"cannot-end-before-completion", -- 50
 		not coreEndViewing(core) -- 50
 	) -- 50
-	check( -- 51
-		"no-brake-window", -- 51
-		not isBrakeWindowActive(core, level) -- 51
-	) -- 51
-	check( -- 52
-		"cannot-brake", -- 52
-		not applyInFlightBrake(core, level) -- 52
-	) -- 52
-	local actual = core.flight -- 53
-	if actual == nil then -- 53
-		return "failed\nmissing flight" -- 54
-	end -- 54
-	check( -- 55
-		"no-instant-impulse", -- 55
-		distance(actual.velocities[1], start.vel) < 1e-10 -- 55
+	local actual = core.flight -- 51
+	if actual == nil then -- 51
+		return "failed\nmissing flight" -- 52
+	end -- 52
+	check( -- 53
+		"no-instant-impulse", -- 53
+		distance(actual.velocities[1], start.vel) < 1e-10 -- 53
+	) -- 53
+	local ref = simulate({pos = start.pos, vel = {x = start.vel.x + plan.velocity.x, y = start.vel.y + plan.velocity.y}}, lv.planets, { -- 54
+		dt = dt, -- 54
+		steps = lv.maxSteps, -- 54
+		sampleEvery = 1, -- 54
+		escapeRadius = lv.escapeRadius, -- 54
+		t0 = date -- 54
+	}) -- 54
+	local reference = analyzeFlyby( -- 55
+		ref, -- 55
+		lv.planets[1], -- 55
+		lv.planets[2], -- 55
+		cfg, -- 55
+		dt, -- 55
+		date -- 55
 	) -- 55
-	local ref = simulate({pos = start.pos, vel = {x = start.vel.x + plan.velocity.x, y = start.vel.y + plan.velocity.y}}, lv.planets, { -- 56
-		dt = dt, -- 56
-		steps = lv.maxSteps, -- 56
-		sampleEvery = 1, -- 56
-		escapeRadius = lv.escapeRadius, -- 56
-		t0 = date -- 56
-	}) -- 56
-	local reference = analyzeFlyby( -- 57
-		ref, -- 57
-		lv.planets[1], -- 57
-		lv.planets[2], -- 57
-		cfg, -- 57
-		dt, -- 57
-		date -- 57
-	) -- 57
-	check("reference-safe-flyby", reference.completionIndex >= 0) -- 58
-	local peri = core.flyby ~= nil and core.flyby.periapsisIndex or 0 -- 59
-	local drift = distance(actual.points[peri + 1], ref.points[peri + 1]) -- 60
-	check("small-nonzero-drift", drift > 0.01 and drift < 20) -- 61
-	check( -- 62
-		"periapsis-drift-tolerated", -- 62
-		core.flyby ~= nil and math.abs(core.flyby.periapsis - reference.periapsis) < 5 -- 62
-	) -- 62
-	local accelerated = analyzeFlyby( -- 63
-		actual, -- 63
-		lv.planets[1], -- 63
-		lv.planets[2], -- 63
-		__TS__ObjectAssign({}, cfg, {minEnergyDrop = 1000}), -- 63
-		dt, -- 63
-		date -- 63
+	check("reference-safe-flyby", reference.completionIndex >= 0) -- 56
+	local peri = core.flyby ~= nil and core.flyby.periapsisIndex or 0 -- 57
+	local drift = distance(actual.points[peri + 1], ref.points[peri + 1]) -- 58
+	check("small-nonzero-drift", drift > 0.01 and drift < 20) -- 59
+	check( -- 60
+		"periapsis-drift-tolerated", -- 60
+		core.flyby ~= nil and math.abs(core.flyby.periapsis - reference.periapsis) < 5 -- 60
+	) -- 60
+	local accelerated = analyzeFlyby( -- 61
+		actual, -- 61
+		lv.planets[1], -- 61
+		lv.planets[2], -- 61
+		__TS__ObjectAssign({}, cfg, {minEnergyDrop = 1000}), -- 61
+		dt, -- 61
+		date -- 61
+	) -- 61
+	check("energy-drop-is-required", accelerated.completionIndex < 0) -- 62
+	check( -- 63
+		"close-pass-is-required", -- 63
+		analyzeFlyby( -- 63
+			actual, -- 63
+			lv.planets[1], -- 63
+			lv.planets[2], -- 63
+			__TS__ObjectAssign({}, cfg, {maxPeriapsis = 45}), -- 63
+			dt, -- 63
+			date -- 63
+		).completionIndex < 0 -- 63
 	) -- 63
-	check("energy-drop-is-required", accelerated.completionIndex < 0) -- 64
-	check( -- 65
-		"close-pass-is-required", -- 65
-		analyzeFlyby( -- 65
-			actual, -- 65
-			lv.planets[1], -- 65
-			lv.planets[2], -- 65
-			__TS__ObjectAssign({}, cfg, {maxPeriapsis = 45}), -- 65
-			dt, -- 65
-			date -- 65
-		).completionIndex < 0 -- 65
+	check( -- 64
+		"safety-margin-is-required", -- 64
+		analyzeFlyby( -- 64
+			actual, -- 64
+			lv.planets[1], -- 64
+			lv.planets[2], -- 64
+			__TS__ObjectAssign({}, cfg, {minPeriapsis = 60}), -- 64
+			dt, -- 64
+			date -- 64
+		).completionIndex < 0 -- 64
+	) -- 64
+	local timeout = analyzeFlyby( -- 65
+		actual, -- 65
+		lv.planets[1], -- 65
+		lv.planets[2], -- 65
+		__TS__ObjectAssign({}, cfg, {returnRadius = 1}), -- 65
+		dt, -- 65
+		date -- 65
 	) -- 65
 	check( -- 66
-		"safety-margin-is-required", -- 66
-		analyzeFlyby( -- 66
-			actual, -- 66
-			lv.planets[1], -- 66
-			lv.planets[2], -- 66
-			__TS__ObjectAssign({}, cfg, {minPeriapsis = 60}), -- 66
-			dt, -- 66
-			date -- 66
-		).completionIndex < 0 -- 66
+		"view-timeout-without-earth-return", -- 66
+		timeout.completionIndex >= 0 and timeout.viewEndIndex == timeout.completionIndex + math.floor(cfg.maxViewingTime / dt) -- 66
 	) -- 66
-	local timeout = analyzeFlyby( -- 67
-		actual, -- 67
-		lv.planets[1], -- 67
-		lv.planets[2], -- 67
-		__TS__ObjectAssign({}, cfg, {returnRadius = 1}), -- 67
-		dt, -- 67
-		date -- 67
-	) -- 67
-	check( -- 68
-		"view-timeout-without-earth-return", -- 68
-		timeout.completionIndex >= 0 and timeout.viewEndIndex == timeout.completionIndex + math.floor(cfg.maxViewingTime / dt) -- 68
-	) -- 68
-	local light = createCore(dt) -- 69
-	light.t0 = date -- 70
-	coreLaunch( -- 71
-		light, -- 71
-		plan.velocity, -- 71
-		level, -- 71
-		start.pos, -- 71
-		start.vel -- 71
-	) -- 71
-	local lightIndex = findGoalIndex( -- 72
-		actual.points, -- 72
-		lv.planets, -- 72
-		lv.goal, -- 72
-		dt, -- 72
-		date -- 72
-	) -- 72
-	light.flightTime = lightIndex * dt -- 73
-	light.playback = 0 -- 74
-	coreUpdate(light, 0, level) -- 75
-	check("light-does-not-complete", lightIndex > 0 and lightIndex < core.goalIndex and light.phase == "Flying" and not light.missionCompleted) -- 76
-	light.flightTime = core.goalIndex * dt -- 77
-	coreUpdate(light, 0, level) -- 78
-	check("flyby-completes-without-ending", light.missionCompleted and light.phase == "Flying" and light.result == "success") -- 79
-	check( -- 80
-		"manual-end-after-completion", -- 80
-		coreEndViewing(light) and light.phase == "Result" and light.result == "success" -- 80
-	) -- 80
-	do -- 80
-		local t = 0 -- 81
-		while t < 80 do -- 81
-			local moon = bodyPositionAt(lv.planets[2], t) -- 82
-			local goal = goalPositionAt(lv.planets[2], t, lv.goal.offset) -- 83
-			check( -- 84
-				"safe-goal-" .. __TS__NumberToFixed(t, 0), -- 84
-				distance(moon, goal) > lv.planets[2].radius + lv.goal.tolerance -- 84
-			) -- 84
-			t = t + 20 -- 81
-		end -- 81
-	end -- 81
-	local opts = { -- 86
-		dt = dt, -- 86
-		steps = 100, -- 86
-		sampleEvery = 1, -- 86
-		escapeRadius = 0, -- 86
-		initialBurn = {acceleration = {x = 10, y = 0}, duration = 0.301} -- 86
-	} -- 86
-	local fractional = simulate({pos = {x = 0, y = 0}, vel = {x = 0, y = 0}}, {}, opts) -- 87
-	check( -- 88
-		"fractional-last-burn-step", -- 88
-		math.abs(fractional.state.vel.x - 3.01) < 1e-10 -- 88
-	) -- 88
-	local twice = simulate({pos = {x = 0, y = 0}, vel = {x = 0, y = 0}}, {}, opts) -- 89
-	check("burn-deterministic", fractional.state.pos.x == twice.state.pos.x and fractional.state.vel.x == twice.state.vel.x) -- 90
-	local pausedAt = core.flightTime -- 91
-	core.playback = 0 -- 92
-	do -- 92
-		local i = 0 -- 93
-		while i < 50 do -- 93
-			coreUpdate(core, 1 / 60, level) -- 93
-			i = i + 1 -- 93
-		end -- 93
-	end -- 93
-	check("pause-freezes-burn", core.flightTime == pausedAt) -- 94
-	core.playback = 1 -- 95
-	local wall = 0 -- 96
-	while core.phase == "Flying" and wall < 40 do -- 96
-		coreUpdate(core, 1 / 60, level) -- 97
-		wall = wall + 1 / 60 -- 97
-	end -- 97
-	check("12-to-18s-playback", wall >= 12 and wall <= 18) -- 98
-	check("return-clamped", core.phase == "Result" and core.missionCompleted and core.flyby ~= nil and core.flightTime == core.flyby.viewEndIndex * dt and core.flightTime > core.goalIndex * dt) -- 99
-	check( -- 100
-		"return-near-earth", -- 100
-		distance( -- 100
-			actual.points[math.floor(core.flightTime / dt) + 1], -- 100
-			bodyPositionAt(lv.planets[1], date + core.flightTime) -- 100
-		) <= cfg.returnRadius -- 100
-	) -- 100
-	local fast = createCore(dt) -- 101
-	fast.t0 = date -- 102
-	coreLaunch( -- 103
-		fast, -- 103
-		plan.velocity, -- 103
-		level, -- 103
-		start.pos, -- 103
-		start.vel -- 103
-	) -- 103
-	fast.playback = 4 -- 104
-	do -- 104
-		local i = 0 -- 105
-		while i < 1000 and fast.phase == "Flying" do -- 105
-			coreUpdate(fast, 1 / 120, level) -- 105
-			i = i + 1 -- 105
-		end -- 105
-	end -- 105
-	check( -- 106
-		"speed-does-not-change-result", -- 106
-		fast.result == core.result and fast.flightTime == core.flightTime and fast.flight ~= nil and distance(fast.flight.points[fast.goalIndex + 1], actual.points[core.goalIndex + 1]) == 0 -- 106
-	) -- 106
-	local low = createCore(dt) -- 107
-	low.t0 = date -- 108
-	coreLaunch( -- 109
-		low, -- 109
-		planTransfer( -- 109
-			lv.planets[1].gm, -- 109
-			radius, -- 109
-			start.vel, -- 109
-			0.05, -- 109
-			tr.apoapsisMax -- 109
-		).velocity, -- 109
-		level, -- 109
-		start.pos, -- 109
-		start.vel -- 109
-	) -- 109
-	check("low-power-misses", low.goalIndex < 0) -- 110
-	local wrong = createCore(dt) -- 111
-	wrong.t0 = 1.8 -- 112
-	local wrongStart = startAt(wrong.t0) -- 113
-	coreLaunch( -- 114
-		wrong, -- 114
-		planTransfer( -- 114
-			lv.planets[1].gm, -- 114
-			radius, -- 114
-			wrongStart.vel, -- 114
-			power, -- 114
-			tr.apoapsisMax -- 114
-		).velocity, -- 114
-		level, -- 114
-		wrongStart.pos, -- 114
-		wrongStart.vel -- 114
+	local light = createCore(dt) -- 67
+	light.t0 = date -- 68
+	coreLaunch( -- 69
+		light, -- 69
+		plan.velocity, -- 69
+		level, -- 69
+		start.pos, -- 69
+		start.vel -- 69
+	) -- 69
+	local lightIndex = findGoalIndex( -- 70
+		actual.points, -- 70
+		lv.planets, -- 70
+		lv.goal, -- 70
+		dt, -- 70
+		date -- 70
+	) -- 70
+	light.flightTime = lightIndex * dt -- 71
+	light.playback = 0 -- 72
+	coreUpdate(light, 0, level) -- 73
+	check("light-does-not-complete", lightIndex > 0 and lightIndex < core.goalIndex and light.phase == "Flying" and not light.missionCompleted) -- 74
+	light.flightTime = core.goalIndex * dt -- 75
+	coreUpdate(light, 0, level) -- 76
+	check("flyby-completes-without-ending", light.missionCompleted and light.phase == "Flying" and light.result == "success") -- 77
+	check( -- 78
+		"manual-end-after-completion", -- 78
+		coreEndViewing(light) and light.phase == "Result" and light.result == "success" -- 78
+	) -- 78
+	do -- 78
+		local t = 0 -- 79
+		while t < 80 do -- 79
+			local moon = bodyPositionAt(lv.planets[2], t) -- 80
+			local goal = goalPositionAt(lv.planets[2], t, lv.goal.offset) -- 81
+			check( -- 82
+				"safe-goal-" .. __TS__NumberToFixed(t, 0), -- 82
+				distance(moon, goal) > lv.planets[2].radius + lv.goal.tolerance -- 82
+			) -- 82
+			t = t + 20 -- 79
+		end -- 79
+	end -- 79
+	local opts = { -- 84
+		dt = dt, -- 84
+		steps = 100, -- 84
+		sampleEvery = 1, -- 84
+		escapeRadius = 0, -- 84
+		initialBurn = {acceleration = {x = 10, y = 0}, duration = 0.301} -- 84
+	} -- 84
+	local fractional = simulate({pos = {x = 0, y = 0}, vel = {x = 0, y = 0}}, {}, opts) -- 85
+	check( -- 86
+		"fractional-last-burn-step", -- 86
+		math.abs(fractional.state.vel.x - 3.01) < 1e-10 -- 86
+	) -- 86
+	local twice = simulate({pos = {x = 0, y = 0}, vel = {x = 0, y = 0}}, {}, opts) -- 87
+	check("burn-deterministic", fractional.state.pos.x == twice.state.pos.x and fractional.state.vel.x == twice.state.vel.x) -- 88
+	local pausedAt = core.flightTime -- 89
+	core.playback = 0 -- 90
+	do -- 90
+		local i = 0 -- 91
+		while i < 50 do -- 91
+			coreUpdate(core, 1 / 60, level) -- 91
+			i = i + 1 -- 91
+		end -- 91
+	end -- 91
+	check("pause-freezes-burn", core.flightTime == pausedAt) -- 92
+	core.playback = 1 -- 93
+	local wall = 0 -- 94
+	while core.phase == "Flying" and wall < 40 do -- 94
+		coreUpdate(core, 1 / 60, level) -- 95
+		wall = wall + 1 / 60 -- 95
+	end -- 95
+	check("12-to-18s-playback", wall >= 12 and wall <= 18) -- 96
+	check("return-clamped", core.phase == "Result" and core.missionCompleted and core.flyby ~= nil and core.flightTime == core.flyby.viewEndIndex * dt and core.flightTime > core.goalIndex * dt) -- 97
+	check( -- 98
+		"return-near-earth", -- 98
+		distance( -- 98
+			actual.points[math.floor(core.flightTime / dt) + 1], -- 98
+			bodyPositionAt(lv.planets[1], date + core.flightTime) -- 98
+		) <= cfg.returnRadius -- 98
+	) -- 98
+	local fast = createCore(dt) -- 99
+	fast.t0 = date -- 100
+	coreLaunch( -- 101
+		fast, -- 101
+		plan.velocity, -- 101
+		level, -- 101
+		start.pos, -- 101
+		start.vel -- 101
+	) -- 101
+	fast.playback = 4 -- 102
+	do -- 102
+		local i = 0 -- 103
+		while i < 1000 and fast.phase == "Flying" do -- 103
+			coreUpdate(fast, 1 / 120, level) -- 103
+			i = i + 1 -- 103
+		end -- 103
+	end -- 103
+	check( -- 104
+		"speed-does-not-change-result", -- 104
+		fast.result == core.result and fast.flightTime == core.flightTime and fast.flight ~= nil and distance(fast.flight.points[fast.goalIndex + 1], actual.points[core.goalIndex + 1]) == 0 -- 104
+	) -- 104
+	local low = createCore(dt) -- 105
+	low.t0 = date -- 106
+	coreLaunch( -- 107
+		low, -- 107
+		planTransfer( -- 107
+			lv.planets[1].gm, -- 107
+			radius, -- 107
+			start.vel, -- 107
+			0.05, -- 107
+			tr.apoapsisMax -- 107
+		).velocity, -- 107
+		level, -- 107
+		start.pos, -- 107
+		start.vel -- 107
+	) -- 107
+	check("low-power-misses", low.goalIndex < 0) -- 108
+	local wrong = createCore(dt) -- 109
+	wrong.t0 = 1.8 -- 110
+	local wrongStart = startAt(wrong.t0) -- 111
+	coreLaunch( -- 112
+		wrong, -- 112
+		planTransfer( -- 112
+			lv.planets[1].gm, -- 112
+			radius, -- 112
+			wrongStart.vel, -- 112
+			power, -- 112
+			tr.apoapsisMax -- 112
+		).velocity, -- 112
+		level, -- 112
+		wrongStart.pos, -- 112
+		wrongStart.vel -- 112
+	) -- 112
+	check("wrong-phase-misses", wrong.goalIndex < 0) -- 113
+	local collision = simulate( -- 114
+		{ -- 114
+			pos = bodyPositionAt(lv.planets[2], 0), -- 114
+			vel = {x = 0, y = 0} -- 114
+		}, -- 114
+		lv.planets, -- 114
+		{dt = dt, steps = 10, sampleEvery = 1, escapeRadius = 0} -- 114
 	) -- 114
-	check("wrong-phase-misses", wrong.goalIndex < 0) -- 115
-	local collision = simulate( -- 116
-		{ -- 116
-			pos = bodyPositionAt(lv.planets[2], 0), -- 116
-			vel = {x = 0, y = 0} -- 116
-		}, -- 116
-		lv.planets, -- 116
-		{dt = dt, steps = 10, sampleEvery = 1, escapeRadius = 0} -- 116
+	check("moon-is-solid", collision.outcome == "crashed") -- 115
+	check( -- 116
+		"moon-is-not-target", -- 116
+		findGoalIndex( -- 116
+			collision.points, -- 116
+			lv.planets, -- 116
+			lv.goal, -- 116
+			dt, -- 116
+			0 -- 116
+		) < 0 -- 116
 	) -- 116
-	check("moon-is-solid", collision.outcome == "crashed") -- 117
-	check( -- 118
-		"moon-is-not-target", -- 118
-		findGoalIndex( -- 118
-			collision.points, -- 118
-			lv.planets, -- 118
-			lv.goal, -- 118
-			dt, -- 118
-			0 -- 118
-		) < 0 -- 118
-	) -- 118
-	check( -- 119
-		"collision-cannot-complete", -- 119
-		analyzeFlyby( -- 119
-			collision, -- 119
-			lv.planets[1], -- 119
-			lv.planets[2], -- 119
-			cfg, -- 119
-			dt, -- 119
-			0 -- 119
-		).completionIndex < 0 -- 119
+	check( -- 117
+		"collision-cannot-complete", -- 117
+		analyzeFlyby( -- 117
+			collision, -- 117
+			lv.planets[1], -- 117
+			lv.planets[2], -- 117
+			cfg, -- 117
+			dt, -- 117
+			0 -- 117
+		).completionIndex < 0 -- 117
+	) -- 117
+	local collideCore = createCore(dt) -- 118
+	coreLaunch( -- 119
+		collideCore, -- 119
+		{x = 0, y = 0}, -- 119
+		level, -- 119
+		bodyPositionAt(lv.planets[2], 0), -- 119
+		{x = 0, y = 0} -- 119
 	) -- 119
-	local collideCore = createCore(dt) -- 120
-	coreLaunch( -- 121
-		collideCore, -- 121
-		{x = 0, y = 0}, -- 121
-		level, -- 121
-		bodyPositionAt(lv.planets[2], 0), -- 121
-		{x = 0, y = 0} -- 121
-	) -- 121
-	coreUpdate(collideCore, 1, level) -- 122
-	check("collision-fails-before-completion", collideCore.phase == "Result" and collideCore.result == "crashed" and not collideCore.missionCompleted) -- 123
-	local afterCrash = createCore(dt) -- 124
-	coreLaunch( -- 125
-		afterCrash, -- 125
-		{x = 0, y = 0}, -- 125
-		level, -- 125
-		bodyPositionAt(lv.planets[2], 0), -- 125
-		{x = 0, y = 0} -- 125
-	) -- 125
-	afterCrash.missionCompleted = true -- 127
-	afterCrash.result = "success" -- 127
-	coreUpdate(afterCrash, 1, level) -- 128
-	check("completion-survives-later-collision", afterCrash.phase == "Result" and afterCrash.result == "success") -- 129
+	coreUpdate(collideCore, 1, level) -- 120
+	check("collision-fails-before-completion", collideCore.phase == "Result" and collideCore.result == "crashed" and not collideCore.missionCompleted) -- 121
+	local afterCrash = createCore(dt) -- 122
+	coreLaunch( -- 123
+		afterCrash, -- 123
+		{x = 0, y = 0}, -- 123
+		level, -- 123
+		bodyPositionAt(lv.planets[2], 0), -- 123
+		{x = 0, y = 0} -- 123
+	) -- 123
+	afterCrash.missionCompleted = true -- 125
+	afterCrash.result = "success" -- 125
+	coreUpdate(afterCrash, 1, level) -- 126
+	check("completion-survives-later-collision", afterCrash.phase == "Result" and afterCrash.result == "success") -- 127
+	check( -- 128
+		"launch-shot", -- 128
+		transferShotAt( -- 128
+			0, -- 128
+			core.burnDuration, -- 128
+			core.flyby, -- 128
+			cfg, -- 128
+			dt -- 128
+		) == "Launch" -- 128
+	) -- 128
+	check( -- 129
+		"cruise-shot", -- 129
+		transferShotAt( -- 129
+			4, -- 129
+			core.burnDuration, -- 129
+			core.flyby, -- 129
+			cfg, -- 129
+			dt -- 129
+		) == "Cruise" -- 129
+	) -- 129
 	check( -- 130
-		"launch-shot", -- 130
+		"moon-shot", -- 130
 		transferShotAt( -- 130
-			0, -- 130
+			peri * dt, -- 130
 			core.burnDuration, -- 130
 			core.flyby, -- 130
 			cfg, -- 130
 			dt -- 130
-		) == "Launch" -- 130
+		) == "Moon" -- 130
 	) -- 130
 	check( -- 131
-		"cruise-shot", -- 131
+		"overview-shot", -- 131
 		transferShotAt( -- 131
-			4, -- 131
+			core.goalIndex * dt + 1, -- 131
 			core.burnDuration, -- 131
 			core.flyby, -- 131
 			cfg, -- 131
 			dt -- 131
-		) == "Cruise" -- 131
+		) == "Overview" -- 131
 	) -- 131
 	check( -- 132
-		"moon-shot", -- 132
+		"return-shot", -- 132
 		transferShotAt( -- 132
-			peri * dt, -- 132
+			core.goalIndex * dt + cfg.overviewDuration + 0.1, -- 132
 			core.burnDuration, -- 132
 			core.flyby, -- 132
 			cfg, -- 132
 			dt -- 132
-		) == "Moon" -- 132
+		) == "Earth" -- 132
 	) -- 132
 	check( -- 133
-		"overview-shot", -- 133
-		transferShotAt( -- 133
-			core.goalIndex * dt + 1, -- 133
-			core.burnDuration, -- 133
-			core.flyby, -- 133
-			cfg, -- 133
-			dt -- 133
-		) == "Overview" -- 133
+		"camera-cycle", -- 133
+		nextCameraFocus(nextCameraFocus(nextCameraFocus(nextCameraFocus(nextCameraFocus("Auto"))))) == "Auto" -- 133
 	) -- 133
 	check( -- 134
-		"return-shot", -- 134
-		transferShotAt( -- 134
-			core.goalIndex * dt + cfg.overviewDuration + 0.1, -- 134
+		"burn-at-1x", -- 134
+		transferPlaybackRate( -- 134
+			0.1, -- 134
 			core.burnDuration, -- 134
+			tr, -- 134
 			core.flyby, -- 134
-			cfg, -- 134
 			dt -- 134
-		) == "Earth" -- 134
+		) == 1 -- 134
 	) -- 134
 	check( -- 135
-		"camera-cycle", -- 135
-		nextCameraFocus(nextCameraFocus(nextCameraFocus(nextCameraFocus(nextCameraFocus("Auto"))))) == "Auto" -- 135
+		"coast-at-3x", -- 135
+		transferPlaybackRate( -- 135
+			4, -- 135
+			core.burnDuration, -- 135
+			tr, -- 135
+			core.flyby, -- 135
+			dt -- 135
+		) == 3 -- 135
 	) -- 135
 	check( -- 136
-		"burn-at-1x", -- 136
+		"periapsis-at-1x", -- 136
 		transferPlaybackRate( -- 136
-			0.1, -- 136
+			peri * dt, -- 136
 			core.burnDuration, -- 136
 			tr, -- 136
 			core.flyby, -- 136
 			dt -- 136
 		) == 1 -- 136
 	) -- 136
-	check( -- 137
-		"coast-at-3x", -- 137
-		transferPlaybackRate( -- 137
-			4, -- 137
-			core.burnDuration, -- 137
-			tr, -- 137
-			core.flyby, -- 137
-			dt -- 137
-		) == 3 -- 137
-	) -- 137
-	check( -- 138
-		"periapsis-at-1x", -- 138
-		transferPlaybackRate( -- 138
-			peri * dt, -- 138
-			core.burnDuration, -- 138
-			tr, -- 138
-			core.flyby, -- 138
-			dt -- 138
-		) == 1 -- 138
-	) -- 138
-	local at30 = 0 -- 139
-	local at120 = 0 -- 139
-	do -- 139
-		local i = 0 -- 140
-		while i < 360 do -- 140
-			at30 = advanceTransferPlayback( -- 140
-				at30, -- 140
-				1 / 30, -- 140
-				1, -- 140
-				core.burnDuration, -- 140
-				tr, -- 140
-				core.flyby, -- 140
-				dt -- 140
-			) -- 140
-			i = i + 1 -- 140
-		end -- 140
-	end -- 140
-	do -- 140
-		local i = 0 -- 141
-		while i < 1440 do -- 141
-			at120 = advanceTransferPlayback( -- 141
-				at120, -- 141
-				1 / 120, -- 141
-				1, -- 141
-				core.burnDuration, -- 141
-				tr, -- 141
-				core.flyby, -- 141
-				dt -- 141
-			) -- 141
-			i = i + 1 -- 141
-		end -- 141
-	end -- 141
-	check( -- 142
-		"frame-rate-independent-playback", -- 142
-		math.abs(at30 - at120) < 1e-9 -- 142
-	) -- 142
-	local score = evaluateRocketsDetailed(lv, "success", plan.dv, {starsCollected = 3}) -- 143
-	check("no-phantom-stars", score.rockets == 1 and not score.achieved[2] and not score.achieved[3]) -- 144
-	coreRetry(core, 0) -- 145
-	check("retry-aiming", core.phase == "Aiming" and core.flight == nil and not core.missionCompleted and core.flyby == nil) -- 146
-	check( -- 147
-		"l2-configured", -- 147
-		getLevel(1) ~= nil and getLevel(1).transfer.orbital ~= nil and #getLevel(1).stars == 0 -- 147
-	) -- 147
-	check( -- 148
-		"l3-configured", -- 148
-		getLevel(2) ~= nil and getLevel(2).transfer.orbital ~= nil and #getLevel(2).stars == 0 -- 148
-	) -- 148
-	return (((((#failures == 0 and "passed" or "failed") .. "\nchecks=") .. __TS__NumberToFixed(checks, 0)) .. " failures=") .. __TS__NumberToFixed(#failures, 0)) .. (#failures > 0 and "\n" .. table.concat(failures, "\n") or "") -- 149
+	local at30 = 0 -- 137
+	local at120 = 0 -- 137
+	do -- 137
+		local i = 0 -- 138
+		while i < 360 do -- 138
+			at30 = advanceTransferPlayback( -- 138
+				at30, -- 138
+				1 / 30, -- 138
+				1, -- 138
+				core.burnDuration, -- 138
+				tr, -- 138
+				core.flyby, -- 138
+				dt -- 138
+			) -- 138
+			i = i + 1 -- 138
+		end -- 138
+	end -- 138
+	do -- 138
+		local i = 0 -- 139
+		while i < 1440 do -- 139
+			at120 = advanceTransferPlayback( -- 139
+				at120, -- 139
+				1 / 120, -- 139
+				1, -- 139
+				core.burnDuration, -- 139
+				tr, -- 139
+				core.flyby, -- 139
+				dt -- 139
+			) -- 139
+			i = i + 1 -- 139
+		end -- 139
+	end -- 139
+	check( -- 140
+		"frame-rate-independent-playback", -- 140
+		math.abs(at30 - at120) < 1e-9 -- 140
+	) -- 140
+	local score = evaluateRocketsDetailed(lv, "success", plan.dv, {starsCollected = 3}) -- 141
+	check("no-phantom-stars", score.rockets == 1 and not score.achieved[2] and not score.achieved[3]) -- 142
+	coreRetry(core, 0) -- 143
+	check("retry-aiming", core.phase == "Aiming" and core.flight == nil and not core.missionCompleted and core.flyby == nil) -- 144
+	check( -- 145
+		"l2-configured", -- 145
+		getLevel(1) ~= nil and getLevel(1).transfer.orbital ~= nil and #getLevel(1).stars == 0 -- 145
+	) -- 145
+	check( -- 146
+		"l3-configured", -- 146
+		getLevel(2) ~= nil and getLevel(2).transfer.orbital ~= nil and #getLevel(2).stars == 0 -- 146
+	) -- 146
+	return (((((#failures == 0 and "passed" or "failed") .. "\nchecks=") .. __TS__NumberToFixed(checks, 0)) .. " failures=") .. __TS__NumberToFixed(#failures, 0)) .. (#failures > 0 and "\n" .. table.concat(failures, "\n") or "") -- 147
 end -- 8
 return ____exports -- 8

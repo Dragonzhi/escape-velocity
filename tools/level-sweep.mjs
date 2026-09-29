@@ -46,8 +46,13 @@ const t0Samples = parseInt(String(opt("t0", "24")), 10);
 const jsonOut = opt("json", null);
 const candFile = opt("file", null);
 const detail = opt("detail", false) !== false;
-const useBrake = opt("brake", false) !== false;
-const brakeShare = 0.75; // = game/Config.ts 的 BrakeShare（工具不 import Config 的常量，这里镜像一份）
+// 当前三关只允许拖动调转移轨道高度，按日期×力度验证真实有限燃烧任务。
+// --file 保留旧自由方向配置的离线扫掠；不再有制动／捕获分支。
+if (candFile === null) {
+	console.log('当前教学关：日期 0.8–1.2 × 基准力度 ±0.05，共 21×11；--grid/--t0 为旧 --file 扫掠参数。');
+	execFileSync(process.execPath, [path.join(here, 'orbital-check.mjs'), ...(onlyLevel !== null ? ['--level', String(onlyLevel)] : [])], { cwd: root, stdio: 'inherit' });
+	process.exit(0);
+}
 
 // --- 1) 用仓库自带的 tsc 把三个纯模块编成 CommonJS -------------------------
 const tsc = path.join(root, "tools", "dora-build", "node_modules", "typescript", "bin", "tsc");
@@ -123,19 +128,14 @@ function sweepLevel(lv) {
 				const speed = aimMin + (dvTop - aimMin) * p;
 				// 总初速度 = 出发时已有的速度（L1 = 绕地球圆轨道）+ 这一次点火（S3.9.3）
 				const v0 = lv.probeVel0 !== undefined ? lv.probeVel0 : { x: 0, y: 0 };
-				// ⚠️ 与 Game.burnToMotion 同一套折算：刹车模式下点火只拿 BrakeShare，剩下的交给后半程反推
-				const share = useBrake ? brakeShare : 1;
-				const vel = { x: Math.cos(angle) * speed * share + v0.x, y: Math.sin(angle) * speed * share + v0.y };
-				const brake = useBrake && speed > 0
-					? { dv: speed * (1 - share), startStep: Math.floor(lv.maxSteps / 2) }
-					: undefined;
+				const vel = { x: Math.cos(angle) * speed + v0.x, y: Math.sin(angle) * speed + v0.y };
 				// ⚠️ sampleEvery=4 时必须把有效步长（4·dt）传给 findGoalIndex，
 				// 否则移动目标的时间轴是错的（测试里原来就是错的，已一并修）。
 				const every = 4;
 				const sim = simulate(
 					{ pos: { x: lv.probeStart.x, y: lv.probeStart.y }, vel },
 					bodies,
-					{ steps: lv.maxSteps, dt: stepDt, sampleEvery: every, escapeRadius: lv.escapeRadius, t0, brake },
+					{ steps: lv.maxSteps, dt: stepDt, sampleEvery: every, escapeRadius: lv.escapeRadius, t0 },
 				);
 				const gi = findGoalIndex(sim.points, bodies, lv.goal, stepDt * every, t0, sim.velocities);
 				const kind = resolveResult(sim.outcome, gi, lv.goal);

@@ -169,21 +169,6 @@ threadLoop(function()
           log("invoked triggerDebugResetView()")
         end
         pendingDelay = 15
-      elseif string.match(want, "brakeWindow:(%d+)") ~= nil then
-        local idx = tonumber(string.match(want, "brakeWindow:(%d+)"))
-        local initMod = package.loaded["init"]
-        if initMod ~= nil and initMod.triggerDebugBrakeWindow ~= nil then
-          initMod.triggerDebugBrakeWindow(idx)
-          log("invoked triggerDebugBrakeWindow(" .. tostring(idx) .. ")")
-        end
-        pendingDelay = 20
-      elseif want == "brakePress" then
-        local initMod = package.loaded["init"]
-        if initMod ~= nil and initMod.triggerDebugBrakePress ~= nil then
-          initMod.triggerDebugBrakePress()
-          log("invoked triggerDebugBrakePress()")
-        end
-        pendingDelay = 15
       elseif focusIdx ~= nil then
         local idx = tonumber(focusIdx)
         if hub ~= nil and hub.focusMission ~= nil then

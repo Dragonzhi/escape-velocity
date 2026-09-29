@@ -220,13 +220,6 @@ export interface AimInput {
 	/** 直接以“投影偏移空间坐标”驱动一次拖动（测试用，跳过坐标转换）。 */
 	handleOffset: (offset: ScreenOffset) => void;
 	/**
-	 * 刹车模式（S3.9.2）：注册"点了刹车按钮"的回调；init 把它接到 `Game.setBrakeMode`。
-	 * 按钮只负责表达意图，不碰 GameCore（分层原则见手册 §4.1）。
-	 */
-	onBrake: (callback: (on: boolean) => void) => void;
-	/** 由主循环同步当前刹车状态（切关卡/重试后按钮文字要跟着变）。 */
-	setBrake: (on: boolean) => void;
-	/**
 	 * 是否正在操控（S3.9.4）：没在拖的时候世界照常走（探测器绕地球转），
 	 * 一按下就冻结 —— 玩家看到的预测线永远是他"此刻"要发的这一发。
 	 */
@@ -293,12 +286,6 @@ export interface AimInput {
 	 * （隐藏而不关触摸的层会吞掉整个区域的点击 —— 真机验收踩过，见 AGENTS 硬约束 4。）
 	 */
 	setDate: (t0: number, span: number) => void;
-	/** 飞行中实时制动逆喷按钮被点击（L4 伽利略号等轨道器关卡）。 */
-	onLiveBrake: (callback: () => void) => void;
-	/** 由主循环同步实时制动按钮的显隐（仅在飞行中进入制动窗口时显示）。 */
-	setLiveBrakeVisible: (visible: boolean) => void;
-	/** 由主循环同步是否已执行制动（更新按钮文案与颜色）。 */
-	setLiveBraked: (braked: boolean) => void;
 	/** 2D 规划视口缩放按钮回调（S8.2）。 */
 	onZoomIn: (callback: () => void) => void;
 	onZoomOut: (callback: () => void) => void;
@@ -483,43 +470,6 @@ export function createAimInput(
 	// “切到第二关后怎么拖都没反应”。
 	touchLayer.touchEnabled = false;
 
-	// ---- 刹车模式开关（S3.9.2）----
-	// 位置：右上角。⚠️ 必须在 touchLayer **之后** addChild：Dora 的命中按节点顺序取最上面的那个，
-	// 放在前面会被全屏的触摸层独吞（"按钮点不到、只当成一次瞄准拖动"）。
-	let brakeHandler: ((on: boolean) => void) | undefined = undefined;
-	const BrakeButtonW = 116;
-	const BrakeButtonH = 64;
-	const brakeGap = 8;
-	// ⚠️ 为什么是**两个按钮**而不是一个开关：实测一次合成点击会被引擎投递两次
-	//    （鼠标 + 触摸两条路）⇒ 单按钮的"取反"会开了又关（净效果 = 没反应）。
-	//    两段式天然幂等：双击同一侧只是把同一个状态设两遍。
-	const brakeButtons: UiButton[] = [];
-	const makeBrakeButton = (text: string, on: boolean, x: number): void => {
-		const btn = createButton(root, {
-			w: BrakeButtonW,
-			h: BrakeButtonH,
-			text,
-			fontSize: 30,
-			bgHex: ResultButtonAltBgHex,
-			fgHex: ResultButtonFgHex,
-			borderHex: ResultButtonBorderHex,
-			onTap: (): void => {
-				// 先更新本地状态并重绘，再通知外面 —— 只通知的话按钮颜色不会跟着变
-				// （实测：状态切了、日志也对，但玩家看不出自己点中了哪一个）。
-				brakeOn = on;
-				paintBrake();
-				if (brakeHandler !== undefined) brakeHandler(on);
-			},
-		});
-		btn.root.position = Vec2(x, viewH - BrakeButtonH - 20);
-		brakeButtons.push(btn);
-	};
-	let brakeOn = false;
-	const paintBrake = (): void => {
-		if (brakeButtons.length < 2) return;
-		brakeButtons[0].setColors(brakeOn ? ResultButtonAltBgHex : ResultButtonBgHex, ResultButtonFgHex);
-		brakeButtons[1].setColors(brakeOn ? ResultButtonBgHex : ResultButtonAltBgHex, ResultButtonFgHex);
-	};
 	// ---- Δv 读数（S3.9.2b 用户："德塔V的限制没有 UI 的显示，不明不白"）----
 	// 左上角一行字：本次点火要花多少 / 这一关给了多少；拖动时实时更新。
 	// ⚠️ S3.12：太阳的光晕会扫过左上角，纯文字在亮底上几乎看不见（截图实测）⇒ 底下垫一块
@@ -984,48 +934,6 @@ export function createAimInput(
 		b.setEnabled(false);
 	}
 
-	const brakeRightX = viewW - BrakeButtonW - 20;
-	if (!transferTutorial) {
-		makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
-		makeBrakeButton('刹车', true, brakeRightX);
-	}
-	paintBrake();
-
-	// ---- 飞行实时逆喷制动按钮（L4 伽利略号等轨道器核心机制）----
-	let liveBrakeHandler: (() => void) | undefined = undefined;
-	let liveBrakeActive = false;
-	let liveBrakedState = false;
-	const LiveBrakeW = 220;
-	const LiveBrakeH = 100;
-	const liveBrakeButton = createButton(root, {
-		w: LiveBrakeW,
-		h: LiveBrakeH,
-		text: 'BRAKE 逆喷',
-		fontSize: 36,
-		bgHex: 0xa65008,
-		fgHex: 0xfff8e0,
-		borderHex: 0xffaa33,
-		fireOn: 'press',
-		onTap: (): void => {
-			print('[escape-velocity] live brake button fire (press)');
-			if (liveBrakeHandler !== undefined) liveBrakeHandler();
-		},
-	});
-	liveBrakeButton.root.position = Vec2(viewW - LiveBrakeW - 24, 96);
-	liveBrakeButton.root.visible = false;
-	liveBrakeButton.setEnabled(false);
-
-	// 逆喷提示横幅
-	const hintW = 440;
-	const hintH = 50;
-	const brakeHintPlate = createPanel(root, hintW, hintH, 0x0a0e14, { alpha: 0.65, borderHex: 0xffaa33 });
-	brakeHintPlate.position = Vec2((viewW - hintW) / 2, viewH - 240);
-	const brakeHintLabel = createLabel(brakeHintPlate, '【木星捕获窗口已开启 · 按下 BRAKE 逆喷入轨】', 22, 0xffc83b);
-	if (brakeHintLabel !== undefined) {
-		setLabelCenter(brakeHintLabel, hintW / 2, hintH / 2);
-	}
-	brakeHintPlate.visible = false;
-
 	parent.addChild(root);
 
 	return {
@@ -1039,18 +947,7 @@ export function createAimInput(
 			touchLayer.touchEnabled = value;
 			if (!value) {
 				dragging = false;
-				liveBrakeActive = false;
-				liveBrakeButton.root.visible = false;
-				liveBrakeButton.setEnabled(false);
-				brakeHintPlate.visible = false;
 			}
-		},
-		onBrake: (callback: (on: boolean) => void): void => {
-			brakeHandler = callback;
-		},
-		setBrake: (on: boolean): void => {
-			brakeOn = on;
-			paintBrake();
 		},
 		onAimReady: (callback: (a: AimResult) => void): void => {
 			readyHandler = callback;
@@ -1086,14 +983,14 @@ export function createAimInput(
 			if (dvLabel !== undefined) dvLabel.visible = !flying;
 			if (viewingLabel !== undefined) {
 				viewingLabel.visible = flying;
-				const near = stage === 'Venus' ? '金星减速借力' : (stage === 'Jupiter' ? '木星加速借力' : (stage === 'Saturn' ? '土星加速借力' : (stage === 'Moon' ? '借月球引力 · 观察轨迹转弯' : '滑行 · 观察航线')));
+				const near = stage === 'Mercury' ? '安全飞掠水星' : stage === 'Venus' ? '金星减速借力' : (stage === 'Jupiter' ? '木星加速借力' : (stage === 'Saturn' ? '土星加速借力' : (stage === 'Moon' ? '借月球引力 · 观察轨迹转弯' : '滑行 · 观察航线')));
 				setLabelText(viewingLabel, completed ? (transferMode === 'lunar' ? '掠月完成 · 继续观察返回' : '目标完成 · 继续观察航线') : (stage === 'Launch' ? (transferMode === 'inward' ? '逆行点火 · 降低近日点' : '顺行点火 · 抬高' + orbitName) : near));
 				setLabelColor(viewingLabel, completed ? 0x8fe5ba : ResultHintHex);
 			}
 			if (cameraFocusButton !== undefined) {
 				cameraFocusButton.root.visible = flying && is3D;
 				cameraFocusButton.setEnabled(flying && is3D);
-				const title = mode === 'Auto' ? '自动' : (mode === 'Probe' ? '探测器' : (mode === 'Moon' ? '月球' : (mode === 'Earth' ? '地球' : (mode === 'Venus' ? '金星' : (mode === 'Jupiter' ? '木星' : (mode === 'Saturn' ? '土星' : (mode === 'Sun' ? '太阳' : '总览')))))));
+				const title = mode === 'Mercury' ? '水星' : mode === 'Auto' ? '自动' : (mode === 'Probe' ? '探测器' : (mode === 'Moon' ? '月球' : (mode === 'Earth' ? '地球' : (mode === 'Venus' ? '金星' : (mode === 'Jupiter' ? '木星' : (mode === 'Saturn' ? '土星' : (mode === 'Sun' ? '太阳' : '总览')))))));
 				cameraFocusButton.setText('镜头 · ' + title);
 			}
 			if (endViewingButton !== undefined) { endViewingButton.root.visible = flying && completed; endViewingButton.setEnabled(flying && completed); }
@@ -1175,36 +1072,6 @@ export function createAimInput(
 		// 包一层箭头函数：简写属性会让 TSTL 为对象成员函数引入 self
 		handleOffset: (delta: ScreenOffset): void => handleDelta(delta),
 		debugProbeOffset: (): ScreenOffset => probeOffset,
-		onLiveBrake: (callback: () => void): void => {
-			liveBrakeHandler = callback;
-		},
-		setLiveBrakeVisible: (visible: boolean): void => {
-			if (liveBrakeActive === visible) return;
-			liveBrakeActive = visible;
-			liveBrakeButton.root.visible = visible;
-			liveBrakeButton.setEnabled(visible);
-			brakeHintPlate.visible = visible;
-		},
-		setLiveBraked: (braked: boolean): void => {
-			if (liveBrakedState === braked) return;
-			liveBrakedState = braked;
-			if (braked) {
-				liveBrakeButton.setText('已捕获入轨');
-				liveBrakeButton.setColors(0x184232, 0xd0ffea);
-				liveBrakeButton.setEnabled(false);
-				if (brakeHintLabel !== undefined) {
-					setLabelText(brakeHintLabel, '【主发动机逆喷成功！已捕获入轨】');
-					setLabelColor(brakeHintLabel, 0x3ee6a0);
-				}
-			} else {
-				liveBrakeButton.setText('BRAKE 逆喷');
-				liveBrakeButton.setColors(0xa65008, 0xfff8e0);
-				if (brakeHintLabel !== undefined) {
-					setLabelText(brakeHintLabel, '【木星捕获窗口已开启 · 按下 BRAKE 逆喷入轨】');
-					setLabelColor(brakeHintLabel, 0xffc83b);
-				}
-			}
-		},
 		onSpeedUp: (callback: () => void): void => {
 			speedUpHandler = callback;
 		},

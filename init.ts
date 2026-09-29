@@ -109,14 +109,10 @@ const useCamera = (camera: Camera3D.Type, levelIndex: number): void => {
 };
 
 let debugTriggerResultFn: ((levelIndex: number, outcome?: ResultKind) => void) | undefined = undefined;
-let debugTriggerBrakeWindowFn: ((levelIndex: number) => void) | undefined = undefined;
-let debugTriggerBrakePressFn: (() => void) | undefined = undefined;
 let debugTriggerEnterLevelFn: ((levelIndex: number) => void) | undefined = undefined;
 let debugTriggerZoomInFn: (() => void) | undefined = undefined;
 let debugTriggerResetViewFn: (() => void) | undefined = undefined;
 let debugGameStateFn: (() => string) | undefined = undefined;
-let debugForceBrakeWindow = false;
-let debugForceBraked = false;
 let activeResultPanel: ResultPanel | undefined = undefined;
 
 /** 关卡槽位：`built` 与 `runtime` 分开，避免出现带空洞的数组（手册 §7.2）。 */
@@ -246,8 +242,6 @@ if (levelTotal <= 0) {
 			const active = i === index;
 			slot.runtime.world.visible = active;
 			slot.runtime.aim.setEnabled(active);
-			// 切到这一关时把刹车按钮同步成它的当前状态（每关一份 runtime ⇒ 按钮文字会各记一份）
-			if (active) slot.runtime.aim.setBrake(slot.runtime.game.brakeMode());
 		}
 	};
 
@@ -358,6 +352,7 @@ if (levelTotal <= 0) {
 		// 于是整条最外圈与它那个到达圈都装得下（设计稿第 6 条"够不够得着"要能一眼看出来）。
 		// B2：L1 关掉流动光点（见 Tuning.orbitFlowDots）—— 2D 与 3D 一起关
 		const planOpts = defaultPlanOptions();
+		planOpts.actualBodySizes = def.id === 2;
 		planOpts.transferTutorial = def.transfer !== undefined;
 		if (levelRuntime(index).orbitFlowDots === false) planOpts.flowDotRadius = 0;
 		// B 修复⑤：图钉的"真实大小"那一路也要用**本关**的探测器视觉半径
@@ -367,7 +362,7 @@ if (levelTotal <= 0) {
 		const plan = createPlanView(levelLayers[index], viewW, viewH, planOpts, def.planCenter);
 		const offset = def.goal.offset;
 		const planTolerance = arrivalRingRadius(def.goal) + (offset !== undefined ? Math.sqrt(offset.x * offset.x + offset.y * offset.y) : 0);
-		plan.fitTo(Math.max(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter, starOrbits(index)), def.transfer !== undefined && def.transfer.orbital !== undefined ? def.transfer.orbital.region.maxRadius + 20 : 0));
+		plan.fitTo(Math.max(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter, starOrbits(index)), def.transfer !== undefined && def.transfer.orbital !== undefined && def.transfer.orbital.region !== undefined ? def.transfer.orbital.region.maxRadius + 20 : 0));
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
 		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds, def.transfer !== undefined, def.transfer !== undefined && def.transfer.orbital !== undefined ? (def.transfer.mode === 'lowerPeriapsis' ? 'inward' : 'outward') : 'lunar');
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
@@ -399,7 +394,7 @@ if (levelTotal <= 0) {
 			}
 		}
 		const initialRockets = getMissionRockets(progress, index);
-		const drawerTitle = def.transfer !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + (index === 0 ? '奔向月球' : (index === 1 ? '金星逆向' : '双星甩尾')) : def.mission !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle : levelNames[index];
+		const drawerTitle = def.transfer !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + (index === 0 ? '奔向月球' : (index === 1 ? '借金星减速，飞掠水星' : '双星甩尾')) : def.mission !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle : levelNames[index];
 		aim.setMissionDrawer(drawerTitle, challengesList, initialRockets);
 
 		const game = createGame(level, {
@@ -558,12 +553,6 @@ if (levelTotal <= 0) {
 		});
 		if (aim.onCameraFocus !== undefined) aim.onCameraFocus((): void => { game.cycleCameraFocus(); });
 		if (aim.onEndViewing !== undefined) aim.onEndViewing((): void => { game.endViewing(); });
-		// 刹车模式（S3.9.2）：按钮只表达意图，状态在 GameCore 里；顺手打一行日志便于回归验证。
-		aim.onBrake((on: boolean): void => {
-			game.setBrakeMode(on);
-			print('[escape-velocity] brake mode = ' + (on ? 'on' : 'off') + ' (L' + (index + 1).toFixed(0) + ')');
-		});
-		aim.setBrake(game.brakeMode());
 		// 播放倍速 1×/2×/4×（S3.17）：按钮只表达意图，状态在 GameCore.playback 里；
 		// 掠过天体的自动慢动作叠在玩家选的档位上（× 1/4），不经过按钮。
 		// B3 时间控制组：按钮只表达意图，状态在 Game 里（AGENTS 硬约束 5）
@@ -581,11 +570,6 @@ if (levelTotal <= 0) {
 			print('[escape-velocity] playback speed -> ' + speed.toFixed(0) + 'x (L' + (index + 1).toFixed(0) + ')');
 		});
 		aim.setPlayback(game.playbackSpeed());
-		// 飞行实时逆喷制动（L4 伽利略号等轨道器关卡）：玩家按下逆喷按钮
-		aim.onLiveBrake((): void => {
-			print('[escape-velocity] tap: live brake (L' + (index + 1).toFixed(0) + ')');
-			game.applyInFlightBrake();
-		});
 
 			const runtime: LevelRuntime = {
 			index,
@@ -1020,11 +1004,6 @@ if (levelTotal <= 0) {
 				runtime.game.missionSeconds(),
 				runtime.game.speedRate(),
 			);
-			// 实时逆喷制动按钮（L4 伽利略号等轨道器关卡）：只在飞行态且进入捕获窗口时出现
-			const brakeActive = (phaseNow === 'Flying' && runtime.game.isBrakeWindowActive()) || debugForceBrakeWindow;
-			const isBraked = runtime.game.hasBraked() || debugForceBraked;
-			runtime.aim.setLiveBrakeVisible(brakeActive);
-			runtime.aim.setLiveBraked(isBraked);
 			// 开发钩子的自动发射（见上方 enter-request 说明）
 			if (autoLaunchAt >= 0 || autoBackAt >= 0 || autoReenterAt >= 0 || autoArmAt >= 0) {
 				autoFrame += 1;
@@ -1099,31 +1078,6 @@ if (levelTotal <= 0) {
 		});
 	};
 
-	debugTriggerBrakeWindowFn = (levelIndex: number): void => {
-		if (solarHub !== undefined) solarHub.hide();
-		if (opening !== undefined) opening.hide();
-		enterLevel(levelIndex);
-		const rt = activeRuntime();
-		if (rt !== undefined) {
-			rt.game.launch({ x: 2, y: -20 });
-			debugForceBrakeWindow = true;
-			debugForceBraked = false;
-			rt.aim.setLiveBrakeVisible(true);
-			rt.aim.setLiveBraked(false);
-			if (rt.game.viewMode() !== '3D') rt.game.toggleViewMode();
-		}
-	};
-
-	debugTriggerBrakePressFn = (): void => {
-		debugForceBrakeWindow = true;
-		debugForceBraked = true;
-		const rt = activeRuntime();
-		if (rt !== undefined) {
-			rt.aim.setLiveBrakeVisible(true);
-			rt.aim.setLiveBraked(true);
-		}
-	};
-
 	debugTriggerEnterLevelFn = (levelIndex: number): void => {
 		if (solarHub !== undefined) solarHub.hide();
 		if (opening !== undefined) opening.hide();
@@ -1167,20 +1121,6 @@ export function getDebugGameState(): string {
 export function triggerDebugResult(levelIndex: number, outcome: ResultKind = 'success'): void {
 	if (debugTriggerResultFn !== undefined) {
 		debugTriggerResultFn(levelIndex, outcome);
-	}
-}
-
-/** 触发进入制动窗口演示（调试/自动化截图用）。 */
-export function triggerDebugBrakeWindow(levelIndex: number = 3): void {
-	if (debugTriggerBrakeWindowFn !== undefined) {
-		debugTriggerBrakeWindowFn(levelIndex);
-	}
-}
-
-/** 触发按下逆喷制动按钮演示（调试/自动化截图用）。 */
-export function triggerDebugBrakePress(): void {
-	if (debugTriggerBrakePressFn !== undefined) {
-		debugTriggerBrakePressFn();
 	}
 }
 

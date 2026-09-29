@@ -189,6 +189,7 @@ export function arrivalRingRadius(goal: { tolerance: number; chain?: { tolerance
 
 /** 2D 规划视图的可调参数（配色与 3D 的 Trajectory 对齐：同一颗行星在两个视图里颜色一致）。 */
 export interface PlanOptions {
+	actualBodySizes?: boolean;
 	transferTutorial?: boolean;
 	/** 四周留白比例（0.12 = 各留 12%）。 */
 	marginFrac: number;
@@ -572,7 +573,8 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 				const v = visuals[i];
 				const vr = v.displayRadius > 0 ? v.displayRadius * map.scale : 0;
 				if (vr > r) r = vr;
-				if (r > options.maxPinRadius) r = options.maxPinRadius;
+				if (options.actualBodySizes) r = vr;
+				else if (r > options.maxPinRadius) r = options.maxPinRadius;
 			}
 			let col = orbitColor;
 			if (i < visuals.length) {

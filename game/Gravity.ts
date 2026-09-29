@@ -100,27 +100,6 @@ export interface SimOptions {
 	 * ⚠️ 预测线与真实飞行必须传同一个 t0，否则又是「看到的 ≠ 飞到的」。
 	 */
 	t0?: number;
-	/**
-	 * 反推段（S3.9.2「刹车模式」）：从第 startStep 步起，每步沿 **-v̂** 扣掉固定 Δv。
-	 *
-	 * 为什么用"恒定推力"而不是一次性反向脉冲：① 视觉上预测线**后半段变平**（用户要的"前半段加速、
-	 * 后半段减速"）；② 总量 = brake.dv（只跟步数有关、与帧率无关，确定性不破）。
-	 * 省略 = 不反推（= 旧的"点火后惯性滑行"）。
-	 */
-	brake?: BrakeThrust;
-}
-
-/**
- * 反推段参数。
- *
- * ⚠️ Δv 预算是**共享**的：点火用它、反推也用它（`Game.dvSplit` 决定怎么分），
- * 所以"刹得越狠 ⇒ 冲得越慢"是算术，不是口号。
- */
-export interface BrakeThrust {
-	/** 反推总 Δv（速度单位）。 */
-	dv: number;
-	/** 从第几步开始反推；省略 = steps / 2（"后半程减速"）。 */
-	startStep?: number;
 }
 
 export interface SimResult {
@@ -128,11 +107,10 @@ export interface SimResult {
 	/** 采样点（含起点与终点），用于绘制轨迹。 */
 	points: P2[];
 	/**
-	 * 与 `points` 一一对应的**速度向量**（S3.9.2）：载具判据（捕获入轨要算"相对行星的速度"）
-	 * 与 HUD 的读数都需要它。
+	 * 与 `points` 一一对应的速度向量：借力能量、行星做功与 HUD 读数共用。
 	 *
 	 * ⚠️ 为什么不是"让调用方用位置差分去估"：撞毁时推演会在那一帧**截断**，最后一个采样点只跨了
-	 * 半步，差分出来的速度明显偏小 —— 实测把"一头撞进行星"判成了"成功入轨"（rel=34.7 vs 阈值 43.1）。
+	 * 半步，差分出来的速度明显偏小。
 	 */
 	velocities: P2[];
 	/** 推演结束时的状态。 */
@@ -301,12 +279,6 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 	let curPositions: P2[] = bufA;
 	let nextPositions: P2[] = bufB;
 
-	// 反推段（见 SimOptions.brake）：总 Δv 均摊到剩余步数 ⇒ 每步固定的减速度。
-	const brake = opts.brake;
-	const brakeStart = brake !== undefined ? (brake.startStep !== undefined ? brake.startStep : Math.floor(opts.steps / 2)) : -1;
-	const brakeSteps = brake !== undefined ? Math.max(1, opts.steps - brakeStart) : 1;
-	const brakeDvPerStep = brake !== undefined ? brake.dv / brakeSteps : 0;
-
 	for (let i = 0; i < opts.steps; i++) {
 		// 半隐式欧拉（= step()，只是复用已缓存的天体位置）
 		const acc = accelerationFrom(bodies, curPositions, s.pos);
@@ -317,18 +289,6 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 		s = { pos: { x: s.pos.x + nvx * opts.dt, y: s.pos.y + nvy * opts.dt }, vel: { x: nvx, y: nvy } };
 		t += opts.dt;
 		stepsRun += 1;
-
-		if (brake !== undefined && i >= brakeStart) {
-			const sp = Math.sqrt(s.vel.x * s.vel.x + s.vel.y * s.vel.y);
-			if (sp > 1e-9) {
-				// 不越过 0：反推不会把探测器推成"倒着走"（那读起来像 bug，而且不物理）
-				const dv = sp > brakeDvPerStep ? brakeDvPerStep : sp;
-				s = {
-					pos: s.pos,
-					vel: { x: s.vel.x - (s.vel.x / sp) * dv, y: s.vel.y - (s.vel.y / sp) * dv },
-				};
-			}
-		}
 
 		// 推进之后的位置（碰撞检测用），并把它留给下一步当"当前"位置 —— 一次计算两处用
 		const tmp = curPositions;

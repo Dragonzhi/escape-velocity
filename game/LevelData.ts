@@ -90,14 +90,6 @@ export interface WaypointSpec {
 	tolerance: number;
 	/** 航点名（HUD/简报用，例如 '木星'）。 */
 	label?: string;
-	/**
-	 * 要求**捕获入轨**（S3.9.2，用户："后半段减速的时候，就可以尝试进入某个行星的轨道"）：
-	 * 除了进环，还要求**相对行星**的速度 ≤ captureFactor × 该处圆轨道速度。
-	 * 中间航点不设（掠过即可）；终点站才设 —— 通常配合「刹车」剖面使用。
-	 */
-	capture?: boolean;
-	/** 捕获的速度上限系数（默认 √2 = 该处**逃逸速度**，即"真的被这颗行星束缚住"）。 */
-	captureFactor?: number;
 }
 
 /** 目标规格。 */
@@ -163,8 +155,6 @@ export interface MissionMeta {
 	historicalRef: string;
 	/** 中文副标题：'启蒙', '潜行', '烈日', '泊入', '狂飙', '奇迹' */
 	subtitle: string;
-	/** 载具类型：'flyby' | 'orbiter' */
-	vehicle: 'flyby' | 'orbiter';
 	/** 三枚火箭挑战列表 [第1枚, 第2枚, 第3枚] */
 	challenges: RocketChallengeDef[];
 	/** 入场 3D 倒叙长镜头运镜（S8.1） */
@@ -201,7 +191,7 @@ export interface LevelDef {
 	goal: GoalSpec;
 	/**
 	 * Δv 预算（S3.9.2b，用户要求）：满力对应的速度就是它 —— "力大砖飞要被挡住"。
-	 * 有效上限 = `min(Tuning.LEVEL_RUNTIME.aimMax, dvBudget)`；刹车模式下两次点火共享这个数。
+	 * 有效上限 = `min(Tuning.LEVEL_RUNTIME.aimMax, dvBudget)`，用于出发点火。
 	 */
 	dvBudget: number;
 	/** 越界半径（距原点 = 距太阳）。 */
@@ -405,12 +395,6 @@ export function relativeSpeedAt(points: P2[], i: number, body: Body, dt: number,
 	return Math.sqrt(rx * rx + ry * ry);
 }
 
-/** 捕获阈值：该处逃逸速度（圆轨道速度 × 系数 k，k 默认 √2）。 */
-export function captureThreshold(body: Body, d: number, k: number): number {
-	if (body.gm <= 0 || d <= 1e-6) return 1e9;
-	return k * Math.sqrt(body.gm / d);
-}
-
 /**
  * 顺序航线的进度：返回在 points[0..upto] 里**依次**掠过的航点数与最后一个命中索引。
  *
@@ -438,17 +422,6 @@ export function waypointProgress(
 		if (body === undefined) return { passed: 0, lastIndex: -1 };
 		const gp = goalPositionAt(body, start + i * dt, w.offset);
 		if (distance(points[i], gp) < w.tolerance) {
-			// 捕获（S3.9.2）：进环还不够，还得"慢到能被抓住"。太快 ⇒ 不算，继续扫后面的采样点。
-			if (w.capture === true) {
-				// 默认 √2：相对速度低于**逃逸速度**（= 圆轨道速度 × √2）⇒ 真的被这颗行星束缚住。
-				const k = w.captureFactor !== undefined ? w.captureFactor : 1.4142135623730951;
-				const d = distance(points[i], gp);
-				// ⚠️ 撞上去不叫入轨：simulate 撞毁时会在那一帧截断，最后一个采样点的"差分速度"
-				// 会明显偏小（残段），于是"一头撞进行星"反而被判成捕获（实测踩到：rel=34.7 而阈值=43.1）。
-				if (d <= body.radius) continue;
-				const rel = relativeSpeedAt(points, i, body, dt, start + i * dt, limit, velocities);
-				if (rel > captureThreshold(body, d, k)) continue;
-			}
 			next += 1;
 			lastIndex = i;
 		}

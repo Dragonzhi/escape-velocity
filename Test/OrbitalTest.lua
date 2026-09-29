@@ -1,9 +1,9 @@
 -- [ts]: OrbitalTest.ts
 local ____lualib = require("lualib_bundle") -- 1
-local __TS__NumberToFixed = ____lualib.__TS__NumberToFixed -- 1
 local __TS__ArrayEvery = ____lualib.__TS__ArrayEvery -- 1
-local __TS__ArrayIndexOf = ____lualib.__TS__ArrayIndexOf -- 1
 local __TS__ObjectAssign = ____lualib.__TS__ObjectAssign -- 1
+local __TS__NumberToFixed = ____lualib.__TS__NumberToFixed -- 1
+local __TS__ArrayIndexOf = ____lualib.__TS__ArrayIndexOf -- 1
 local __TS__ArrayMap = ____lualib.__TS__ArrayMap -- 1
 local __TS__ArraySlice = ____lualib.__TS__ArraySlice -- 1
 local ____exports = {} -- 1
@@ -16,6 +16,7 @@ local distance = ____Gravity.distance -- 3
 local simulate = ____Gravity.simulate -- 3
 local ____LevelData = require("game.LevelData") -- 4
 local getLevel = ____LevelData.getLevel -- 4
+local goalPositionAt = ____LevelData.goalPositionAt -- 4
 local installArcadeLevels = ____LevelData.installArcadeLevels -- 4
 local findGoalIndex = ____LevelData.findGoalIndex -- 4
 local evaluateRocketsDetailed = ____LevelData.evaluateRocketsDetailed -- 4
@@ -24,419 +25,584 @@ local analyzeOrbitalMission = ____Transfer.analyzeOrbitalMission -- 5
 local advanceTransferPlayback = ____Transfer.advanceTransferPlayback -- 5
 local orbitalShotAt = ____Transfer.orbitalShotAt -- 5
 local planTransfer = ____Transfer.planTransfer -- 5
-local ____Game = require("game.Game") -- 6
-local createCore = ____Game.createCore -- 6
-local coreLaunch = ____Game.coreLaunch -- 6
-local coreUpdate = ____Game.coreUpdate -- 6
-local coreEndViewing = ____Game.coreEndViewing -- 6
-local coreRetry = ____Game.coreRetry -- 6
-local ____Scene = require("game.Scene") -- 7
-local isSunVisual = ____Scene.isSunVisual -- 7
-function ____exports.runTests() -- 9
-	local checks = 0 -- 10
-	local failures = {} -- 11
-	local function check(name, ok) -- 12
-		checks = checks + 1 -- 12
-		if not ok then -- 12
-			failures[#failures + 1] = name -- 12
-		end -- 12
-	end -- 12
-	installArcadeLevels( -- 13
-		Content:load("Assets/Levels/levels.json"), -- 13
-		Content:load("Assets/Levels/bodies.json"), -- 13
-		function(s) return (json.decode(s)) end -- 13
-	) -- 13
-	local dt = 0.016 -- 14
-	check( -- 15
-		"explicit-sun-model", -- 15
-		isSunVisual({ -- 15
-			r = 1, -- 15
-			g = 1, -- 15
-			b = 1, -- 15
-			displayRadius = 50, -- 15
-			ring = false, -- 15
-			model = "Sun" -- 15
-		}) -- 15
-	) -- 15
-	check( -- 16
-		"massive-earth-not-sun", -- 16
-		not isSunVisual({ -- 16
-			r = 1, -- 16
-			g = 1, -- 16
-			b = 1, -- 16
-			displayRadius = 42, -- 16
-			ring = false, -- 16
-			model = "Planet_Earth" -- 16
-		}) -- 16
-	) -- 16
-	check( -- 17
-		"undefined-not-sun", -- 17
-		not isSunVisual(nil) -- 17
-	) -- 17
-	do -- 17
-		local n = 1 -- 18
-		while n <= 2 do -- 18
-			local lv = getLevel(n) -- 19
-			if lv.transfer == nil or lv.transfer.orbital == nil then -- 19
-				return "failed\nmissing orbital fixture" -- 20
-			end -- 20
-			local tr = lv.transfer -- 21
-			local cfg = lv.transfer.orbital -- 21
-			local mu = lv.planets[1].gm -- 21
-			local r = distance( -- 22
-				lv.probeStart, -- 22
-				bodyPositionAt(lv.planets[1], 0) -- 22
-			) -- 22
-			local power = n == 1 and 11 / 14 or 0.5 -- 23
-			local function stateAt(date) -- 24
-				local a = math.atan(lv.probeStart.y, lv.probeStart.x) + math.sqrt(mu / (r * r * r)) * date -- 25
-				local speed = math.sqrt(mu / r) -- 25
-				return { -- 26
-					pos = { -- 26
-						x = r * math.cos(a), -- 26
-						y = r * math.sin(a) -- 26
-					}, -- 26
-					vel = { -- 26
-						x = -math.sin(a) * speed, -- 26
-						y = math.cos(a) * speed -- 26
-					} -- 26
-				} -- 26
-			end -- 24
-			local level = { -- 28
-				bodies = lv.planets, -- 28
-				probeStart = lv.probeStart, -- 28
-				probeVel0 = lv.probeVel0, -- 28
-				goal = lv.goal, -- 28
-				escapeRadius = lv.escapeRadius, -- 28
-				maxSteps = lv.maxSteps, -- 28
-				transfer = tr -- 28
-			} -- 28
-			local function launchAt(date, p) -- 29
-				local core = createCore(dt) -- 30
-				local start = stateAt(date) -- 30
-				local plan = planTransfer( -- 31
-					mu, -- 31
-					r, -- 31
-					start.vel, -- 31
-					p, -- 31
-					tr.apoapsisMax, -- 31
-					tr.mode, -- 31
-					tr.periapsisMin -- 31
-				) -- 31
-				core.t0 = date -- 32
-				coreLaunch( -- 32
-					core, -- 32
-					plan.velocity, -- 32
-					level, -- 32
-					start.pos, -- 32
-					start.vel -- 32
-				) -- 32
-				core.playback = 1 -- 32
-				return core -- 33
-			end -- 29
-			local core = launchAt(1, power) -- 35
-			local flight = core.flight -- 35
-			local analysis = core.flyby -- 35
-			local prefix = ("L" .. __TS__NumberToFixed(n + 1, 0)) .. "-" -- 36
-			check(prefix .. "sun-center", mu == 800000 and lv.planets[1].radius == 50 and lv.planets[1].orbitRadius == 0) -- 37
-			check( -- 38
-				prefix .. "only-real-bodies", -- 38
-				#lv.planets == n + 1 and #lv.stars == 0 and __TS__ArrayEvery( -- 38
-					lv.planets, -- 38
-					function(____, b) return b.gm > 0 and not b.isObstacle end -- 38
-				) -- 38
-			) -- 38
-			check( -- 39
-				prefix .. "marker-independent", -- 39
-				lv.goal.marker ~= nil and lv.goal.marker.gm == 0 and lv.goal.marker.radius == 0 and __TS__ArrayIndexOf(lv.planets, lv.goal.marker) < 0 -- 39
-			) -- 39
-			check( -- 40
-				prefix .. "marker-guidance-only", -- 40
-				findGoalIndex( -- 40
-					{bodyPositionAt(lv.goal.marker, 0)}, -- 40
-					lv.planets, -- 40
-					lv.goal, -- 40
-					dt -- 40
-				) < 0 -- 40
-			) -- 40
-			check(prefix .. "sun-emissive", lv.visuals[1].emissive ~= nil and lv.visuals[1].emissive.r == 1) -- 41
-			check( -- 42
-				prefix .. "baseline-success", -- 42
-				core.goalIndex > 0 and __TS__ArrayEvery( -- 42
-					analysis.encounters, -- 42
-					function(____, e) return e.passed end -- 42
-				) -- 42
-			) -- 42
-			check(prefix .. "short-burn", core.burnDuration > 0.29 and core.burnDuration < 0.31) -- 43
-			check( -- 44
-				prefix .. "not-precompleted", -- 44
-				not core.missionCompleted and core.result == nil and not coreEndViewing(core) -- 44
-			) -- 44
-			local start = stateAt(1) -- 45
-			local plan = planTransfer( -- 45
-				mu, -- 45
-				r, -- 45
-				start.vel, -- 45
-				power, -- 45
-				tr.apoapsisMax, -- 45
-				tr.mode, -- 45
-				tr.periapsisMin -- 45
-			) -- 45
-			check( -- 46
-				prefix .. "drag-radius", -- 46
-				math.abs(plan.apoapsis - (n == 1 and 180 or 420)) < 1e-8 -- 46
-			) -- 46
-			check( -- 47
-				prefix .. "system-tangent", -- 47
-				math.abs(plan.velocity.x * start.vel.y - plan.velocity.y * start.vel.x) < 1e-8 and (plan.velocity.x * start.vel.x + plan.velocity.y * start.vel.y) * (n == 1 and -1 or 1) > 0 -- 47
-			) -- 47
-			check( -- 48
-				prefix .. "finite-burn", -- 48
-				distance(flight.velocities[1], start.vel) < 1e-10 -- 48
-			) -- 48
-			local ref = simulate({pos = start.pos, vel = {x = start.vel.x + plan.velocity.x, y = start.vel.y + plan.velocity.y}}, lv.planets, { -- 49
-				dt = dt, -- 49
-				steps = 3600, -- 49
-				sampleEvery = 1, -- 49
-				escapeRadius = lv.escapeRadius, -- 49
-				t0 = 1 -- 49
-			}) -- 49
-			check( -- 50
-				prefix .. "instant-plan-success", -- 50
-				analyzeOrbitalMission( -- 50
-					ref, -- 50
-					lv.planets, -- 50
-					cfg, -- 50
-					dt, -- 50
-					1 -- 50
-				).completionIndex > 0 -- 50
-			) -- 50
-			for ____, e in ipairs(analysis.encounters) do -- 51
-				check( -- 51
-					(prefix .. "small-drift-") .. __TS__NumberToFixed(e.planetIndex, 0), -- 51
-					distance(flight.points[e.periapsisIndex + 1], ref.points[e.periapsisIndex + 1]) < 5 -- 51
+local ____LevelLoader = require("game.LevelLoader") -- 6
+local convertLevelJson = ____LevelLoader.convertLevelJson -- 6
+local ____Game = require("game.Game") -- 7
+local createCore = ____Game.createCore -- 7
+local coreLaunch = ____Game.coreLaunch -- 7
+local coreUpdate = ____Game.coreUpdate -- 7
+local coreEndViewing = ____Game.coreEndViewing -- 7
+local coreRetry = ____Game.coreRetry -- 7
+local ____Scene = require("game.Scene") -- 8
+local isSunVisual = ____Scene.isSunVisual -- 8
+function ____exports.runTests() -- 10
+	local checks = 0 -- 11
+	local failures = {} -- 12
+	local function check(name, ok) -- 13
+		checks = checks + 1 -- 13
+		if not ok then -- 13
+			failures[#failures + 1] = name -- 13
+		end -- 13
+	end -- 13
+	installArcadeLevels( -- 14
+		Content:load("Assets/Levels/levels.json"), -- 14
+		Content:load("Assets/Levels/bodies.json"), -- 14
+		function(s) return (json.decode(s)) end -- 14
+	) -- 14
+	local dt = 0.016 -- 15
+	local ____table = (json.decode(Content:load("Assets/Levels/bodies.json"))) -- 16
+	local configs = (json.decode(Content:load("Assets/Levels/levels.json"))) -- 17
+	local baseSunRadius = ____table.bodies.sun.radius -- 18
+	local baseVenusRadius = ____table.bodies.venus.radius -- 18
+	local l2 = convertLevelJson(configs.levels[2], ____table) -- 19
+	check("l2-body-overrides", l2.planets[1].radius == 72 and l2.planets[2].radius == 12 and l2.planets[3].radius == 6 and l2.planets[3].gm == 800) -- 20
+	check( -- 21
+		"l2-model-collision-size", -- 21
+		__TS__ArrayEvery( -- 21
+			l2.visuals, -- 21
+			function(____, v, i) return v.displayRadius == l2.planets[i + 1].radius end -- 21
+		) -- 21
+	) -- 21
+	check( -- 22
+		"shared-prototypes-unchanged", -- 22
+		____table.bodies.sun.radius == baseSunRadius and ____table.bodies.venus.radius == baseVenusRadius and getLevel(2).planets[1].radius == 50 -- 22
+	) -- 22
+	check( -- 23
+		"exclusive-terminal-config", -- 23
+		convertLevelJson( -- 23
+			__TS__ObjectAssign( -- 23
+				{}, -- 23
+				configs.levels[2], -- 23
+				{transfer = __TS__ObjectAssign( -- 23
+					{}, -- 23
+					configs.levels[2].transfer, -- 23
+					{orbital = __TS__ObjectAssign({}, configs.levels[2].transfer.orbital, {region = {minRadius = 150, maxRadius = 170, direction = "inward"}})} -- 23
+				)} -- 23
+			), -- 23
+			____table -- 23
+		) == nil -- 23
+	) -- 23
+	local missingTerminal = __TS__ObjectAssign({}, configs.levels[3].transfer.orbital) -- 24
+	missingTerminal.region = nil -- 24
+	check( -- 25
+		"missing-terminal-config", -- 25
+		convertLevelJson( -- 25
+			__TS__ObjectAssign( -- 25
+				{}, -- 25
+				configs.levels[3], -- 25
+				{transfer = __TS__ObjectAssign({}, configs.levels[3].transfer, {orbital = missingTerminal})} -- 25
+			), -- 25
+			____table -- 25
+		) == nil -- 25
+	) -- 25
+	check( -- 26
+		"invalid-destination-index", -- 26
+		convertLevelJson( -- 26
+			__TS__ObjectAssign( -- 26
+				{}, -- 26
+				configs.levels[2], -- 26
+				{transfer = __TS__ObjectAssign( -- 26
+					{}, -- 26
+					configs.levels[2].transfer, -- 26
+					{orbital = __TS__ObjectAssign( -- 26
+						{}, -- 26
+						configs.levels[2].transfer.orbital, -- 26
+						{targetFlyby = __TS__ObjectAssign({}, configs.levels[2].transfer.orbital.targetFlyby, {planetIndex = 9})} -- 26
+					)} -- 26
+				)} -- 26
+			), -- 26
+			____table -- 26
+		) == nil -- 26
+	) -- 26
+	check( -- 28
+		"explicit-sun-model", -- 28
+		isSunVisual({ -- 28
+			r = 1, -- 28
+			g = 1, -- 28
+			b = 1, -- 28
+			displayRadius = 50, -- 28
+			ring = false, -- 28
+			model = "Sun" -- 28
+		}) -- 28
+	) -- 28
+	check( -- 29
+		"massive-earth-not-sun", -- 29
+		not isSunVisual({ -- 29
+			r = 1, -- 29
+			g = 1, -- 29
+			b = 1, -- 29
+			displayRadius = 42, -- 29
+			ring = false, -- 29
+			model = "Planet_Earth" -- 29
+		}) -- 29
+	) -- 29
+	check( -- 30
+		"undefined-not-sun", -- 30
+		not isSunVisual(nil) -- 30
+	) -- 30
+	do -- 30
+		local n = 1 -- 31
+		while n <= 2 do -- 31
+			local lv = getLevel(n) -- 32
+			if lv.transfer == nil or lv.transfer.orbital == nil then -- 32
+				return "failed\nmissing orbital fixture" -- 33
+			end -- 33
+			local tr = lv.transfer -- 34
+			local cfg = lv.transfer.orbital -- 34
+			local mu = lv.planets[1].gm -- 34
+			local r = distance( -- 35
+				lv.probeStart, -- 35
+				bodyPositionAt(lv.planets[1], 0) -- 35
+			) -- 35
+			local power = n == 1 and 11 / 14 or 0.5 -- 36
+			local function stateAt(date) -- 37
+				local a = math.atan(lv.probeStart.y, lv.probeStart.x) + math.sqrt(mu / (r * r * r)) * date -- 38
+				local speed = math.sqrt(mu / r) -- 38
+				return { -- 39
+					pos = { -- 39
+						x = r * math.cos(a), -- 39
+						y = r * math.sin(a) -- 39
+					}, -- 39
+					vel = { -- 39
+						x = -math.sin(a) * speed, -- 39
+						y = math.cos(a) * speed -- 39
+					} -- 39
+				} -- 39
+			end -- 37
+			local level = { -- 41
+				bodies = lv.planets, -- 41
+				probeStart = lv.probeStart, -- 41
+				probeVel0 = lv.probeVel0, -- 41
+				goal = lv.goal, -- 41
+				escapeRadius = lv.escapeRadius, -- 41
+				maxSteps = lv.maxSteps, -- 41
+				transfer = tr -- 41
+			} -- 41
+			local function launchAt(date, p) -- 42
+				local core = createCore(dt) -- 43
+				local start = stateAt(date) -- 43
+				local plan = planTransfer( -- 44
+					mu, -- 44
+					r, -- 44
+					start.vel, -- 44
+					p, -- 44
+					tr.apoapsisMax, -- 44
+					tr.mode, -- 44
+					tr.periapsisMin -- 44
+				) -- 44
+				core.t0 = date -- 45
+				coreLaunch( -- 45
+					core, -- 45
+					plan.velocity, -- 45
+					level, -- 45
+					start.pos, -- 45
+					start.vel -- 45
+				) -- 45
+				core.playback = 1 -- 45
+				return core -- 46
+			end -- 42
+			local core = launchAt(1, power) -- 48
+			local flight = core.flight -- 48
+			local analysis = core.flyby -- 48
+			local prefix = ("L" .. __TS__NumberToFixed(n + 1, 0)) .. "-" -- 49
+			check(prefix .. "sun-center", mu == 800000 and lv.planets[1].radius == (n == 1 and 72 or 50) and lv.planets[1].orbitRadius == 0) -- 50
+			check( -- 51
+				prefix .. "only-real-bodies", -- 51
+				#lv.planets == 3 and #lv.stars == 0 and __TS__ArrayEvery( -- 51
+					lv.planets, -- 51
+					function(____, b) return b.gm > 0 and not b.isObstacle end -- 51
 				) -- 51
-			end -- 51
-			check( -- 52
-				prefix .. "work-required", -- 52
-				analyzeOrbitalMission( -- 52
-					flight, -- 52
-					lv.planets, -- 52
-					__TS__ObjectAssign( -- 52
-						{}, -- 52
-						cfg, -- 52
-						{encounters = __TS__ArrayMap( -- 52
-							cfg.encounters, -- 52
-							function(____, e) return __TS__ObjectAssign({}, e, {minWork = 1000000000}) end -- 52
-						)} -- 52
-					), -- 52
-					dt, -- 52
-					1 -- 52
-				).completionIndex < 0 -- 52
-			) -- 52
-			check( -- 53
-				prefix .. "missing-assist-fails", -- 53
-				analyzeOrbitalMission( -- 53
-					flight, -- 53
-					__TS__ArrayMap( -- 53
-						lv.planets, -- 53
-						function(____, b, i) return i == 1 and __TS__ObjectAssign({}, b, {gm = 0}) or b end -- 53
-					), -- 53
-					cfg, -- 53
-					dt, -- 53
-					1 -- 53
-				).completionIndex < 0 -- 53
-			) -- 53
-			check( -- 54
-				prefix .. "energy-required", -- 54
-				analyzeOrbitalMission( -- 54
-					flight, -- 54
-					lv.planets, -- 54
-					__TS__ObjectAssign( -- 54
-						{}, -- 54
-						cfg, -- 54
-						{encounters = __TS__ArrayMap( -- 54
-							cfg.encounters, -- 54
-							function(____, e) return __TS__ObjectAssign({}, e, {minEnergyChange = 1000000000}) end -- 54
-						)} -- 54
-					), -- 54
-					dt, -- 54
-					1 -- 54
-				).completionIndex < 0 -- 54
-			) -- 54
-			check( -- 55
-				prefix .. "safe-distance-required", -- 55
-				analyzeOrbitalMission( -- 55
-					flight, -- 55
-					lv.planets, -- 55
-					__TS__ObjectAssign( -- 55
-						{}, -- 55
-						cfg, -- 55
-						{encounters = __TS__ArrayMap( -- 55
-							cfg.encounters, -- 55
-							function(____, e) return __TS__ObjectAssign({}, e, {minPeriapsis = 105}) end -- 55
-						)} -- 55
-					), -- 55
-					dt, -- 55
-					1 -- 55
-				).completionIndex < 0 -- 55
-			) -- 55
-			local reverse = analyzeOrbitalMission( -- 56
-				flight, -- 56
-				lv.planets, -- 56
-				__TS__ObjectAssign( -- 56
-					{}, -- 56
-					cfg, -- 56
-					{region = __TS__ObjectAssign({}, cfg.region, {direction = n == 1 and "outward" or "inward"})} -- 56
-				), -- 56
-				dt, -- 56
-				1 -- 56
-			) -- 56
-			check( -- 58
-				prefix .. "target-direction-required", -- 58
-				reverse.completionIndex < 0 or reverse.completionIndex < analysis.completionIndex and analyzeOrbitalMission( -- 58
-					__TS__ObjectAssign( -- 58
-						{}, -- 58
-						flight, -- 58
-						{ -- 58
-							points = __TS__ArraySlice(flight.points, 0, reverse.completionIndex + 1), -- 58
-							velocities = __TS__ArraySlice(flight.velocities, 0, reverse.completionIndex + 1) -- 58
-						} -- 58
-					), -- 58
-					lv.planets, -- 58
-					cfg, -- 58
-					dt, -- 58
-					1 -- 58
-				).completionIndex < 0 -- 58
-			) -- 58
-			if n == 2 then -- 58
-				check( -- 59
-					prefix .. "order-required", -- 59
-					analyzeOrbitalMission( -- 59
-						flight, -- 59
-						lv.planets, -- 59
-						__TS__ObjectAssign({}, cfg, {encounters = {cfg.encounters[2], cfg.encounters[1]}}), -- 59
-						dt, -- 59
-						1 -- 59
-					).completionIndex < 0 -- 59
-				) -- 59
-			end -- 59
-			check( -- 60
-				prefix .. "low-power-fails", -- 60
-				launchAt(1, 0.04).goalIndex < 0 -- 60
-			) -- 60
+			) -- 51
+			if n == 1 then -- 51
+				local body = lv.planets[3] -- 53
+				local point = goalPositionAt(body, 1, lv.goal.offset) -- 53
+				check( -- 54
+					prefix .. "mercury-guidance", -- 54
+					lv.goal.marker == nil and lv.goal.planetIndex == 2 and lv.goal.tolerance == 6 and math.abs(distance( -- 54
+						point, -- 54
+						bodyPositionAt(body, 1) -- 54
+					) - 14) < 1e-8 -- 54
+				) -- 54
+				check( -- 55
+					prefix .. "marker-safe-gap", -- 55
+					distance( -- 55
+						point, -- 55
+						bodyPositionAt(body, 1) -- 55
+					) - lv.goal.tolerance > body.radius -- 55
+				) -- 55
+			else -- 55
+				check( -- 57
+					prefix .. "marker-independent", -- 57
+					lv.goal.marker ~= nil and lv.goal.marker.gm == 0 and __TS__ArrayIndexOf(lv.planets, lv.goal.marker) < 0 -- 57
+				) -- 57
+				check( -- 58
+					prefix .. "marker-guidance-only", -- 58
+					findGoalIndex( -- 58
+						{bodyPositionAt(lv.goal.marker, 0)}, -- 58
+						lv.planets, -- 58
+						lv.goal, -- 58
+						dt -- 58
+					) < 0 -- 58
+				) -- 58
+			end -- 58
+			check(prefix .. "sun-emissive", lv.visuals[1].emissive ~= nil and lv.visuals[1].emissive.r == 1) -- 60
 			check( -- 61
-				prefix .. "wrong-date-fails", -- 61
-				launchAt(0, power).goalIndex < 0 -- 61
+				prefix .. "baseline-success", -- 61
+				core.goalIndex > 0 and __TS__ArrayEvery( -- 61
+					analysis.encounters, -- 61
+					function(____, e) return e.passed end -- 61
+				) -- 61
 			) -- 61
-			core.playback = 0 -- 62
-			core.flightTime = (core.goalIndex - 1) * dt -- 62
-			coreUpdate(core, 0, level) -- 62
-			check(prefix .. "before-region-incomplete", not core.missionCompleted) -- 63
-			core.flightTime = core.goalIndex * dt -- 64
-			coreUpdate(core, 0, level) -- 64
-			check(prefix .. "actual-region-completes", core.missionCompleted and core.phase == "Flying" and core.result == "success") -- 65
+			check(prefix .. "short-burn", core.burnDuration > 0.29 and core.burnDuration < 0.31) -- 62
+			check( -- 63
+				prefix .. "not-precompleted", -- 63
+				not core.missionCompleted and core.result == nil and not coreEndViewing(core) -- 63
+			) -- 63
+			local start = stateAt(1) -- 64
+			local plan = planTransfer( -- 64
+				mu, -- 64
+				r, -- 64
+				start.vel, -- 64
+				power, -- 64
+				tr.apoapsisMax, -- 64
+				tr.mode, -- 64
+				tr.periapsisMin -- 64
+			) -- 64
+			check( -- 65
+				prefix .. "drag-radius", -- 65
+				math.abs(plan.apoapsis - (n == 1 and 180 or 420)) < 1e-8 -- 65
+			) -- 65
 			check( -- 66
-				prefix .. "manual-end", -- 66
-				coreEndViewing(core) and core.phase == "Result" -- 66
+				prefix .. "system-tangent", -- 66
+				math.abs(plan.velocity.x * start.vel.y - plan.velocity.y * start.vel.x) < 1e-8 and (plan.velocity.x * start.vel.x + plan.velocity.y * start.vel.y) * (n == 1 and -1 or 1) > 0 -- 66
 			) -- 66
-			local normal = launchAt(1, power) -- 67
-			local fast = launchAt(1, power) -- 67
-			fast.playback = 4 -- 68
-			do -- 68
-				local i = 0 -- 69
-				while i < 2500 and normal.phase == "Flying" do -- 69
-					coreUpdate(normal, 1 / 60, level) -- 69
-					i = i + 1 -- 69
-				end -- 69
-			end -- 69
-			do -- 69
-				local i = 0 -- 70
-				while i < 2500 and fast.phase == "Flying" do -- 70
-					coreUpdate(fast, 1 / 120, level) -- 70
-					i = i + 1 -- 70
-				end -- 70
+			check( -- 67
+				prefix .. "finite-burn", -- 67
+				distance(flight.velocities[1], start.vel) < 1e-10 -- 67
+			) -- 67
+			local ref = simulate({pos = start.pos, vel = {x = start.vel.x + plan.velocity.x, y = start.vel.y + plan.velocity.y}}, lv.planets, { -- 68
+				dt = dt, -- 68
+				steps = 3600, -- 68
+				sampleEvery = 1, -- 68
+				escapeRadius = lv.escapeRadius, -- 68
+				t0 = 1 -- 68
+			}) -- 68
+			check( -- 69
+				prefix .. "instant-plan-success", -- 69
+				analyzeOrbitalMission( -- 69
+					ref, -- 69
+					lv.planets, -- 69
+					cfg, -- 69
+					dt, -- 69
+					1 -- 69
+				).completionIndex > 0 -- 69
+			) -- 69
+			for ____, e in ipairs(analysis.encounters) do -- 70
+				check( -- 70
+					(prefix .. "small-drift-") .. __TS__NumberToFixed(e.planetIndex, 0), -- 70
+					distance(flight.points[e.periapsisIndex + 1], ref.points[e.periapsisIndex + 1]) < 5 -- 70
+				) -- 70
 			end -- 70
-			check(prefix .. "natural-end-success", normal.phase == "Result" and normal.missionCompleted and normal.result == "success") -- 71
+			check( -- 71
+				prefix .. "work-required", -- 71
+				analyzeOrbitalMission( -- 71
+					flight, -- 71
+					lv.planets, -- 71
+					__TS__ObjectAssign( -- 71
+						{}, -- 71
+						cfg, -- 71
+						{encounters = __TS__ArrayMap( -- 71
+							cfg.encounters, -- 71
+							function(____, e) return __TS__ObjectAssign({}, e, {minWork = 1000000000}) end -- 71
+						)} -- 71
+					), -- 71
+					dt, -- 71
+					1 -- 71
+				).completionIndex < 0 -- 71
+			) -- 71
 			check( -- 72
-				prefix .. "speed-deterministic", -- 72
-				fast.result == normal.result and fast.flightTime == normal.flightTime and distance(fast.flight.state.pos, normal.flight.state.pos) == 0 -- 72
+				prefix .. "missing-assist-fails", -- 72
+				analyzeOrbitalMission( -- 72
+					flight, -- 72
+					__TS__ArrayMap( -- 72
+						lv.planets, -- 72
+						function(____, b, i) return i == 1 and __TS__ObjectAssign({}, b, {gm = 0}) or b end -- 72
+					), -- 72
+					cfg, -- 72
+					dt, -- 72
+					1 -- 72
+				).completionIndex < 0 -- 72
 			) -- 72
 			check( -- 73
-				prefix .. "view-six-seconds-or-natural-end", -- 73
-				analysis.viewEndIndex == math.min(#flight.points - 1, core.goalIndex + 375) -- 73
+				prefix .. "energy-required", -- 73
+				analyzeOrbitalMission( -- 73
+					flight, -- 73
+					lv.planets, -- 73
+					__TS__ObjectAssign( -- 73
+						{}, -- 73
+						cfg, -- 73
+						{encounters = __TS__ArrayMap( -- 73
+							cfg.encounters, -- 73
+							function(____, e) return __TS__ObjectAssign({}, e, {minEnergyChange = 1000000000}) end -- 73
+						)} -- 73
+					), -- 73
+					dt, -- 73
+					1 -- 73
+				).completionIndex < 0 -- 73
 			) -- 73
-			local at30 = 0 -- 74
-			local at120 = 0 -- 74
-			do -- 74
-				local i = 0 -- 75
-				while i < 450 do -- 75
-					at30 = advanceTransferPlayback( -- 75
-						at30, -- 75
-						1 / 30, -- 75
-						1, -- 75
-						normal.burnDuration, -- 75
-						tr, -- 75
-						analysis, -- 75
-						dt -- 75
-					) -- 75
-					i = i + 1 -- 75
-				end -- 75
-			end -- 75
-			do -- 75
-				local i = 0 -- 76
-				while i < 1800 do -- 76
-					at120 = advanceTransferPlayback( -- 76
-						at120, -- 76
-						1 / 120, -- 76
-						1, -- 76
-						normal.burnDuration, -- 76
-						tr, -- 76
-						analysis, -- 76
-						dt -- 76
-					) -- 76
-					i = i + 1 -- 76
-				end -- 76
-			end -- 76
-			check( -- 77
-				prefix .. "fps-independent", -- 77
-				math.abs(at30 - at120) < 1e-8 -- 77
-			) -- 77
-			do -- 77
-				local i = 0 -- 78
-				while i < #analysis.encounters do -- 78
-					check( -- 78
-						(prefix .. "encounter-shot-") .. __TS__NumberToFixed(i, 0), -- 78
-						orbitalShotAt( -- 78
-							analysis.encounters[i + 1].periapsisIndex * dt, -- 78
-							normal.burnDuration, -- 78
-							analysis, -- 78
-							cfg, -- 78
-							dt -- 78
-						) == cfg.encounters[i + 1].focus -- 78
-					) -- 78
-					i = i + 1 -- 78
-				end -- 78
-			end -- 78
-			check( -- 79
-				prefix .. "one-completion-record", -- 79
-				evaluateRocketsDetailed(lv, "success", plan.dv, {starsCollected = 3}).rockets == 1 -- 79
-			) -- 79
-			local crash = createCore(dt) -- 80
-			coreLaunch( -- 80
-				crash, -- 80
-				{x = 0, y = 0}, -- 80
-				level, -- 80
-				{x = 0, y = 0}, -- 80
-				{x = 0, y = 0} -- 80
-			) -- 80
-			coreUpdate(crash, 1, level) -- 80
-			check(prefix .. "early-collision-fails", crash.result == "crashed" and not crash.missionCompleted) -- 81
-			coreRetry(core, 0) -- 82
-			check(prefix .. "retry-reset", not core.missionCompleted and core.flyby == nil and core.phase == "Aiming") -- 82
-			n = n + 1 -- 18
-		end -- 18
-	end -- 18
-	return (((((#failures == 0 and "passed" or "failed") .. "\nchecks=") .. __TS__NumberToFixed(checks, 0)) .. " failures=") .. __TS__NumberToFixed(#failures, 0)) .. (#failures > 0 and "\n" .. table.concat(failures, "\n") or "") -- 84
-end -- 9
-return ____exports -- 9
+			check( -- 74
+				prefix .. "safe-distance-required", -- 74
+				analyzeOrbitalMission( -- 74
+					flight, -- 74
+					lv.planets, -- 74
+					__TS__ObjectAssign( -- 74
+						{}, -- 74
+						cfg, -- 74
+						{encounters = __TS__ArrayMap( -- 74
+							cfg.encounters, -- 74
+							function(____, e) return __TS__ObjectAssign({}, e, {minPeriapsis = 105}) end -- 74
+						)} -- 74
+					), -- 74
+					dt, -- 74
+					1 -- 74
+				).completionIndex < 0 -- 74
+			) -- 74
+			if cfg.targetFlyby ~= nil then -- 74
+				local dest = analysis.destination -- 76
+				check(prefix .. "complete-mercury-flyby", dest.passed and dest.entryIndex > analysis.encounters[1].exitIndex and dest.periapsisIndex > dest.entryIndex and dest.exitIndex > dest.periapsisIndex and core.goalIndex == dest.exitIndex and dest.periapsis >= 12 and dest.periapsis <= 28) -- 77
+				check( -- 78
+					prefix .. "mercury-small-planning-drift", -- 78
+					distance(flight.points[dest.periapsisIndex + 1], ref.points[dest.periapsisIndex + 1]) < 5 -- 78
+				) -- 78
+				local truncated = __TS__ObjectAssign( -- 79
+					{}, -- 79
+					flight, -- 79
+					{ -- 79
+						points = __TS__ArraySlice(flight.points, 0, dest.exitIndex), -- 79
+						velocities = __TS__ArraySlice(flight.velocities, 0, dest.exitIndex) -- 79
+					} -- 79
+				) -- 79
+				check( -- 80
+					prefix .. "entry-peri-without-exit-fails", -- 80
+					analyzeOrbitalMission( -- 80
+						truncated, -- 80
+						lv.planets, -- 80
+						cfg, -- 80
+						dt, -- 80
+						1 -- 80
+					).completionIndex < 0 -- 80
+				) -- 80
+				check( -- 81
+					prefix .. "unsafe-mercury-fails", -- 81
+					analyzeOrbitalMission( -- 81
+						flight, -- 81
+						lv.planets, -- 81
+						__TS__ObjectAssign( -- 81
+							{}, -- 81
+							cfg, -- 81
+							{targetFlyby = __TS__ObjectAssign({}, cfg.targetFlyby, {minPeriapsis = 25})} -- 81
+						), -- 81
+						dt, -- 81
+						1 -- 81
+					).completionIndex < 0 -- 81
+				) -- 81
+				check( -- 82
+					prefix .. "missed-mercury-fails", -- 82
+					analyzeOrbitalMission( -- 82
+						flight, -- 82
+						lv.planets, -- 82
+						__TS__ObjectAssign( -- 82
+							{}, -- 82
+							cfg, -- 82
+							{targetFlyby = __TS__ObjectAssign({}, cfg.targetFlyby, {maxPeriapsis = 12})} -- 82
+						), -- 82
+						dt, -- 82
+						1 -- 82
+					).completionIndex < 0 -- 82
+				) -- 82
+				local missed = launchAt(1, 0.9) -- 83
+				local oldBand = __TS__ObjectAssign({}, cfg) -- 84
+				oldBand.targetFlyby = nil -- 84
+				oldBand.region = {minRadius = 150, maxRadius = 170, direction = "inward"} -- 84
+				check( -- 85
+					prefix .. "old-band-alone-insufficient", -- 85
+					missed.goalIndex < 0 and analyzeOrbitalMission( -- 85
+						missed.flight, -- 85
+						lv.planets, -- 85
+						oldBand, -- 85
+						dt, -- 85
+						1 -- 85
+					).completionIndex >= 0 -- 85
+				) -- 85
+				check( -- 86
+					prefix .. "mercury-camera", -- 86
+					orbitalShotAt( -- 86
+						dest.periapsisIndex * dt, -- 86
+						core.burnDuration, -- 86
+						analysis, -- 86
+						cfg, -- 86
+						dt -- 86
+					) == "Mercury" -- 86
+				) -- 86
+				check( -- 87
+					prefix .. "between-planets-cruise", -- 87
+					orbitalShotAt( -- 87
+						(analysis.encounters[1].exitIndex + 1) * dt, -- 87
+						core.burnDuration, -- 87
+						analysis, -- 87
+						cfg, -- 87
+						dt -- 87
+					) == "Cruise" -- 87
+				) -- 87
+			else -- 87
+				local reverse = analyzeOrbitalMission( -- 89
+					flight, -- 89
+					lv.planets, -- 89
+					__TS__ObjectAssign( -- 89
+						{}, -- 89
+						cfg, -- 89
+						{region = __TS__ObjectAssign({}, cfg.region, {direction = "inward"})} -- 89
+					), -- 89
+					dt, -- 89
+					1 -- 89
+				) -- 89
+				check(prefix .. "target-direction-required", reverse.completionIndex < 0) -- 90
+				check( -- 91
+					prefix .. "order-required", -- 91
+					analyzeOrbitalMission( -- 91
+						flight, -- 91
+						lv.planets, -- 91
+						__TS__ObjectAssign({}, cfg, {encounters = {cfg.encounters[2], cfg.encounters[1]}}), -- 91
+						dt, -- 91
+						1 -- 91
+					).completionIndex < 0 -- 91
+				) -- 91
+			end -- 91
+			check( -- 93
+				prefix .. "low-power-fails", -- 93
+				launchAt(1, 0.04).goalIndex < 0 -- 93
+			) -- 93
+			check( -- 94
+				prefix .. "wrong-date-fails", -- 94
+				launchAt(0, power).goalIndex < 0 -- 94
+			) -- 94
+			core.playback = 0 -- 95
+			core.flightTime = (core.goalIndex - 1) * dt -- 95
+			coreUpdate(core, 0, level) -- 95
+			check(prefix .. "before-region-incomplete", not core.missionCompleted) -- 96
+			core.flightTime = core.goalIndex * dt -- 97
+			coreUpdate(core, 0, level) -- 97
+			check(prefix .. "actual-region-completes", core.missionCompleted and core.phase == "Flying" and core.result == "success") -- 98
+			check( -- 99
+				prefix .. "manual-end", -- 99
+				coreEndViewing(core) and core.phase == "Result" -- 99
+			) -- 99
+			local normal = launchAt(1, power) -- 100
+			local fast = launchAt(1, power) -- 100
+			fast.playback = 4 -- 101
+			do -- 101
+				local i = 0 -- 102
+				while i < 2500 and normal.phase == "Flying" do -- 102
+					coreUpdate(normal, 1 / 60, level) -- 102
+					i = i + 1 -- 102
+				end -- 102
+			end -- 102
+			do -- 102
+				local i = 0 -- 103
+				while i < 2500 and fast.phase == "Flying" do -- 103
+					coreUpdate(fast, 1 / 120, level) -- 103
+					i = i + 1 -- 103
+				end -- 103
+			end -- 103
+			check(prefix .. "natural-end-success", normal.phase == "Result" and normal.missionCompleted and normal.result == "success") -- 104
+			check( -- 105
+				prefix .. "speed-deterministic", -- 105
+				fast.result == normal.result and fast.flightTime == normal.flightTime and distance(fast.flight.state.pos, normal.flight.state.pos) == 0 -- 105
+			) -- 105
+			check( -- 106
+				prefix .. "view-six-seconds-or-natural-end", -- 106
+				analysis.viewEndIndex == math.min(#flight.points - 1, core.goalIndex + 375) -- 106
+			) -- 106
+			local at30 = 0 -- 107
+			local at120 = 0 -- 107
+			do -- 107
+				local i = 0 -- 108
+				while i < 450 do -- 108
+					at30 = advanceTransferPlayback( -- 108
+						at30, -- 108
+						1 / 30, -- 108
+						1, -- 108
+						normal.burnDuration, -- 108
+						tr, -- 108
+						analysis, -- 108
+						dt -- 108
+					) -- 108
+					i = i + 1 -- 108
+				end -- 108
+			end -- 108
+			do -- 108
+				local i = 0 -- 109
+				while i < 1800 do -- 109
+					at120 = advanceTransferPlayback( -- 109
+						at120, -- 109
+						1 / 120, -- 109
+						1, -- 109
+						normal.burnDuration, -- 109
+						tr, -- 109
+						analysis, -- 109
+						dt -- 109
+					) -- 109
+					i = i + 1 -- 109
+				end -- 109
+			end -- 109
+			check( -- 110
+				prefix .. "fps-independent", -- 110
+				math.abs(at30 - at120) < 1e-8 -- 110
+			) -- 110
+			do -- 110
+				local i = 0 -- 111
+				while i < #analysis.encounters do -- 111
+					check( -- 111
+						(prefix .. "encounter-shot-") .. __TS__NumberToFixed(i, 0), -- 111
+						orbitalShotAt( -- 111
+							analysis.encounters[i + 1].periapsisIndex * dt, -- 111
+							normal.burnDuration, -- 111
+							analysis, -- 111
+							cfg, -- 111
+							dt -- 111
+						) == cfg.encounters[i + 1].focus -- 111
+					) -- 111
+					i = i + 1 -- 111
+				end -- 111
+			end -- 111
+			check( -- 112
+				prefix .. "one-completion-record", -- 112
+				evaluateRocketsDetailed(lv, "success", plan.dv, {starsCollected = 3}).rockets == 1 -- 112
+			) -- 112
+			do -- 112
+				local i = 0 -- 113
+				while i < #lv.planets do -- 113
+					local crash = createCore(dt) -- 114
+					coreLaunch( -- 114
+						crash, -- 114
+						{x = 0, y = 0}, -- 114
+						level, -- 114
+						bodyPositionAt(lv.planets[i + 1], 0), -- 114
+						{x = 0, y = 0} -- 114
+					) -- 114
+					coreUpdate(crash, 1, level) -- 114
+					check( -- 115
+						(prefix .. "early-collision-fails-") .. __TS__NumberToFixed(i, 0), -- 115
+						crash.result == "crashed" and not crash.missionCompleted -- 115
+					) -- 115
+					i = i + 1 -- 113
+				end -- 113
+			end -- 113
+			coreRetry(core, 0) -- 117
+			check(prefix .. "retry-reset", not core.missionCompleted and core.flyby == nil and core.phase == "Aiming") -- 117
+			n = n + 1 -- 31
+		end -- 31
+	end -- 31
+	return (((((#failures == 0 and "passed" or "failed") .. "\nchecks=") .. __TS__NumberToFixed(checks, 0)) .. " failures=") .. __TS__NumberToFixed(#failures, 0)) .. (#failures > 0 and "\n" .. table.concat(failures, "\n") or "") -- 119
+end -- 10
+return ____exports -- 10

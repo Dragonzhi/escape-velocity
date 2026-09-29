@@ -124,16 +124,6 @@ export const TimeWarpStep = 15;
  */
 export const WarpHoldDelaySec = 0.3;
 
-/**
- * 刹车模式下的 Δv 分配（S3.9.2）：拖动力度 = 总 Δv，其中这一份用于**点火**，
- * 剩下的留给后半程反推 —— 于是"刹得越狠 ⇒ 冲得越慢"是算术（共享同一个预算）。
- */
-export const BrakeShare = 0.75;
-
-// ⚠️ 为什么不是 0.5：实测（tools/level-sweep.mjs --brake）——点火只拿一半时，L3~L6 的外圈转移
-// **全部打不到**（峰值距离从 700 掉到 130 左右）。3:1 才是这个尺度下的可用值：
-// 点火仍够飞出去，留下的 1/4 够在到达段减速（"省着打、借着走"依然是正解）。
-
 /** 拖动多远算“满力”（**视图像素**）。 */
 export const AimMaxDragPx = 380;
 

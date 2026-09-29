@@ -1,8 +1,9 @@
 /** 日心任务的借力证据、顺序、目标方向与实际完成时序。 */
 import { Content, json } from 'Dora';
 import { bodyPositionAt, distance, simulate } from 'game/Gravity';
-import { getLevel, installArcadeLevels, findGoalIndex, evaluateRocketsDetailed } from 'game/LevelData';
+import { getLevel, goalPositionAt, installArcadeLevels, findGoalIndex, evaluateRocketsDetailed } from 'game/LevelData';
 import { analyzeOrbitalMission, advanceTransferPlayback, orbitalShotAt, planTransfer } from 'game/Transfer';
+import { convertLevelJson, BodiesConfigJson, LevelsConfigJson } from 'game/LevelLoader';
 import { GameLevel, createCore, coreLaunch, coreUpdate, coreEndViewing, coreRetry } from 'game/Game';
 import { isSunVisual } from 'game/Scene';
 
@@ -12,6 +13,18 @@ export function runTests(): string {
 	const check = (name: string, ok: boolean): void => { checks++; if (!ok) failures.push(name); };
 	installArcadeLevels(Content.load('Assets/Levels/levels.json'), Content.load('Assets/Levels/bodies.json'), (s: string): unknown => json.decode(s)[0]);
 	const dt = 0.016;
+	const table = json.decode(Content.load('Assets/Levels/bodies.json'))[0] as BodiesConfigJson;
+	const configs = json.decode(Content.load('Assets/Levels/levels.json'))[0] as LevelsConfigJson;
+	const baseSunRadius = table.bodies.sun.radius, baseVenusRadius = table.bodies.venus.radius;
+	const l2 = convertLevelJson(configs.levels[1], table)!;
+	check('l2-body-overrides', l2.planets[0].radius === 72 && l2.planets[1].radius === 12 && l2.planets[2].radius === 6 && l2.planets[2].gm === 800);
+	check('l2-model-collision-size', l2.visuals.every((v, i) => v.displayRadius === l2.planets[i].radius));
+	check('shared-prototypes-unchanged', table.bodies.sun.radius === baseSunRadius && table.bodies.venus.radius === baseVenusRadius && getLevel(2)!.planets[0].radius === 50);
+	check('exclusive-terminal-config', convertLevelJson({ ...configs.levels[1], transfer: { ...configs.levels[1].transfer!, orbital: { ...configs.levels[1].transfer!.orbital!, region: { minRadius: 150, maxRadius: 170, direction: 'inward' } } } }, table) === undefined);
+	const missingTerminal = { ...configs.levels[2].transfer!.orbital! }; missingTerminal.region = undefined;
+	check('missing-terminal-config', convertLevelJson({ ...configs.levels[2], transfer: { ...configs.levels[2].transfer!, orbital: missingTerminal } }, table) === undefined);
+	check('invalid-destination-index', convertLevelJson({ ...configs.levels[1], transfer: { ...configs.levels[1].transfer!, orbital: { ...configs.levels[1].transfer!.orbital!, targetFlyby: { ...configs.levels[1].transfer!.orbital!.targetFlyby!, planetIndex: 9 } } } }, table) === undefined);
+
 	check('explicit-sun-model', isSunVisual({ r: 1, g: 1, b: 1, displayRadius: 50, ring: false, model: 'Sun' }));
 	check('massive-earth-not-sun', !isSunVisual({ r: 1, g: 1, b: 1, displayRadius: 42, ring: false, model: 'Planet_Earth' }));
 	check('undefined-not-sun', !isSunVisual(undefined));
@@ -34,10 +47,16 @@ export function runTests(): string {
 		};
 		const core = launchAt(1, power), flight = core.flight!, analysis = core.flyby!;
 		const prefix = 'L' + (n + 1).toFixed(0) + '-';
-		check(prefix + 'sun-center', mu === 800000 && lv.planets[0].radius === 50 && lv.planets[0].orbitRadius === 0);
-		check(prefix + 'only-real-bodies', lv.planets.length === n + 1 && lv.stars!.length === 0 && lv.planets.every(b => b.gm > 0 && !b.isObstacle));
-		check(prefix + 'marker-independent', lv.goal.marker !== undefined && lv.goal.marker.gm === 0 && lv.goal.marker.radius === 0 && lv.planets.indexOf(lv.goal.marker) < 0);
-		check(prefix + 'marker-guidance-only', findGoalIndex([bodyPositionAt(lv.goal.marker!, 0)], lv.planets, lv.goal, dt) < 0);
+		check(prefix + 'sun-center', mu === 800000 && lv.planets[0].radius === (n === 1 ? 72 : 50) && lv.planets[0].orbitRadius === 0);
+		check(prefix + 'only-real-bodies', lv.planets.length === 3 && lv.stars!.length === 0 && lv.planets.every(b => b.gm > 0 && !b.isObstacle));
+		if (n === 1) {
+			const body = lv.planets[2], point = goalPositionAt(body, 1, lv.goal.offset);
+			check(prefix + 'mercury-guidance', lv.goal.marker === undefined && lv.goal.planetIndex === 2 && lv.goal.tolerance === 6 && Math.abs(distance(point, bodyPositionAt(body, 1)) - 14) < 1e-8);
+			check(prefix + 'marker-safe-gap', distance(point, bodyPositionAt(body, 1)) - lv.goal.tolerance > body.radius);
+		} else {
+			check(prefix + 'marker-independent', lv.goal.marker !== undefined && lv.goal.marker.gm === 0 && lv.planets.indexOf(lv.goal.marker) < 0);
+			check(prefix + 'marker-guidance-only', findGoalIndex([bodyPositionAt(lv.goal.marker!, 0)], lv.planets, lv.goal, dt) < 0);
+		}
 		check(prefix + 'sun-emissive', lv.visuals[0].emissive !== undefined && lv.visuals[0].emissive!.r === 1);
 		check(prefix + 'baseline-success', core.goalIndex > 0 && analysis.encounters!.every(e => e.passed));
 		check(prefix + 'short-burn', core.burnDuration > 0.29 && core.burnDuration < 0.31);
@@ -53,10 +72,24 @@ export function runTests(): string {
 		check(prefix + 'missing-assist-fails', analyzeOrbitalMission(flight, lv.planets.map((b, i) => i === 1 ? { ...b, gm: 0 } : b), cfg, dt, 1).completionIndex < 0);
 		check(prefix + 'energy-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: cfg.encounters.map(e => ({ ...e, minEnergyChange: 1e9 })) }, dt, 1).completionIndex < 0);
 		check(prefix + 'safe-distance-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: cfg.encounters.map(e => ({ ...e, minPeriapsis: 105 })) }, dt, 1).completionIndex < 0);
-		const reverse = analyzeOrbitalMission(flight, lv.planets, { ...cfg, region: { ...cfg.region, direction: n === 1 ? 'outward' : 'inward' } }, dt, 1);
-		// L2 会先向外穿过内圈，随后才向内回来；第一次向外穿越不能完成配置中的向内任务。
-		check(prefix + 'target-direction-required', reverse.completionIndex < 0 || (reverse.completionIndex < analysis.completionIndex && analyzeOrbitalMission({ ...flight, points: flight.points.slice(0, reverse.completionIndex + 1), velocities: flight.velocities.slice(0, reverse.completionIndex + 1) }, lv.planets, cfg, dt, 1).completionIndex < 0));
-		if (n === 2) check(prefix + 'order-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: [cfg.encounters[1], cfg.encounters[0]] }, dt, 1).completionIndex < 0);
+		if (cfg.targetFlyby !== undefined) {
+			const dest = analysis.destination!;
+			check(prefix + 'complete-mercury-flyby', dest.passed && dest.entryIndex > analysis.encounters![0].exitIndex && dest.periapsisIndex > dest.entryIndex && dest.exitIndex > dest.periapsisIndex && core.goalIndex === dest.exitIndex && dest.periapsis >= 12 && dest.periapsis <= 28);
+			check(prefix + 'mercury-small-planning-drift', distance(flight.points[dest.periapsisIndex], ref.points[dest.periapsisIndex]) < 5);
+			const truncated = { ...flight, points: flight.points.slice(0, dest.exitIndex), velocities: flight.velocities.slice(0, dest.exitIndex) };
+			check(prefix + 'entry-peri-without-exit-fails', analyzeOrbitalMission(truncated, lv.planets, cfg, dt, 1).completionIndex < 0);
+			check(prefix + 'unsafe-mercury-fails', analyzeOrbitalMission(flight, lv.planets, { ...cfg, targetFlyby: { ...cfg.targetFlyby, minPeriapsis: 25 } }, dt, 1).completionIndex < 0);
+			check(prefix + 'missed-mercury-fails', analyzeOrbitalMission(flight, lv.planets, { ...cfg, targetFlyby: { ...cfg.targetFlyby, maxPeriapsis: 12 } }, dt, 1).completionIndex < 0);
+			const missed = launchAt(1, 0.9);
+			const oldBand = { ...cfg }; oldBand.targetFlyby = undefined; oldBand.region = { minRadius: 150, maxRadius: 170, direction: 'inward' };
+			check(prefix + 'old-band-alone-insufficient', missed.goalIndex < 0 && analyzeOrbitalMission(missed.flight!, lv.planets, oldBand, dt, 1).completionIndex >= 0);
+			check(prefix + 'mercury-camera', orbitalShotAt(dest.periapsisIndex * dt, core.burnDuration, analysis, cfg, dt) === 'Mercury');
+			check(prefix + 'between-planets-cruise', orbitalShotAt((analysis.encounters![0].exitIndex + 1) * dt, core.burnDuration, analysis, cfg, dt) === 'Cruise');
+		} else {
+			const reverse = analyzeOrbitalMission(flight, lv.planets, { ...cfg, region: { ...cfg.region!, direction: 'inward' } }, dt, 1);
+			check(prefix + 'target-direction-required', reverse.completionIndex < 0);
+			check(prefix + 'order-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: [cfg.encounters[1], cfg.encounters[0]] }, dt, 1).completionIndex < 0);
+		}
 		check(prefix + 'low-power-fails', launchAt(1, 0.04).goalIndex < 0);
 		check(prefix + 'wrong-date-fails', launchAt(0, power).goalIndex < 0);
 		core.playback = 0; core.flightTime = (core.goalIndex - 1) * dt; coreUpdate(core, 0, level);
@@ -77,8 +110,10 @@ export function runTests(): string {
 		check(prefix + 'fps-independent', Math.abs(at30 - at120) < 1e-8);
 		for (let i = 0; i < analysis.encounters!.length; i++) check(prefix + 'encounter-shot-' + i.toFixed(0), orbitalShotAt(analysis.encounters![i].periapsisIndex * dt, normal.burnDuration, analysis, cfg, dt) === cfg.encounters[i].focus);
 		check(prefix + 'one-completion-record', evaluateRocketsDetailed(lv, 'success', plan.dv, { starsCollected: 3 }).rockets === 1);
-		const crash = createCore(dt); coreLaunch(crash, { x: 0, y: 0 }, level, { x: 0, y: 0 }, { x: 0, y: 0 }); coreUpdate(crash, 1, level);
-		check(prefix + 'early-collision-fails', crash.result === 'crashed' && !crash.missionCompleted);
+		for (let i = 0; i < lv.planets.length; i++) {
+			const crash = createCore(dt); coreLaunch(crash, { x: 0, y: 0 }, level, bodyPositionAt(lv.planets[i], 0), { x: 0, y: 0 }); coreUpdate(crash, 1, level);
+			check(prefix + 'early-collision-fails-' + i.toFixed(0), crash.result === 'crashed' && !crash.missionCompleted);
+		}
 		coreRetry(core, 0); check(prefix + 'retry-reset', !core.missionCompleted && core.flyby === undefined && core.phase === 'Aiming');
 	}
 	return (failures.length === 0 ? 'passed' : 'failed') + '\nchecks=' + checks.toFixed(0) + ' failures=' + failures.length.toFixed(0) + (failures.length > 0 ? '\n' + failures.join('\n') : '');

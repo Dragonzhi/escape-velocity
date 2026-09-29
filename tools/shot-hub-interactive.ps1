@@ -107,16 +107,4 @@ Start-Sleep -Milliseconds 600
 RequestShot "showResult:3" "shot-result-l4-galileo.png"
 Start-Sleep -Milliseconds 600
 
-# 10) L4 伽利略号木星制动窗口激活（慢动作透镜 + 逆喷按钮高能高亮）
-RequestShot "brakeWindow:3" "shot-l4-brake-window.png"
-Start-Sleep -Milliseconds 600
-
-# 11) L4 伽利略号按下逆喷制动入轨（状态变为已捕获入轨）
-RequestShot "brakePress" "shot-l4-braked-orbit.png"
-Start-Sleep -Milliseconds 600
-
-# 停掉引擎
-try { $null = Api "stop" } catch {}
-Start-Sleep -Milliseconds 300
-Get-Process Dora -ErrorAction SilentlyContinue | Stop-Process -Force
 Write-Output "All shots captured and engine stopped"
