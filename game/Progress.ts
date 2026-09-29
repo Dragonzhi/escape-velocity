@@ -117,7 +117,8 @@ export function recordMissionResult(
 export function getMissionCompleted(p: Progress, levelIndex: number): boolean {
 	const key = 'L' + (levelIndex + 1).toFixed(0);
 	if (p.completed !== undefined && p.completed[key] !== undefined) return p.completed[key];
-	return (p.rockets !== undefined && (p.rockets[key] || 0) > 0) || levelIndex < p.unlocked;
+	const rockets = p.rockets !== undefined && p.rockets[key] !== undefined ? p.rockets[key] : 0;
+	return rockets > 0 || levelIndex < p.unlocked;
 }
 
 /** 统计全太阳系获得的火箭总数。 */

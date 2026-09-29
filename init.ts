@@ -478,7 +478,8 @@ if (levelTotal <= 0) {
 				const score = def.bonusPoints !== undefined ? (r === 'success' ? (telem.bonusRockets || 0) : 0) : evalInfo.rockets;
 				if (def.bonusPoints !== undefined) {
 					evalInfo.rockets = score;
-					evalInfo.achieved = [r === 'success', score > 0, score >= (def.bonusPoints.length || 1)];
+					const maxRockets = def.bonusPoints.length > 0 ? def.bonusPoints.length : 1;
+					evalInfo.achieved = [r === 'success', score > 0, score >= maxRockets];
 				}
 
 				// 完成记录与最高分分离；只在成功结果时更新本局最高分。

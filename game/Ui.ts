@@ -19,7 +19,6 @@
  * 字体：`Label()` 可能返回 undefined（字体缺失）。所有创建函数都把 undefined
  * 原样交给调用方，由调用方决定是“跳过这一行字”还是报错（手册 §7.1）。
  */
-/// <reference path="../tools/dora-build/dora-types/nvg.d.ts" />
 import { Audio, Color, DrawNode, Label, Node, Size, Vec2, VGNode } from 'Dora';
 import * as nvg from 'nvg';
 

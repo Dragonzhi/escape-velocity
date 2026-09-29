@@ -23,303 +23,294 @@ local parseTga = ____Vision.parseTga -- 19
 local rgbAt = ____Vision.rgbAt -- 19
 local ____Tuning = require("game.Tuning") -- 20
 local levelRuntime = ____Tuning.levelRuntime -- 20
---- 递归打印节点树（位置/缩放/可见性）—— 认"那块灰"用。
--- 
--- ⚠️ 参数用 `any`：`children` 在 d.ts 里挂在 `Node` 上，而 `Node3D` 的声明里没有它
--- （`Node` 的 position 又是 Vec2，强转会把 z 弄丢），索性按 Lua 侧的真实形状走。
-local function dumpTree(node, depth, out) -- 28
-	local kids = node.children -- 29
-	if kids == nil then -- 29
-		return -- 30
-	end -- 30
-	local pad = "" -- 31
-	do -- 31
-		local i = 0 -- 32
-		while i < depth do -- 32
-			pad = pad .. "  " -- 32
-			i = i + 1 -- 32
-		end -- 32
-	end -- 32
-	local n = kids.count -- 33
-	do -- 33
-		local i = 0 -- 34
-		while i < n do -- 34
-			local c = kids[i] -- 35
-			local ____temp_0 -- 36
-			if c.children ~= nil then -- 36
-				____temp_0 = c.children.count -- 36
-			else -- 36
-				____temp_0 = 0 -- 36
-			end -- 36
-			local gc = ____temp_0 -- 36
-			out[#out + 1] = (((((((((((((pad .. "-") .. __TS__NumberToFixed(i, 0)) .. " pos=(") .. tostring(c.position.x.toFixed(4))) .. ",") .. tostring(c.position.y.toFixed(4))) .. ",") .. tostring(c.position.z.toFixed(4))) .. ") scale=") .. tostring(c.scale.x.toFixed(6))) .. " visible=") .. tostring(c.visible and 1 or 0)) .. " kids=") .. tostring(gc.toFixed(0)) -- 37
-			if depth < 2 then -- 37
-				dumpTree(c, depth + 1, out) -- 39
-			end -- 39
-			i = i + 1 -- 34
-		end -- 34
-	end -- 34
-end -- 28
+local function dumpTree(rawNode, depth, out) -- 32
+	local node = rawNode -- 34
+	local kids = node.children -- 35
+	if kids == nil then -- 35
+		return -- 36
+	end -- 36
+	local pad = "" -- 37
+	do -- 37
+		local i = 0 -- 38
+		while i < depth do -- 38
+			pad = pad .. "  " -- 38
+			i = i + 1 -- 38
+		end -- 38
+	end -- 38
+	local n = kids.count -- 39
+	do -- 39
+		local i = 0 -- 40
+		while i < n do -- 40
+			local c = kids:get(i + 1) -- 41
+			local gc = c.children ~= nil and c.children.count or 0 -- 42
+			out[#out + 1] = (((((((((((((pad .. "-") .. __TS__NumberToFixed(i, 0)) .. " pos=(") .. __TS__NumberToFixed(c.position.x, 4)) .. ",") .. __TS__NumberToFixed(c.position.y, 4)) .. ",") .. __TS__NumberToFixed(c.position.z, 4)) .. ") scale=") .. __TS__NumberToFixed(c.scale.x, 6)) .. " visible=") .. tostring(c.visible and 1 or 0)) .. " kids=") .. __TS__NumberToFixed(gc, 0) -- 43
+			if depth < 2 then -- 43
+				dumpTree(c, depth + 1, out) -- 45
+			end -- 45
+			i = i + 1 -- 40
+		end -- 40
+	end -- 40
+end -- 32
 --- 每张图的背景均值（按变体顺序），最后用来出判定。
-local bgMeans = {} -- 52
+local bgMeans = {} -- 58
 --- 报告一张截图的**上带**颜色。
 -- 
 -- 取样区 = 横向 2%~98%、纵向 4.5%~14%（y ≈ 62~193）：
 -- 这一段在 L1 贴地球机位里一定**在地球盘面之上**（地球盘面的上缘在 y ≈ 240），
 -- 所以它读到的就是"背景"本身 —— 那块灰正是出现在这里（旧取样区落在盘面上，读成了地球的颜色）。
-local function analyze(shotPath, v) -- 61
-	local out = {} -- 62
+local function analyze(shotPath, v) -- 67
+	local out = {} -- 68
 	out[#out + 1] = ((((((("--- " .. v.label) .. " (near=") .. tostring(v.near)) .. " far=") .. tostring(v.far)) .. " hide=") .. v.hide) .. ") ---"
-	if not Content:exist(shotPath) then -- 63
-		out[#out + 1] = "  VISION FAILED: not found " .. shotPath -- 65
-		return out -- 66
-	end -- 66
-	local img = parseTga(Content:load(shotPath)) -- 68
-	if img == nil then -- 68
-		out[#out + 1] = "  VISION FAILED: unsupported TGA" -- 70
-		return out -- 71
-	end -- 71
-	local r = 0 -- 73
-	local g = 0 -- 73
-	local b = 0 -- 73
-	local n = 0 -- 73
-	local x0 = math.floor(img.width * 0.02) -- 74
-	local x1 = math.floor(img.width * 0.98) -- 75
-	local y0 = math.floor(img.height * 0.045) -- 76
-	local y1 = math.floor(img.height * 0.14) -- 77
-	do -- 77
-		local y = y0 -- 78
-		while y < y1 do -- 78
-			do -- 78
-				local x = x0 -- 79
-				while x < x1 do -- 79
-					local c = rgbAt(img, x, y) -- 80
-					r = r + c[1] -- 81
-					g = g + c[2] -- 81
-					b = b + c[3] -- 81
-					n = n + 1 -- 81
-					x = x + 7 -- 79
-				end -- 79
-			end -- 79
-			y = y + 7 -- 78
-		end -- 78
-	end -- 78
-	local cx = rgbAt( -- 84
-		img, -- 84
-		math.floor(img.width / 2), -- 84
-		math.floor(img.height / 2) -- 84
-	) -- 84
-	local mean = (r + g + b) / 3 / n -- 85
-	bgMeans[#bgMeans + 1] = mean -- 86
-	out[#out + 1] = (((((((((((((((("  size=" .. __TS__NumberToFixed(img.width, 0)) .. "x") .. __TS__NumberToFixed(img.height, 0)) .. " bgMean=(") .. __TS__NumberToFixed(r / n, 1)) .. ",") .. __TS__NumberToFixed(g / n, 1)) .. ",") .. __TS__NumberToFixed(b / n, 1)) .. ")") .. " center=(") .. __TS__NumberToFixed(cx[1], 0)) .. ",") .. __TS__NumberToFixed(cx[2], 0)) .. ",") .. __TS__NumberToFixed(cx[3], 0)) .. ")" -- 87
-	return out -- 90
-end -- 61
+	if not Content:exist(shotPath) then -- 69
+		out[#out + 1] = "  VISION FAILED: not found " .. shotPath -- 71
+		return out -- 72
+	end -- 72
+	local img = parseTga(Content:load(shotPath)) -- 74
+	if img == nil then -- 74
+		out[#out + 1] = "  VISION FAILED: unsupported TGA" -- 76
+		return out -- 77
+	end -- 77
+	local r = 0 -- 79
+	local g = 0 -- 79
+	local b = 0 -- 79
+	local n = 0 -- 79
+	local x0 = math.floor(img.width * 0.02) -- 80
+	local x1 = math.floor(img.width * 0.98) -- 81
+	local y0 = math.floor(img.height * 0.045) -- 82
+	local y1 = math.floor(img.height * 0.14) -- 83
+	do -- 83
+		local y = y0 -- 84
+		while y < y1 do -- 84
+			do -- 84
+				local x = x0 -- 85
+				while x < x1 do -- 85
+					local c = rgbAt(img, x, y) -- 86
+					r = r + c[1] -- 87
+					g = g + c[2] -- 87
+					b = b + c[3] -- 87
+					n = n + 1 -- 87
+					x = x + 7 -- 85
+				end -- 85
+			end -- 85
+			y = y + 7 -- 84
+		end -- 84
+	end -- 84
+	local cx = rgbAt( -- 90
+		img, -- 90
+		math.floor(img.width / 2), -- 90
+		math.floor(img.height / 2) -- 90
+	) -- 90
+	local mean = (r + g + b) / 3 / n -- 91
+	bgMeans[#bgMeans + 1] = mean -- 92
+	out[#out + 1] = (((((((((((((((("  size=" .. __TS__NumberToFixed(img.width, 0)) .. "x") .. __TS__NumberToFixed(img.height, 0)) .. " bgMean=(") .. __TS__NumberToFixed(r / n, 1)) .. ",") .. __TS__NumberToFixed(g / n, 1)) .. ",") .. __TS__NumberToFixed(b / n, 1)) .. ")") .. " center=(") .. __TS__NumberToFixed(cx[1], 0)) .. ",") .. __TS__NumberToFixed(cx[2], 0)) .. ",") .. __TS__NumberToFixed(cx[3], 0)) .. ")" -- 93
+	return out -- 96
+end -- 67
 --- 项目根：单文件入口下 `Content.searchPaths[0]` 是 `<proj>/Test`（AGENTS 的"搜索根陷阱"）——
 -- 上跳一级才是项目根，否则标记文件会写进 `Test/.agent/...`（曾经踩过）。
-local function findRoot() -- 97
-	local sp0 = Content.searchPaths[1] -- 98
-	if sp0 ~= nil then -- 98
-		local up = Path(sp0, "..") -- 100
-		if Content:exist(Path(up, "game", "Scene.lua")) then -- 100
-			return up -- 101
-		end -- 101
-		if Content:exist(Path(sp0, "game", "Scene.lua")) then -- 101
-			return sp0 -- 102
-		end -- 102
-	end -- 102
-	return Path(Content.writablePath, "escape-velocity") -- 104
-end -- 97
-local root = findRoot() -- 107
-local outDir = Path(root, ".agent", "test-results") -- 108
-if not Content:exist(outDir) then -- 108
-	Content:mkdir(outDir) -- 109
-end -- 109
-local marker = Path(outDir, "clip-probe.txt") -- 110
-local lines = {} -- 112
-local function flush(final) -- 113
-	Content:save( -- 114
-		marker, -- 114
-		table.concat(lines, "\n") .. (final and "\nphase=done" or "") -- 114
-	) -- 114
-end -- 113
-lines[#lines + 1] = "phase=started" -- 116
-flush(false) -- 117
-lines[#lines + 1] = (((((((((("engine defaults: near=" .. tostring(View.nearPlaneDistance)) .. " far=") .. tostring(View.farPlaneDistance)) .. " fov=") .. tostring(View.fieldOfView)) .. " aspect=") .. __TS__NumberToFixed(View.aspectRatio, 4)) .. " standardDistance=") .. tostring(View.standardDistance)) .. " frustumCulling=") .. tostring(View.frustumCulling and 1 or 0) -- 120
-lines[#lines + 1] = (("sky sphere exists: " .. tostring(Content:exist("Assets/Model/StarSphere.gltf") and 1 or 0)) .. " ; sky quad exists: ") .. tostring(Content:exist("Assets/Model/StarQuad.gltf") and 1 or 0) -- 123
-flush(false) -- 125
-local def = getLevel(0) -- 127
-if def == nil then -- 127
-	lines[#lines + 1] = "RESULT=FAIL reason=no-level-1" -- 129
-	flush(true) -- 130
-else -- 130
-	local bodies = scaledPlanets(def) -- 132
-	local world = Node3D() -- 133
-	Director.entry:addChild(world) -- 134
-	local rtg = def.probeVariant == "rtg" -- 135
-	local scene = buildScene({ -- 136
-		root = world, -- 137
-		bodies = bodies, -- 138
-		visuals = def.visuals, -- 139
-		probeStart = def.probeStart, -- 140
-		probeScale = levelRuntime(0).probeVisualRadius, -- 141
-		spherePath = "Assets/Model/Sphere.gltf", -- 142
-		ringPath = "Assets/Model/Ring.gltf", -- 143
-		probePath = "Assets/Model/Probe_Voyager_v1.glb", -- 144
-		probeBodyPath = rtg and "Assets/Model/Probe_RTG_Body.glb" or "Assets/Model/Probe_Solar_Body.glb", -- 145
-		probeAntennaPath = rtg and "Assets/Model/Probe_RTG_Antenna.glb" or "Assets/Model/Probe_Solar_Antenna.glb", -- 146
-		probeAntennaPivotY = rtg and 0.6641 or 0.6495, -- 147
-		probeBodyRadius = rtg and 0.871 or 1.084, -- 148
-		probeAtlasPath = "Assets/Image/probe_atlas.jpg", -- 149
-		orbitFlowDots = levelRuntime(0).orbitFlowDots, -- 152
-		orbitRings = levelRuntime(0).orbitRings -- 153
-	}) -- 153
-	flush(false) -- 155
-	if scene == nil then -- 155
-		lines[#lines + 1] = "RESULT=FAIL reason=scene-build-failed" -- 158
-		flush(true) -- 159
-	else -- 159
-		lines[#lines + 1] = "scene built; probeRadius=" .. tostring(scene.probeRadius) -- 161
-		do -- 161
-			local i = 0 -- 162
-			while i < #def.visuals do -- 162
-				local ____temp_2 = ("  body " .. __TS__NumberToFixed(i, 0)) .. " model=" -- 163
-				local ____temp_1 -- 163
-				if def.visuals[i + 1].model ~= nil then -- 163
-					____temp_1 = def.visuals[i + 1].model -- 163
-				else -- 163
-					____temp_1 = "?" -- 163
-				end -- 163
-				lines[#lines + 1] = ((((____temp_2 .. tostring(____temp_1)) .. " displayRadius=") .. tostring(def.visuals[i + 1].displayRadius)) .. " orbitRadius=") .. __TS__NumberToFixed(bodies[i + 1].orbitRadius, 6) -- 163
-				i = i + 1 -- 162
-			end -- 162
-		end -- 162
-		flush(false) -- 167
-		local camera = Camera3D() -- 169
-		Director:pushCamera(camera) -- 170
-		local target = planeToWorld({x = 0, y = 80}, 0) -- 173
-		local dist = 0.01264 -- 174
-		local tilt = 22 * math.pi / 180 -- 175
-		local eye = Vec3( -- 176
-			target.x, -- 176
-			target.y + math.sin(tilt) * dist, -- 176
-			target.z + math.cos(tilt) * dist -- 176
-		) -- 176
-		camera:lookAt( -- 177
-			eye, -- 177
-			target, -- 177
-			Vec3(0, 1, 0) -- 177
-		) -- 177
-		scene.syncBodies(0) -- 178
-		scene.syncProbe({x = 0, y = 80.003514}) -- 181
-		scene.syncBackdrop(eye, target) -- 182
-		local nearOpt = levelRuntime(0).cameraNear -- 185
-		local shippedNear = nearOpt ~= nil and nearOpt > 0 and nearOpt or 0.1 -- 186
-		local variants = {{label = "base(发布配置)", near = shippedNear, far = 10000, hide = "none"}, {label = "only-sky", near = shippedNear, far = 10000, hide = "all"}, {label = "world-off", near = shippedNear, far = 10000, hide = "world"}, {label = "engine-near0.1", near = 0.1, far = 10000, hide = "none"}} -- 187
+local function findRoot() -- 103
+	local sp0 = Content.searchPaths[1] -- 104
+	if sp0 ~= nil then -- 104
+		local up = Path(sp0, "..") -- 106
+		if Content:exist(Path(up, "game", "Scene.lua")) then -- 106
+			return up -- 107
+		end -- 107
+		if Content:exist(Path(sp0, "game", "Scene.lua")) then -- 107
+			return sp0 -- 108
+		end -- 108
+	end -- 108
+	return Path(Content.writablePath, "escape-velocity") -- 110
+end -- 103
+local root = findRoot() -- 113
+local outDir = Path(root, ".agent", "test-results") -- 114
+if not Content:exist(outDir) then -- 114
+	Content:mkdir(outDir) -- 115
+end -- 115
+local marker = Path(outDir, "clip-probe.txt") -- 116
+local lines = {} -- 118
+local function flush(final) -- 119
+	Content:save( -- 120
+		marker, -- 120
+		table.concat(lines, "\n") .. (final and "\nphase=done" or "") -- 120
+	) -- 120
+end -- 119
+lines[#lines + 1] = "phase=started" -- 122
+flush(false) -- 123
+lines[#lines + 1] = (((((((((("engine defaults: near=" .. tostring(View.nearPlaneDistance)) .. " far=") .. tostring(View.farPlaneDistance)) .. " fov=") .. tostring(View.fieldOfView)) .. " aspect=") .. __TS__NumberToFixed(View.aspectRatio, 4)) .. " standardDistance=") .. tostring(View.standardDistance)) .. " frustumCulling=") .. tostring(View.frustumCulling and 1 or 0) -- 126
+lines[#lines + 1] = (("sky sphere exists: " .. tostring(Content:exist("Assets/Model/StarSphere.gltf") and 1 or 0)) .. " ; sky quad exists: ") .. tostring(Content:exist("Assets/Model/StarQuad.gltf") and 1 or 0) -- 129
+flush(false) -- 131
+local def = getLevel(0) -- 133
+if def == nil then -- 133
+	lines[#lines + 1] = "RESULT=FAIL reason=no-level-1" -- 135
+	flush(true) -- 136
+else -- 136
+	local bodies = scaledPlanets(def) -- 138
+	local world = Node3D() -- 139
+	Director.entry:addChild(world) -- 140
+	local rtg = def.probeVariant == "rtg" -- 141
+	local scene = buildScene({ -- 142
+		root = world, -- 143
+		bodies = bodies, -- 144
+		visuals = def.visuals, -- 145
+		probeStart = def.probeStart, -- 146
+		probeScale = levelRuntime(0).probeVisualRadius, -- 147
+		spherePath = "Assets/Model/Sphere.gltf", -- 148
+		ringPath = "Assets/Model/Ring.gltf", -- 149
+		probePath = "Assets/Model/Probe_Voyager_v1.glb", -- 150
+		probeBodyPath = rtg and "Assets/Model/Probe_RTG_Body.glb" or "Assets/Model/Probe_Solar_Body.glb", -- 151
+		probeAntennaPath = rtg and "Assets/Model/Probe_RTG_Antenna.glb" or "Assets/Model/Probe_Solar_Antenna.glb", -- 152
+		probeAntennaPivotY = rtg and 0.6641 or 0.6495, -- 153
+		probeBodyRadius = rtg and 0.871 or 1.084, -- 154
+		probeAtlasPath = "Assets/Image/probe_atlas.jpg", -- 155
+		orbitFlowDots = levelRuntime(0).orbitFlowDots, -- 158
+		orbitRings = levelRuntime(0).orbitRings -- 159
+	}) -- 159
+	flush(false) -- 161
+	if scene == nil then -- 161
+		lines[#lines + 1] = "RESULT=FAIL reason=scene-build-failed" -- 164
+		flush(true) -- 165
+	else -- 165
+		lines[#lines + 1] = "scene built; probeRadius=" .. tostring(scene.probeRadius) -- 167
+		do -- 167
+			local i = 0 -- 168
+			while i < #def.visuals do -- 168
+				local ____temp_1 = ("  body " .. __TS__NumberToFixed(i, 0)) .. " model=" -- 169
+				local ____temp_0 -- 169
+				if def.visuals[i + 1].model ~= nil then -- 169
+					____temp_0 = def.visuals[i + 1].model -- 169
+				else -- 169
+					____temp_0 = "?" -- 169
+				end -- 169
+				lines[#lines + 1] = ((((____temp_1 .. tostring(____temp_0)) .. " displayRadius=") .. tostring(def.visuals[i + 1].displayRadius)) .. " orbitRadius=") .. __TS__NumberToFixed(bodies[i + 1].orbitRadius, 6) -- 169
+				i = i + 1 -- 168
+			end -- 168
+		end -- 168
+		flush(false) -- 173
+		local camera = Camera3D() -- 175
+		Director:pushCamera(camera) -- 176
+		local target = planeToWorld({x = 0, y = 80}, 0) -- 179
+		local dist = 0.01264 -- 180
+		local tilt = 22 * math.pi / 180 -- 181
+		local eye = Vec3( -- 182
+			target.x, -- 182
+			target.y + math.sin(tilt) * dist, -- 182
+			target.z + math.cos(tilt) * dist -- 182
+		) -- 182
+		camera:lookAt( -- 183
+			eye, -- 183
+			target, -- 183
+			Vec3(0, 1, 0) -- 183
+		) -- 183
+		scene.syncBodies(0) -- 184
+		scene.syncProbe({x = 0, y = 80.003514}) -- 187
+		scene.syncBackdrop(eye, target) -- 188
+		local nearOpt = levelRuntime(0).cameraNear -- 191
+		local shippedNear = nearOpt ~= nil and nearOpt > 0 and nearOpt or 0.1 -- 192
+		local variants = {{label = "base(发布配置)", near = shippedNear, far = 10000, hide = "none"}, {label = "only-sky", near = shippedNear, far = 10000, hide = "all"}, {label = "world-off", near = shippedNear, far = 10000, hide = "world"}, {label = "engine-near0.1", near = 0.1, far = 10000, hide = "none"}} -- 193
 		--- 把节点恢复成全部可见，再按变体藏指定的那一个。
-		local function applyHide(what) -- 194
-			world.visible = true -- 195
-			do -- 195
-				local i = 0 -- 196
-				while i < #scene.planets do -- 196
-					scene.planets[i + 1].body.visible = true -- 196
-					i = i + 1 -- 196
-				end -- 196
-			end -- 196
-			scene.probe.visible = true -- 197
-			if what == "world" then -- 197
-				world.visible = false -- 198
-				return -- 198
-			end -- 198
-			if what == "probe" then -- 198
-				scene.probe.visible = false -- 199
-				return -- 199
-			end -- 199
-			if what == "all" then -- 199
-				do -- 199
-					local i = 0 -- 201
-					while i < #scene.planets do -- 201
-						scene.planets[i + 1].body.visible = false -- 201
-						i = i + 1 -- 201
-					end -- 201
-				end -- 201
-				scene.probe.visible = false -- 202
-				return -- 203
-			end -- 203
-			if what == "sun" then -- 203
-				scene.planets[1].body.visible = false -- 205
-			elseif what == "earth" then -- 205
-				scene.planets[2].body.visible = false -- 206
-			elseif what == "moon" then -- 206
-				scene.planets[3].body.visible = false -- 207
-			end -- 207
-		end -- 194
-		do -- 194
-			local i = 0 -- 210
-			while i < #scene.planets do -- 210
-				local n = scene.planets[i + 1].body -- 211
-				lines[#lines + 1] = (((((((((("  node[" .. __TS__NumberToFixed(i, 0)) .. "] pos=(") .. __TS__NumberToFixed(n.position.x, 4)) .. ",") .. __TS__NumberToFixed(n.position.y, 4)) .. ",") .. __TS__NumberToFixed(n.position.z, 4)) .. ") scale=") .. __TS__NumberToFixed(n.scale.x, 6)) .. " visible=") .. tostring(n.visible and 1 or 0) -- 212
-				i = i + 1 -- 210
-			end -- 210
-		end -- 210
-		lines[#lines + 1] = (((((("  probe pos=(" .. __TS__NumberToFixed(scene.probe.position.x, 4)) .. ",") .. __TS__NumberToFixed(scene.probe.position.y, 4)) .. ",") .. __TS__NumberToFixed(scene.probe.position.z, 4)) .. ") scale=") .. __TS__NumberToFixed(scene.probe.scale.x, 8) -- 215
+		local function applyHide(what) -- 200
+			world.visible = true -- 201
+			do -- 201
+				local i = 0 -- 202
+				while i < #scene.planets do -- 202
+					scene.planets[i + 1].body.visible = true -- 202
+					i = i + 1 -- 202
+				end -- 202
+			end -- 202
+			scene.probe.visible = true -- 203
+			if what == "world" then -- 203
+				world.visible = false -- 204
+				return -- 204
+			end -- 204
+			if what == "probe" then -- 204
+				scene.probe.visible = false -- 205
+				return -- 205
+			end -- 205
+			if what == "all" then -- 205
+				do -- 205
+					local i = 0 -- 207
+					while i < #scene.planets do -- 207
+						scene.planets[i + 1].body.visible = false -- 207
+						i = i + 1 -- 207
+					end -- 207
+				end -- 207
+				scene.probe.visible = false -- 208
+				return -- 209
+			end -- 209
+			if what == "sun" then -- 209
+				scene.planets[1].body.visible = false -- 211
+			elseif what == "earth" then -- 211
+				scene.planets[2].body.visible = false -- 212
+			elseif what == "moon" then -- 212
+				scene.planets[3].body.visible = false -- 213
+			end -- 213
+		end -- 200
+		do -- 200
+			local i = 0 -- 216
+			while i < #scene.planets do -- 216
+				local n = scene.planets[i + 1].body -- 217
+				lines[#lines + 1] = (((((((((("  node[" .. __TS__NumberToFixed(i, 0)) .. "] pos=(") .. __TS__NumberToFixed(n.position.x, 4)) .. ",") .. __TS__NumberToFixed(n.position.y, 4)) .. ",") .. __TS__NumberToFixed(n.position.z, 4)) .. ") scale=") .. __TS__NumberToFixed(n.scale.x, 6)) .. " visible=") .. tostring(n.visible and 1 or 0) -- 218
+				i = i + 1 -- 216
+			end -- 216
+		end -- 216
+		lines[#lines + 1] = (((((("  probe pos=(" .. __TS__NumberToFixed(scene.probe.position.x, 4)) .. ",") .. __TS__NumberToFixed(scene.probe.position.y, 4)) .. ",") .. __TS__NumberToFixed(scene.probe.position.z, 4)) .. ") scale=") .. __TS__NumberToFixed(scene.probe.scale.x, 8) -- 221
 		lines[#lines + 1] = "--- scene tree under world ---"
-		local tree = {} -- 220
-		dumpTree(world, 0, tree) -- 221
-		for ____, t in ipairs(tree) do -- 222
-			lines[#lines + 1] = t -- 222
-		end -- 222
-		flush(false) -- 223
-		local shots = {} -- 224
-		local FramesPerVariant = 24 -- 225
-		local frame = 0 -- 226
-		lines[#lines + 1] = (("variants=" .. __TS__NumberToFixed(#variants, 0)) .. " framesPerVariant=") .. __TS__NumberToFixed(FramesPerVariant, 0) -- 228
+		local tree = {} -- 226
+		dumpTree(world, 0, tree) -- 227
+		for ____, t in ipairs(tree) do -- 228
+			lines[#lines + 1] = t -- 228
+		end -- 228
 		flush(false) -- 229
-		threadLoop(function() -- 231
-			local vi = math.floor(frame / FramesPerVariant) -- 232
-			if vi >= #variants then -- 232
-				local report = {} -- 234
-				do -- 234
-					local i = 0 -- 235
-					while i < #shots do -- 235
-						local part = analyze(shots[i + 1], variants[i + 1]) -- 236
-						for ____, l in ipairs(part) do -- 237
-							report[#report + 1] = l -- 237
-						end -- 237
-						i = i + 1 -- 235
-					end -- 235
-				end -- 235
-				lines[#lines + 1] = "" -- 239
-				for ____, l in ipairs(report) do -- 240
-					lines[#lines + 1] = l -- 240
-				end -- 240
-				local baseBg = #bgMeans > 0 and bgMeans[1] or -1 -- 244
-				local nearBg = #bgMeans > 3 and bgMeans[4] or -1 -- 245
-				local clearBg = #bgMeans > 2 and bgMeans[3] or -1 -- 246
-				local ok = baseBg >= 0 and baseBg < 45 and nearBg < 45 and clearBg > 20 and clearBg < 32 -- 250
-				lines[#lines + 1] = "" -- 251
-				lines[#lines + 1] = ((((((("VERDICT baseBg=" .. __TS__NumberToFixed(baseBg, 1)) .. " (要 < 45 = 无灰带)") .. " engineNear0.1Bg=") .. __TS__NumberToFixed(nearBg, 1)) .. " (要 < 45 = 暗背景)") .. " clearColorBg=") .. __TS__NumberToFixed(clearBg, 1)) .. " (要 ≈ 26 = 引擎清屏色)" -- 252
-				lines[#lines + 1] = "RESULT=" .. (ok and "PASS" or "FAIL") -- 255
-				flush(true) -- 256
-				return true -- 257
-			end -- 257
-			local ____local = frame % FramesPerVariant -- 259
-			local v = variants[vi + 1] -- 260
-			if ____local == 0 then -- 260
-				View.nearPlaneDistance = v.near -- 262
-				View.farPlaneDistance = v.far -- 263
-				applyHide(v.hide) -- 264
-				scene.syncBackdrop(eye, target) -- 265
-				lines[#lines + 1] = (("variant " .. v.label) .. " applied at frame ") .. __TS__NumberToFixed(frame, 0) -- 266
-				flush(false) -- 267
-			elseif ____local == 4 then -- 267
-				shots[#shots + 1] = App:saveScreenshot(Path( -- 269
-					outDir, -- 269
-					"clip-" .. __TS__NumberToFixed(vi, 0) -- 269
-				)) -- 269
-			end -- 269
-			frame = frame + 1 -- 271
-			return false -- 272
-		end) -- 231
-	end -- 231
-end -- 231
-return ____exports -- 231
+		local shots = {} -- 230
+		local FramesPerVariant = 24 -- 231
+		local frame = 0 -- 232
+		lines[#lines + 1] = (("variants=" .. __TS__NumberToFixed(#variants, 0)) .. " framesPerVariant=") .. __TS__NumberToFixed(FramesPerVariant, 0) -- 234
+		flush(false) -- 235
+		threadLoop(function() -- 237
+			local vi = math.floor(frame / FramesPerVariant) -- 238
+			if vi >= #variants then -- 238
+				local report = {} -- 240
+				do -- 240
+					local i = 0 -- 241
+					while i < #shots do -- 241
+						local part = analyze(shots[i + 1], variants[i + 1]) -- 242
+						for ____, l in ipairs(part) do -- 243
+							report[#report + 1] = l -- 243
+						end -- 243
+						i = i + 1 -- 241
+					end -- 241
+				end -- 241
+				lines[#lines + 1] = "" -- 245
+				for ____, l in ipairs(report) do -- 246
+					lines[#lines + 1] = l -- 246
+				end -- 246
+				local baseBg = #bgMeans > 0 and bgMeans[1] or -1 -- 250
+				local nearBg = #bgMeans > 3 and bgMeans[4] or -1 -- 251
+				local clearBg = #bgMeans > 2 and bgMeans[3] or -1 -- 252
+				local ok = baseBg >= 0 and baseBg < 45 and nearBg < 45 and clearBg > 20 and clearBg < 32 -- 256
+				lines[#lines + 1] = "" -- 257
+				lines[#lines + 1] = ((((((("VERDICT baseBg=" .. __TS__NumberToFixed(baseBg, 1)) .. " (要 < 45 = 无灰带)") .. " engineNear0.1Bg=") .. __TS__NumberToFixed(nearBg, 1)) .. " (要 < 45 = 暗背景)") .. " clearColorBg=") .. __TS__NumberToFixed(clearBg, 1)) .. " (要 ≈ 26 = 引擎清屏色)" -- 258
+				lines[#lines + 1] = "RESULT=" .. (ok and "PASS" or "FAIL") -- 261
+				flush(true) -- 262
+				return true -- 263
+			end -- 263
+			local ____local = frame % FramesPerVariant -- 265
+			local v = variants[vi + 1] -- 266
+			if ____local == 0 then -- 266
+				View.nearPlaneDistance = v.near -- 268
+				View.farPlaneDistance = v.far -- 269
+				applyHide(v.hide) -- 270
+				scene.syncBackdrop(eye, target) -- 271
+				lines[#lines + 1] = (("variant " .. v.label) .. " applied at frame ") .. __TS__NumberToFixed(frame, 0) -- 272
+				flush(false) -- 273
+			elseif ____local == 4 then -- 273
+				shots[#shots + 1] = App:saveScreenshot(Path( -- 275
+					outDir, -- 275
+					"clip-" .. __TS__NumberToFixed(vi, 0) -- 275
+				)) -- 275
+			end -- 275
+			frame = frame + 1 -- 277
+			return false -- 278
+		end) -- 237
+	end -- 237
+end -- 237
+return ____exports -- 237

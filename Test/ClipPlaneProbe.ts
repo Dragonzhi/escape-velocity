@@ -21,22 +21,28 @@ import { levelRuntime } from 'game/Tuning';
 
 /**
  * 递归打印节点树（位置/缩放/可见性）—— 认"那块灰"用。
- *
- * ⚠️ 参数用 `any`：`children` 在 d.ts 里挂在 `Node` 上，而 `Node3D` 的声明里没有它
- * （`Node` 的 position 又是 Vec2，强转会把 z 弄丢），索性按 Lua 侧的真实形状走。
  */
-function dumpTree(node: any, depth: number, out: string[]): void {
-	const kids: any = node.children;
+interface ProbeTreeNode {
+	children?: { readonly count: number; get(index: number): unknown };
+	position: Vec3.Type;
+	scale: Vec3.Type;
+	visible: boolean;
+}
+
+function dumpTree(rawNode: Node3D.Type, depth: number, out: string[]): void {
+	// Node3D 的运行时有 children，但当前 d.ts 只在 2D Node 上声明；窄化只补这个探针需要的形状。
+	const node = rawNode as unknown as ProbeTreeNode;
+	const kids = node.children;
 	if (kids === undefined) return;
 	let pad = '';
 	for (let i = 0; i < depth; i++) pad += '  ';
 	const n: number = kids.count;
 	for (let i = 0; i < n; i++) {
-		const c: any = kids[i];
+		const c = kids.get(i + 1) as unknown as ProbeTreeNode;
 		const gc = c.children !== undefined ? c.children.count : 0;
 		out.push(pad + '-' + i.toFixed(0) + ' pos=(' + c.position.x.toFixed(4) + ',' + c.position.y.toFixed(4) + ',' + c.position.z.toFixed(4)
 			+ ') scale=' + c.scale.x.toFixed(6) + ' visible=' + (c.visible ? 1 : 0) + ' kids=' + gc.toFixed(0));
-		if (depth < 2) dumpTree(c, depth + 1, out);
+		if (depth < 2) dumpTree(c as unknown as Node3D.Type, depth + 1, out);
 	}
 }
 

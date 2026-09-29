@@ -18,7 +18,8 @@ function ____exports.getMissionCompleted(p, levelIndex) -- 117
 	if p.completed ~= nil and p.completed[key] ~= nil then -- 118
 		return p.completed[key] -- 119
 	end -- 119
-	return p.rockets ~= nil and (p.rockets[key] or 0) > 0 or levelIndex < p.unlocked -- 120
+	local rockets = p.rockets ~= nil and p.rockets[key] ~= nil and p.rockets[key] or 0 -- 120
+	return rockets > 0 or levelIndex < p.unlocked -- 121
 end -- 117
 --- 存档文件名（相对 `Content.writablePath`）。
 ____exports.ProgressFileName = "escape-velocity.progress" -- 24
@@ -130,155 +131,155 @@ function ____exports.recordMissionResult(p, levelIndex, rocketCount, levelCount,
 	return {unlocked = nextUnlocked, rockets = nextMap, completed = completedMap, bestScores = bestMap} -- 109
 end -- 78
 --- 统计全太阳系获得的火箭总数。
-function ____exports.getTotalRockets(p, levelCount) -- 124
-	local total = 0 -- 125
-	do -- 125
-		local i = 0 -- 126
-		while i < levelCount do -- 126
-			total = total + ____exports.getMissionRockets(p, i) -- 127
-			i = i + 1 -- 126
-		end -- 126
-	end -- 126
-	return total -- 129
-end -- 124
+function ____exports.getTotalRockets(p, levelCount) -- 125
+	local total = 0 -- 126
+	do -- 126
+		local i = 0 -- 127
+		while i < levelCount do -- 127
+			total = total + ____exports.getMissionRockets(p, i) -- 128
+			i = i + 1 -- 127
+		end -- 127
+	end -- 127
+	return total -- 130
+end -- 125
 --- 解析纯十进制数字。
-local function parseDigits(value) -- 133
-	local v = __TS__StringTrim(value) -- 134
-	if #v == 0 then -- 134
-		return 0 / 0 -- 135
-	end -- 135
-	do -- 135
-		local i = 0 -- 136
-		while i < #v do -- 136
-			local c = __TS__StringCharCodeAt(v, i) -- 137
-			if c < 48 or c > 57 then -- 137
-				return 0 / 0 -- 138
-			end -- 138
-			i = i + 1 -- 136
-		end -- 136
+local function parseDigits(value) -- 134
+	local v = __TS__StringTrim(value) -- 135
+	if #v == 0 then -- 135
+		return 0 / 0 -- 136
 	end -- 136
-	return __TS__ParseInt(v, 10) -- 140
-end -- 133
+	do -- 136
+		local i = 0 -- 137
+		while i < #v do -- 137
+			local c = __TS__StringCharCodeAt(v, i) -- 138
+			if c < 48 or c > 57 then -- 138
+				return 0 / 0 -- 139
+			end -- 139
+			i = i + 1 -- 137
+		end -- 137
+	end -- 137
+	return __TS__ParseInt(v, 10) -- 141
+end -- 134
 --- 读进度。文件不存在 / 内容损坏 / 数字非法 → `{ unlocked: 0, rockets: {} }`，不抛错。
-function ____exports.loadProgress(levelCount) -- 146
-	local file = ____exports.progressFilePath() -- 147
-	local text = "" -- 148
-	do -- 148
-		local function ____catch(e) -- 148
-			return true, {unlocked = 0, rockets = {}, completed = {}, bestScores = {}} -- 152
-		end -- 152
-		local ____try, ____hasReturned, ____returnValue = pcall(function() -- 152
-			if Content:exist(file) then -- 152
-				text = Content:load(file) -- 150
-			end -- 150
-		end) -- 150
-		if not ____try then -- 150
-			____hasReturned, ____returnValue = ____catch(____hasReturned) -- 150
+function ____exports.loadProgress(levelCount) -- 147
+	local file = ____exports.progressFilePath() -- 148
+	local text = "" -- 149
+	do -- 149
+		local function ____catch(e) -- 149
+			return true, {unlocked = 0, rockets = {}, completed = {}, bestScores = {}} -- 153
+		end -- 153
+		local ____try, ____hasReturned, ____returnValue = pcall(function() -- 153
+			if Content:exist(file) then -- 153
+				text = Content:load(file) -- 151
+			end -- 151
+		end) -- 151
+		if not ____try then -- 151
+			____hasReturned, ____returnValue = ____catch(____hasReturned) -- 151
+		end -- 151
+		if ____hasReturned then -- 151
+			return ____returnValue -- 150
 		end -- 150
-		if ____hasReturned then -- 150
-			return ____returnValue -- 149
-		end -- 149
-	end -- 149
-	local unlocked = 0 -- 155
-	local rockets = {} -- 156
-	local completed = {} -- 157
-	local bestScores = {} -- 158
-	local lines = __TS__StringSplit(text, "\n") -- 160
-	for ____, rawLine in ipairs(lines) do -- 161
-		local line = __TS__StringTrim(rawLine) -- 162
-		if __TS__StringStartsWith(line, ____exports.ProgressKey) then -- 162
-			local val = parseDigits(__TS__StringSubstring(line, #____exports.ProgressKey)) -- 164
-			if not __TS__NumberIsNaN(__TS__Number(val)) then -- 164
-				unlocked = ____exports.clampUnlocked(val, levelCount) -- 165
-			end -- 165
-		elseif __TS__StringStartsWith(line, "complete:") then -- 165
-			local parts = __TS__StringSplit( -- 167
-				__TS__StringSubstring(line, 8), -- 167
-				"=" -- 167
-			) -- 167
-			if #parts == 2 then -- 167
-				completed[parts[1]] = parts[2] == "1" -- 168
-			end -- 168
-		elseif __TS__StringStartsWith(line, "best:") then -- 168
-			local parts = __TS__StringSplit( -- 170
-				__TS__StringSubstring(line, 5), -- 170
-				"=" -- 170
-			) -- 170
-			if #parts == 2 then -- 170
-				local val = parseDigits(parts[2]) -- 171
-				if not __TS__NumberIsNaN(__TS__Number(val)) then -- 171
-					bestScores[parts[1]] = math.max(0, val) -- 171
-				end -- 171
-			end -- 171
-		elseif __TS__StringStartsWith(line, "L") and (string.find(line, "=", nil, true) or 0) - 1 > 0 then -- 171
-			local parts = __TS__StringSplit(line, "=") -- 173
-			if #parts == 2 then -- 173
-				local key = __TS__StringTrim(parts[1]) -- 175
-				local val = parseDigits(parts[2]) -- 176
-				if not __TS__NumberIsNaN(__TS__Number(val)) then -- 176
-					rockets[key] = math.max( -- 178
-						0, -- 178
-						math.min(3, val) -- 178
-					) -- 178
-				end -- 178
-			end -- 178
-		end -- 178
-	end -- 178
-	do -- 178
-		local i = 0 -- 184
-		while i < levelCount do -- 184
-			local key = "L" .. __TS__NumberToFixed(i + 1, 0) -- 185
-			if completed[key] == nil then -- 185
-				completed[key] = rockets[key] ~= nil and rockets[key] > 0 or i < unlocked -- 186
-			end -- 186
-			if bestScores[key] == nil then -- 186
-				bestScores[key] = 0 -- 188
-			end -- 188
-			i = i + 1 -- 184
-		end -- 184
-	end -- 184
-	return {unlocked = unlocked, rockets = rockets, completed = completed, bestScores = bestScores} -- 190
-end -- 146
+	end -- 150
+	local unlocked = 0 -- 156
+	local rockets = {} -- 157
+	local completed = {} -- 158
+	local bestScores = {} -- 159
+	local lines = __TS__StringSplit(text, "\n") -- 161
+	for ____, rawLine in ipairs(lines) do -- 162
+		local line = __TS__StringTrim(rawLine) -- 163
+		if __TS__StringStartsWith(line, ____exports.ProgressKey) then -- 163
+			local val = parseDigits(__TS__StringSubstring(line, #____exports.ProgressKey)) -- 165
+			if not __TS__NumberIsNaN(__TS__Number(val)) then -- 165
+				unlocked = ____exports.clampUnlocked(val, levelCount) -- 166
+			end -- 166
+		elseif __TS__StringStartsWith(line, "complete:") then -- 166
+			local parts = __TS__StringSplit( -- 168
+				__TS__StringSubstring(line, 8), -- 168
+				"=" -- 168
+			) -- 168
+			if #parts == 2 then -- 168
+				completed[parts[1]] = parts[2] == "1" -- 169
+			end -- 169
+		elseif __TS__StringStartsWith(line, "best:") then -- 169
+			local parts = __TS__StringSplit( -- 171
+				__TS__StringSubstring(line, 5), -- 171
+				"=" -- 171
+			) -- 171
+			if #parts == 2 then -- 171
+				local val = parseDigits(parts[2]) -- 172
+				if not __TS__NumberIsNaN(__TS__Number(val)) then -- 172
+					bestScores[parts[1]] = math.max(0, val) -- 172
+				end -- 172
+			end -- 172
+		elseif __TS__StringStartsWith(line, "L") and (string.find(line, "=", nil, true) or 0) - 1 > 0 then -- 172
+			local parts = __TS__StringSplit(line, "=") -- 174
+			if #parts == 2 then -- 174
+				local key = __TS__StringTrim(parts[1]) -- 176
+				local val = parseDigits(parts[2]) -- 177
+				if not __TS__NumberIsNaN(__TS__Number(val)) then -- 177
+					rockets[key] = math.max( -- 179
+						0, -- 179
+						math.min(3, val) -- 179
+					) -- 179
+				end -- 179
+			end -- 179
+		end -- 179
+	end -- 179
+	do -- 179
+		local i = 0 -- 185
+		while i < levelCount do -- 185
+			local key = "L" .. __TS__NumberToFixed(i + 1, 0) -- 186
+			if completed[key] == nil then -- 186
+				completed[key] = rockets[key] ~= nil and rockets[key] > 0 or i < unlocked -- 187
+			end -- 187
+			if bestScores[key] == nil then -- 187
+				bestScores[key] = 0 -- 189
+			end -- 189
+			i = i + 1 -- 185
+		end -- 185
+	end -- 185
+	return {unlocked = unlocked, rockets = rockets, completed = completed, bestScores = bestScores} -- 191
+end -- 147
 --- 写进度。保留旧 `unlocked`/`L1` 行，并增加 `complete:L1=1`、`best:L1=N`。
-function ____exports.saveProgress(p) -- 196
-	local value = math.floor(p.unlocked) -- 197
-	if value ~= value or value == math.huge or value == -math.huge then -- 197
-		value = 0 -- 198
-	end -- 198
-	local lines = { -- 200
-		____exports.ProgressKey .. __TS__NumberToFixed(value, 0), -- 200
-		"version=2" -- 200
-	} -- 200
-	if p.rockets ~= nil then -- 200
-		for k in pairs(p.rockets) do -- 202
-			local r = p.rockets[k] -- 203
-			if type(r) == "number" and r > 0 then -- 203
-				lines[#lines + 1] = (k .. "=") .. __TS__NumberToFixed( -- 205
-					math.floor(r), -- 205
-					0 -- 205
-				) -- 205
-			end -- 205
-		end -- 205
-	end -- 205
-	if p.completed ~= nil then -- 205
-		for k in pairs(p.completed) do -- 209
-			lines[#lines + 1] = (("complete:" .. k) .. "=") .. (p.completed[k] and "1" or "0") -- 209
-		end -- 209
-	end -- 209
-	if p.bestScores ~= nil then -- 209
-		for k in pairs(p.bestScores) do -- 210
-			lines[#lines + 1] = (("best:" .. k) .. "=") .. __TS__NumberToFixed( -- 210
-				math.max( -- 210
-					0, -- 210
-					math.floor(p.bestScores[k]) -- 210
-				), -- 210
-				0 -- 210
-			) -- 210
+function ____exports.saveProgress(p) -- 197
+	local value = math.floor(p.unlocked) -- 198
+	if value ~= value or value == math.huge or value == -math.huge then -- 198
+		value = 0 -- 199
+	end -- 199
+	local lines = { -- 201
+		____exports.ProgressKey .. __TS__NumberToFixed(value, 0), -- 201
+		"version=2" -- 201
+	} -- 201
+	if p.rockets ~= nil then -- 201
+		for k in pairs(p.rockets) do -- 203
+			local r = p.rockets[k] -- 204
+			if type(r) == "number" and r > 0 then -- 204
+				lines[#lines + 1] = (k .. "=") .. __TS__NumberToFixed( -- 206
+					math.floor(r), -- 206
+					0 -- 206
+				) -- 206
+			end -- 206
+		end -- 206
+	end -- 206
+	if p.completed ~= nil then -- 206
+		for k in pairs(p.completed) do -- 210
+			lines[#lines + 1] = (("complete:" .. k) .. "=") .. (p.completed[k] and "1" or "0") -- 210
 		end -- 210
 	end -- 210
-	Content:save( -- 211
-		____exports.progressFilePath(), -- 211
-		table.concat(lines, "\n") -- 211
-	) -- 211
-end -- 196
-return ____exports -- 196
+	if p.bestScores ~= nil then -- 210
+		for k in pairs(p.bestScores) do -- 211
+			lines[#lines + 1] = (("best:" .. k) .. "=") .. __TS__NumberToFixed( -- 211
+				math.max( -- 211
+					0, -- 211
+					math.floor(p.bestScores[k]) -- 211
+				), -- 211
+				0 -- 211
+			) -- 211
+		end -- 211
+	end -- 211
+	Content:save( -- 212
+		____exports.progressFilePath(), -- 212
+		table.concat(lines, "\n") -- 212
+	) -- 212
+end -- 197
+return ____exports -- 197

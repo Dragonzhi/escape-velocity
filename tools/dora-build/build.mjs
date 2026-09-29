@@ -287,7 +287,15 @@ async function build(opts) {
 		types: [],
 		skipLibCheck: true,
 	});
+	// nvg 模块声明：优先与 Dora.d.ts 同目录的引擎副本，退回仓库 vendored 副本。
+	// 源码里不再用 /// <reference> 拉 d.ts —— 那会把 vendored 副本拖进引擎 IDE 的 TS program，
+	// 与引擎内置 lib 重复声明（TS6200/TS2374/TS2649），任何 import game/Ui 的文件都编译失败。
+	const nvgDts = [
+		path.join(path.dirname(doraDts), "nvg.d.ts"),
+		path.join(root, "tools/dora-build/dora-types/nvg.d.ts"),
+	].find((p) => fs.existsSync(p));
 	const rootNames = [...targets, doraDts];
+	if (nvgDts) rootNames.push(nvgDts);
 
 	const program = ts.createProgram({ rootNames, options: compilerOptions });
 
