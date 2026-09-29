@@ -333,17 +333,95 @@ function ____exports.runTests() -- 264
 	testSmoothing() -- 269
 	testFraming() -- 270
 	testSlowMoCloseup() -- 271
-	local lines = {} -- 273
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 274
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 275
-	local limit = #failures < 12 and #failures or 12 -- 276
-	do -- 276
-		local i = 0 -- 277
-		while i < limit do -- 277
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 278
-			i = i + 1 -- 277
-		end -- 277
-	end -- 277
-	return table.concat(lines, "\n") -- 280
+	local shotOpts = defaultRigOptions(45, 601 / 1065, 200, 2000) -- 273
+	shotOpts.margin = 0.16 -- 274
+	local shotPts = {{x = 50, y = 20}, {x = 0, y = 0}} -- 275
+	local shotRadii = {12, 28} -- 276
+	local shotRig = createCameraRig(shotOpts) -- 277
+	local shot = shotRig.step( -- 278
+		shotPts, -- 278
+		12, -- 278
+		shotRadii, -- 278
+		130, -- 278
+		{azDeg = 95, tiltDeg = 42, lerp = 1} -- 278
+	) -- 278
+	local shotBasis = prepareCamera({ -- 279
+		eye = shot.eye, -- 279
+		target = shot.target, -- 279
+		up = {x = 0, y = 1, z = 0}, -- 279
+		fovYDeg = 45, -- 279
+		aspect = shotOpts.aspect, -- 279
+		viewW = 2, -- 279
+		viewH = 2 -- 279
+	}, HANDEDNESS, FLIP_Y) -- 279
+	do -- 279
+		local i = 0 -- 280
+		while i < #shotPts do -- 280
+			local p = projectPrepared({x = shotPts[i + 1].x, y = 0, z = shotPts[i + 1].y}, shotBasis) -- 281
+			check( -- 282
+				"shot-subject-fits-" .. __TS__NumberToFixed(i, 0), -- 282
+				p ~= nil and math.abs(p.x) + shotRadii[i + 1] / p.vz * shotBasis.focal / shotOpts.aspect <= 0.84001 and math.abs(p.y) + shotRadii[i + 1] / p.vz * shotBasis.focal <= 0.84001, -- 282
+				"含模型半径的局部机位必须装下两主体" -- 283
+			) -- 283
+			i = i + 1 -- 280
+		end -- 280
+	end -- 280
+	check( -- 285
+		"shot-has-azimuth", -- 285
+		math.abs(shot.eye.x - shot.target.x) > 20, -- 285
+		"机位方位覆盖需要生效" -- 285
+	) -- 285
+	local defaultShot = shotRig.step(shotPts, 12, shotRadii) -- 286
+	check( -- 287
+		"shot-override-does-not-leak", -- 287
+		math.abs(defaultShot.eye.x - defaultShot.target.x) < 0.001, -- 287
+		"局部方位覆盖不能改变默认机位" -- 287
+	) -- 287
+	shotOpts.screenMinY = 2 * 350 / 1065 - 1 -- 288
+	shotOpts.screenMaxY = 1 - 2 * 205 / 1065 -- 289
+	shotOpts.screenBiasY = 0.14 -- 290
+	local returnPts = {{x = -130, y = 257}, {x = 0, y = 0}} -- 291
+	local returnRadii = {12, 42} -- 292
+	local home = createCameraRig(shotOpts).step( -- 293
+		returnPts, -- 293
+		12, -- 293
+		returnRadii, -- 293
+		180, -- 293
+		{azDeg = -27, tiltDeg = 42, lerp = 1} -- 293
+	) -- 293
+	local homeBasis = prepareCamera({ -- 294
+		eye = home.eye, -- 294
+		target = home.target, -- 294
+		up = {x = 0, y = 1, z = 0}, -- 294
+		fovYDeg = 45, -- 294
+		aspect = shotOpts.aspect, -- 294
+		viewW = 601, -- 294
+		viewH = 1065 -- 294
+	}, HANDEDNESS, FLIP_Y) -- 294
+	do -- 294
+		local i = 0 -- 295
+		while i < #returnPts do -- 295
+			local p = projectPrepared({x = returnPts[i + 1].x, y = 0, z = returnPts[i + 1].y}, homeBasis) -- 296
+			local r = p ~= nil and returnRadii[i + 1] / p.vz * homeBasis.focal * 1065 / 2 or 1000000000 -- 297
+			check( -- 298
+				"return-subject-clears-hud-" .. __TS__NumberToFixed(i, 0), -- 298
+				p ~= nil and 1065 / 2 + p.y - r >= 349.9 and 1065 / 2 + p.y + r <= 860.1, -- 298
+				"返回画面中地球与飞船不能被底部按钮/顶部文字遮住" -- 298
+			) -- 298
+			i = i + 1 -- 295
+		end -- 295
+	end -- 295
+	local lines = {} -- 301
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 302
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 303
+	local limit = #failures < 12 and #failures or 12 -- 304
+	do -- 304
+		local i = 0 -- 305
+		while i < limit do -- 305
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 306
+			i = i + 1 -- 305
+		end -- 305
+	end -- 305
+	return table.concat(lines, "\n") -- 308
 end -- 264
 return ____exports -- 264

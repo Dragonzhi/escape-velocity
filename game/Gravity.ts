@@ -82,6 +82,8 @@ export type Outcome =
 	| 'escaped';
 
 export interface SimOptions {
+	/** 发射后的有限燃烧；最后一步按剩余时间积分，不依赖回放帧率。 */
+	initialBurn?: { acceleration: P2; duration: number };
 	/** 最多推进的物理步数。 */
 	steps: number;
 	/** 固定步长（秒）。 */
@@ -308,8 +310,10 @@ export function simulate(initial: ProbeState, bodies: Body[], opts: SimOptions):
 	for (let i = 0; i < opts.steps; i++) {
 		// 半隐式欧拉（= step()，只是复用已缓存的天体位置）
 		const acc = accelerationFrom(bodies, curPositions, s.pos);
-		const nvx = s.vel.x + acc.x * opts.dt;
-		const nvy = s.vel.y + acc.y * opts.dt;
+		const burn = opts.initialBurn;
+		const burnDt = burn !== undefined ? Math.max(0, Math.min(opts.dt, burn.duration - i * opts.dt)) : 0;
+		const nvx = s.vel.x + acc.x * opts.dt + (burn !== undefined ? burn.acceleration.x * burnDt : 0);
+		const nvy = s.vel.y + acc.y * opts.dt + (burn !== undefined ? burn.acceleration.y * burnDt : 0);
 		s = { pos: { x: s.pos.x + nvx * opts.dt, y: s.pos.y + nvy * opts.dt }, vel: { x: nvx, y: nvy } };
 		t += opts.dt;
 		stepsRun += 1;
@@ -397,13 +401,26 @@ export interface StarCollectResult {
 }
 
 /**
+ * 星尘在时刻 t 的位置。
+ * 给了轨道就按公转求；没有（或半径为 0）就钉在 fallback 上。
+ */
+export function starPositionAt(orbit: Body | undefined, fallback: P2, t: number): P2 {
+	if (orbit === undefined || orbit.orbitRadius <= 0) return { x: fallback.x, y: fallback.y };
+	return bodyPositionAt(orbit, t);
+}
+
+/**
  * 评估轨迹收集到的星尘。
  * 纯函数，预测线计算与实时飞行判定共用。
+ * `starOrbits` 与 `stars` 一一对应时，用 `times[i]` 求第 i 个采样点当时的星尘位置。
+ * 不传 `times` 或轨道 = 星尘静止在 `stars` 上（旧关卡 / 单点判定）。
  */
 export function evaluateCollectedStars(
 	points: P2[],
 	stars: P2[],
-	collectRadius = 30
+	collectRadius = 30,
+	starOrbits?: Body[],
+	times?: number[],
 ): StarCollectResult {
 	const collected: boolean[] = [];
 	for (let i = 0; i < stars.length; i++) {
@@ -411,11 +428,15 @@ export function evaluateCollectedStars(
 	}
 	let count = 0;
 	const r2 = collectRadius * collectRadius;
-	for (const p of points) {
+	for (let pi = 0; pi < points.length; pi++) {
+		const p = points[pi];
+		const t = times !== undefined && pi < times.length ? times[pi] : 0;
 		for (let i = 0; i < stars.length; i++) {
 			if (!collected[i]) {
-				const dx = p.x - stars[i].x;
-				const dy = p.y - stars[i].y;
+				const orbit = starOrbits !== undefined ? starOrbits[i] : undefined;
+				const st = starPositionAt(orbit, stars[i], t);
+				const dx = p.x - st.x;
+				const dy = p.y - st.y;
 				if (dx * dx + dy * dy <= r2) {
 					collected[i] = true;
 					count++;

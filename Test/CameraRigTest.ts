@@ -269,6 +269,34 @@ export function runTests(): string {
 	testSmoothing();
 	testFraming();
 	testSlowMoCloseup();
+	// 分镜改变方位后仍走逐点投影约束；不影响下一次默认机位。
+	const shotOpts = defaultRigOptions(45, 601 / 1065, 200, 2000);
+	shotOpts.margin = 0.16;
+	const shotPts = [{ x: 50, y: 20 }, { x: 0, y: 0 }];
+	const shotRadii = [12, 28];
+	const shotRig = createCameraRig(shotOpts);
+	const shot = shotRig.step(shotPts, 12, shotRadii, 130, { azDeg: 95, tiltDeg: 42, lerp: 1 });
+	const shotBasis = prepareCamera({ eye: shot.eye, target: shot.target, up: { x: 0, y: 1, z: 0 }, fovYDeg: 45, aspect: shotOpts.aspect, viewW: 2, viewH: 2 }, HANDEDNESS, FLIP_Y);
+	for (let i = 0; i < shotPts.length; i++) {
+		const p = projectPrepared({ x: shotPts[i].x, y: 0, z: shotPts[i].y }, shotBasis);
+		check('shot-subject-fits-' + i.toFixed(0), p !== undefined && Math.abs(p.x) + shotRadii[i] / p.vz * shotBasis.focal / shotOpts.aspect <= 0.84001
+			&& Math.abs(p.y) + shotRadii[i] / p.vz * shotBasis.focal <= 0.84001, '含模型半径的局部机位必须装下两主体');
+	}
+	check('shot-has-azimuth', Math.abs(shot.eye.x - shot.target.x) > 20, '机位方位覆盖需要生效');
+	const defaultShot = shotRig.step(shotPts, 12, shotRadii);
+	check('shot-override-does-not-leak', Math.abs(defaultShot.eye.x - defaultShot.target.x) < 0.001, '局部方位覆盖不能改变默认机位');
+	shotOpts.screenMinY = 2 * 350 / 1065 - 1;
+	shotOpts.screenMaxY = 1 - 2 * 205 / 1065;
+	shotOpts.screenBiasY = 0.14;
+	const returnPts = [{ x: -130, y: 257 }, { x: 0, y: 0 }];
+	const returnRadii = [12, 42];
+	const home = createCameraRig(shotOpts).step(returnPts, 12, returnRadii, 180, { azDeg: -27, tiltDeg: 42, lerp: 1 });
+	const homeBasis = prepareCamera({ eye: home.eye, target: home.target, up: { x: 0, y: 1, z: 0 }, fovYDeg: 45, aspect: shotOpts.aspect, viewW: 601, viewH: 1065 }, HANDEDNESS, FLIP_Y);
+	for (let i = 0; i < returnPts.length; i++) {
+		const p = projectPrepared({ x: returnPts[i].x, y: 0, z: returnPts[i].y }, homeBasis);
+		const r = p !== undefined ? returnRadii[i] / p.vz * homeBasis.focal * 1065 / 2 : 1e9;
+		check('return-subject-clears-hud-' + i.toFixed(0), p !== undefined && 1065 / 2 + p.y - r >= 349.9 && 1065 / 2 + p.y + r <= 860.1, '返回画面中地球与飞船不能被底部按钮/顶部文字遮住');
+	}
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

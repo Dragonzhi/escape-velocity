@@ -15,13 +15,15 @@ local Path = ____Dora.Path -- 21
 local Size = ____Dora.Size -- 21
 local Vec2 = ____Dora.Vec2 -- 21
 local View = ____Dora.View -- 21
+local json = ____Dora.json -- 21
 local threadLoop = ____Dora.threadLoop -- 21
 local ____LevelData = require("game.LevelData") -- 22
-local GameSecondsPerRealSecond = ____LevelData.GameSecondsPerRealSecond -- 22
 local evaluateRocketsDetailed = ____LevelData.evaluateRocketsDetailed -- 22
 local getLevel = ____LevelData.getLevel -- 22
+local installArcadeLevels = ____LevelData.installArcadeLevels -- 22
 local levelCount = ____LevelData.levelCount -- 22
 local scaledPlanets = ____LevelData.scaledPlanets -- 22
+local starOrbits = ____LevelData.starOrbits -- 22
 local ____Scene = require("game.Scene") -- 23
 local buildScene = ____Scene.buildScene -- 23
 local ____CameraRig = require("game.CameraRig") -- 24
@@ -119,517 +121,578 @@ local debugTriggerBrakePressFn = nil -- 113
 local debugTriggerEnterLevelFn = nil -- 114
 local debugTriggerZoomInFn = nil -- 115
 local debugTriggerResetViewFn = nil -- 116
-local debugForceBrakeWindow = false -- 117
-local debugForceBraked = false -- 118
-local activeResultPanel = nil -- 119
-local levelTotal = levelCount() -- 127
-if levelTotal <= 0 then -- 127
-	print("[escape-velocity] FATAL: no level data") -- 130
-else -- 130
-	local opening, startOpening, introHold -- 130
-	local viewW = View.size.width -- 132
-	local viewH = View.size.height -- 133
-	Director.entry:setEnvironmentIntensity(0.12, 0.12, 1) -- 136
-	local levelLayers = {} -- 142
-	do -- 142
-		local i = 0 -- 143
-		while i < levelTotal do -- 143
-			local layer = Node() -- 144
-			layer.size = Size(viewW, viewH) -- 145
-			layer.anchor = Vec2(0.5, 0.5) -- 146
-			layer.position = Vec2(0, 0) -- 147
-			Director.ui:addChild(layer) -- 148
-			levelLayers[#levelLayers + 1] = layer -- 149
-			i = i + 1 -- 143
-		end -- 143
-	end -- 143
-	local openingLayer = Node() -- 154
-	openingLayer.size = Size(viewW, viewH) -- 155
-	openingLayer.anchor = Vec2(0.5, 0.5) -- 156
-	openingLayer.position = Vec2(0, 0) -- 157
-	Director.ui:addChild(openingLayer) -- 158
-	local openingRoot = Node3D() -- 161
-	openingRoot.visible = false -- 162
-	Director.entry:addChild(openingRoot) -- 163
-	local openingCamera = Camera3D() -- 164
-	local hubRoot = Node3D() -- 167
-	hubRoot.visible = false -- 168
-	Director.entry:addChild(hubRoot) -- 169
-	local hubCamera = Camera3D() -- 170
-	local hubLayer = Node() -- 172
-	hubLayer.size = Size(viewW, viewH) -- 173
-	hubLayer.anchor = Vec2(0.5, 0.5) -- 174
-	hubLayer.position = Vec2(0, 0) -- 175
-	Director.ui:addChild(hubLayer) -- 176
-	local uiLayer = Node() -- 179
-	uiLayer.size = Size(viewW, viewH) -- 180
-	uiLayer.anchor = Vec2(0.5, 0.5) -- 181
-	uiLayer.position = Vec2(0, 0) -- 182
-	Director.ui:addChild(uiLayer) -- 183
-	local levelNames = {} -- 186
-	do -- 186
-		local i = 0 -- 187
-		while i < levelTotal do -- 187
-			local def = getLevel(i) -- 188
-			local title = def ~= nil and def.title or "" -- 189
-			levelNames[#levelNames + 1] = (("L" .. __TS__NumberToFixed(i + 1, 0)) .. " ") .. title -- 190
-			i = i + 1 -- 187
-		end -- 187
-	end -- 187
-	local levelEntries = {} -- 192
-	do -- 192
-		local i = 0 -- 193
-		while i < levelTotal do -- 193
-			levelEntries[#levelEntries + 1] = {name = levelNames[i + 1]} -- 193
-			i = i + 1 -- 193
-		end -- 193
-	end -- 193
-	local progress = loadProgress(levelTotal) -- 196
-	print("[escape-velocity] progress file: " .. progressFilePath()) -- 197
-	print("[escape-velocity] progress loaded: unlocked=" .. __TS__NumberToFixed(progress.unlocked, 0)) -- 198
-	local slots = {} -- 200
-	do -- 200
-		local i = 0 -- 201
-		while i < levelTotal do -- 201
-			slots[#slots + 1] = {built = false, runtime = nil} -- 201
-			i = i + 1 -- 201
-		end -- 201
-	end -- 201
-	local activeIndex = -1 -- 203
-	local select = nil -- 204
-	local solarHub = nil -- 205
-	local resultPanel = nil -- 206
-	local finalePanel = nil -- 208
+local debugGameStateFn = nil -- 117
+local debugForceBrakeWindow = false -- 118
+local debugForceBraked = false -- 119
+local activeResultPanel = nil -- 120
+local levelsText = Content:exist("Assets/Levels/levels.json") and Content:load("Assets/Levels/levels.json") or "" -- 128
+local bodiesText = Content:exist("Assets/Levels/bodies.json") and Content:load("Assets/Levels/bodies.json") or "" -- 129
+local function decodeLevelJson(text) -- 130
+	local decoded = {json.decode(text)} -- 131
+	local err = decoded[2] -- 132
+	if err ~= nil then -- 132
+		return nil -- 133
+	end -- 133
+	return decoded[1] -- 134
+end -- 130
+if not installArcadeLevels(levelsText, bodiesText, decodeLevelJson) then -- 130
+	print("[escape-velocity] FATAL: levels.json 没有装上") -- 137
+end -- 137
+local levelTotal = levelCount() -- 139
+if levelTotal <= 0 then -- 139
+	print("[escape-velocity] FATAL: no level data") -- 142
+else -- 142
+	local opening, startOpening, introHold -- 142
+	local viewW = View.size.width -- 144
+	local viewH = View.size.height -- 145
+	Director.entry:setEnvironmentIntensity(0.12, 0.12, 1) -- 148
+	local levelLayers = {} -- 154
+	do -- 154
+		local i = 0 -- 155
+		while i < levelTotal do -- 155
+			local layer = Node() -- 156
+			layer.size = Size(viewW, viewH) -- 157
+			layer.anchor = Vec2(0.5, 0.5) -- 158
+			layer.position = Vec2(0, 0) -- 159
+			Director.ui:addChild(layer) -- 160
+			levelLayers[#levelLayers + 1] = layer -- 161
+			i = i + 1 -- 155
+		end -- 155
+	end -- 155
+	local openingLayer = Node() -- 166
+	openingLayer.size = Size(viewW, viewH) -- 167
+	openingLayer.anchor = Vec2(0.5, 0.5) -- 168
+	openingLayer.position = Vec2(0, 0) -- 169
+	Director.ui:addChild(openingLayer) -- 170
+	local openingRoot = Node3D() -- 173
+	openingRoot.visible = false -- 174
+	Director.entry:addChild(openingRoot) -- 175
+	local openingCamera = Camera3D() -- 176
+	local hubRoot = Node3D() -- 179
+	hubRoot.visible = false -- 180
+	Director.entry:addChild(hubRoot) -- 181
+	local hubCamera = Camera3D() -- 182
+	local hubLayer = Node() -- 184
+	hubLayer.size = Size(viewW, viewH) -- 185
+	hubLayer.anchor = Vec2(0.5, 0.5) -- 186
+	hubLayer.position = Vec2(0, 0) -- 187
+	Director.ui:addChild(hubLayer) -- 188
+	local uiLayer = Node() -- 191
+	uiLayer.size = Size(viewW, viewH) -- 192
+	uiLayer.anchor = Vec2(0.5, 0.5) -- 193
+	uiLayer.position = Vec2(0, 0) -- 194
+	Director.ui:addChild(uiLayer) -- 195
+	local levelNames = {} -- 198
+	do -- 198
+		local i = 0 -- 199
+		while i < levelTotal do -- 199
+			local def = getLevel(i) -- 200
+			local title = def ~= nil and def.title or "" -- 201
+			levelNames[#levelNames + 1] = (("L" .. __TS__NumberToFixed(i + 1, 0)) .. " ") .. title -- 202
+			i = i + 1 -- 199
+		end -- 199
+	end -- 199
+	local levelEntries = {} -- 204
+	do -- 204
+		local i = 0 -- 205
+		while i < levelTotal do -- 205
+			levelEntries[#levelEntries + 1] = {name = levelNames[i + 1]} -- 205
+			i = i + 1 -- 205
+		end -- 205
+	end -- 205
+	local progress = loadProgress(levelTotal) -- 208
+	print("[escape-velocity] progress file: " .. progressFilePath()) -- 209
+	print("[escape-velocity] progress loaded: unlocked=" .. __TS__NumberToFixed(progress.unlocked, 0)) -- 210
+	local slots = {} -- 212
+	do -- 212
+		local i = 0 -- 213
+		while i < levelTotal do -- 213
+			slots[#slots + 1] = {built = false, runtime = nil} -- 213
+			i = i + 1 -- 213
+		end -- 213
+	end -- 213
+	local activeIndex = -1 -- 215
+	local select = nil -- 216
+	local solarHub = nil -- 217
+	local resultPanel = nil -- 218
+	local finalePanel = nil -- 220
 	--- 终章要显示的两行字。主文案是常量，小字等 onFinale 把飞行距离/用时送过来。
-	local finaleText = {main = FinaleMainText, sub = ""} -- 210
-	local resultIndex = -1 -- 215
-	local function activeRuntime() -- 217
-		if activeIndex < 0 then -- 217
-			return nil -- 218
-		end -- 218
-		return slots[activeIndex + 1].runtime -- 219
-	end -- 217
+	local finaleText = {main = FinaleMainText, sub = ""} -- 222
+	local resultIndex = -1 -- 227
+	local function activeRuntime() -- 229
+		if activeIndex < 0 then -- 229
+			return nil -- 230
+		end -- 230
+		return slots[activeIndex + 1].runtime -- 231
+	end -- 229
 	--- 只让当前关可见：其余关留在树里但 visible=false（不渲染、不更新），
 	-- 并且**关掉它们的矄准输入** —— 它们的全屏触摸层是会独占触摸的，
 	-- 只隐藏 3D 节点的话，玩家在第二关拖不动（点击被上一关的层吞掉）。
-	local function showOnlyLevel(index) -- 227
-		do -- 227
-			local i = 0 -- 228
-			while i < levelTotal do -- 228
-				do -- 228
-					local slot = slots[i + 1] -- 229
-					levelLayers[i + 1].visible = i == index -- 232
-					if slot.runtime == nil then -- 232
-						goto __continue24 -- 233
-					end -- 233
-					local active = i == index -- 234
-					slot.runtime.world.visible = active -- 235
-					slot.runtime.aim:setEnabled(active) -- 236
-					if active then -- 236
-						slot.runtime.aim:setBrake(slot.runtime.game:brakeMode()) -- 238
-					end -- 238
-				end -- 238
-				::__continue24:: -- 238
-				i = i + 1 -- 228
-			end -- 228
-		end -- 228
-	end -- 227
+	local function showOnlyLevel(index) -- 239
+		do -- 239
+			local i = 0 -- 240
+			while i < levelTotal do -- 240
+				do -- 240
+					local slot = slots[i + 1] -- 241
+					levelLayers[i + 1].visible = i == index -- 244
+					if slot.runtime == nil then -- 244
+						goto __continue27 -- 245
+					end -- 245
+					local active = i == index -- 246
+					slot.runtime.world.visible = active -- 247
+					slot.runtime.aim:setEnabled(active) -- 248
+					if active then -- 248
+						slot.runtime.aim:setBrake(slot.runtime.game:brakeMode()) -- 250
+					end -- 250
+				end -- 250
+				::__continue27:: -- 250
+				i = i + 1 -- 240
+			end -- 240
+		end -- 240
+	end -- 239
 	--- 惰性创建某一关的运行时：3D 容器 → 场景 → 相机/机架/轨迹/矄准 → 状态机。
 	-- 
 	-- @returns 该关运行时；已建则直接返回，建场景失败返回 undefined。
-	local function ensureLevel(index) -- 247
-		local game -- 247
-		local slot = slots[index + 1] -- 248
-		if slot.built and slot.runtime ~= nil then -- 248
-			return slot.runtime -- 249
-		end -- 249
-		local def = getLevel(index) -- 251
-		if def == nil then -- 251
-			return nil -- 252
-		end -- 252
-		local bodies = scaledPlanets(def) -- 254
-		local level = { -- 255
-			bodies = bodies, -- 256
-			probeStart = def.probeStart, -- 257
-			probeVel0 = def.probeVel0, -- 259
-			goal = def.goal, -- 260
-			escapeRadius = def.escapeRadius, -- 261
-			physicsStep = levelRuntime(index).physicsStep, -- 262
-			speedUnit = GameSecondsPerRealSecond, -- 264
-			speedDefaultPow = levelRuntime(index).speedDefaultPow, -- 265
-			speedMaxPow = levelRuntime(index).speedMaxPow, -- 266
-			flightSpeedPow = levelRuntime(index).flightSpeedPow, -- 267
-			aimFraming = levelRuntime(index).aimFraming, -- 268
-			slowMoFloor = levelRuntime(index).slowMoFloor, -- 269
-			aimMin = levelRuntime(index).aimMin, -- 270
-			maxSteps = def.maxSteps, -- 271
-			predictSteps = levelRuntime(index).predictSteps, -- 272
-			mission = def.mission, -- 273
-			stars = def.stars -- 274
-		} -- 274
-		local world = Node3D() -- 277
-		Director.entry:addChild(world) -- 278
-		world.visible = false -- 279
-		local rtg = def.probeVariant == "rtg" -- 281
-		local scene = buildScene({ -- 282
-			root = world, -- 283
-			bodies = bodies, -- 284
-			visuals = def.visuals, -- 285
-			probeStart = level.probeStart, -- 286
+	local function ensureLevel(index) -- 259
+		local game -- 259
+		local slot = slots[index + 1] -- 260
+		if slot.built and slot.runtime ~= nil then -- 260
+			return slot.runtime -- 261
+		end -- 261
+		local def = getLevel(index) -- 263
+		if def == nil then -- 263
+			return nil -- 264
+		end -- 264
+		local bodies = scaledPlanets(def) -- 266
+		local level = { -- 267
+			transfer = def.transfer, -- 268
+			bodies = bodies, -- 269
+			probeStart = def.probeStart, -- 270
+			probeVel0 = def.probeVel0, -- 272
+			goal = def.goal, -- 273
+			escapeRadius = def.escapeRadius, -- 274
+			physicsStep = levelRuntime(index).physicsStep, -- 275
+			speedUnit = 1, -- 277
+			speedDefaultPow = levelRuntime(index).speedDefaultPow, -- 278
+			speedMaxPow = levelRuntime(index).speedMaxPow, -- 279
+			flightSpeedPow = levelRuntime(index).flightSpeedPow, -- 280
+			aimFraming = levelRuntime(index).aimFraming, -- 281
+			slowMoFloor = levelRuntime(index).slowMoFloor, -- 282
+			aimMin = levelRuntime(index).aimMin, -- 283
+			maxSteps = def.maxSteps, -- 284
+			predictSteps = levelRuntime(index).predictSteps, -- 285
+			mission = def.mission, -- 286
 			stars = def.stars, -- 287
-			probeScale = levelRuntime(index).probeVisualRadius, -- 293
-			spherePath = "Assets/Model/Sphere.gltf", -- 294
-			ringPath = "Assets/Model/Ring.gltf", -- 295
-			probePath = "Assets/Model/Probe_Voyager_v1.glb", -- 296
-			probeBodyPath = rtg and "Assets/Model/Probe_RTG_Body.glb" or "Assets/Model/Probe_Solar_Body.glb", -- 303
-			probeAntennaPath = rtg and "Assets/Model/Probe_RTG_Antenna.glb" or "Assets/Model/Probe_Solar_Antenna.glb", -- 304
-			probeAntennaPivotY = rtg and 0.6641 or 0.6495, -- 305
-			probeBodyRadius = rtg and 0.871 or 1.084, -- 306
-			probeAtlasPath = "Assets/Image/probe_atlas.jpg", -- 308
-			orbitFlowDots = levelRuntime(index).orbitFlowDots, -- 309
-			orbitRings = levelRuntime(index).orbitRings -- 312
-		}) -- 312
-		if scene == nil then -- 312
-			print("[escape-velocity] FATAL: scene build failed for L" .. __TS__NumberToFixed(index + 1, 0)) -- 315
-			return nil -- 316
-		end -- 316
-		local rt = levelRuntime(index) -- 319
-		local camera = Camera3D() -- 320
-		local rig = createCameraRig(defaultRigOptions( -- 324
-			View.fieldOfView, -- 324
-			View.aspectRatio, -- 324
-			rt.cameraMin, -- 324
-			rt.cameraMax, -- 324
-			rt.tiltDeg -- 324
-		)) -- 324
-		local trajectory = createTrajectoryView( -- 325
-			levelLayers[index + 1], -- 325
-			trajectoryOptions() -- 325
-		) -- 325
-		local planOpts = defaultPlanOptions() -- 329
-		if levelRuntime(index).orbitFlowDots == false then -- 329
-			planOpts.flowDotRadius = 0 -- 330
-		end -- 330
-		planOpts.probeVisualRadius = levelRuntime(index).probeVisualRadius -- 333
-		local plan = createPlanView( -- 334
-			levelLayers[index + 1], -- 334
-			viewW, -- 334
-			viewH, -- 334
-			planOpts, -- 334
-			def.planCenter -- 334
-		) -- 334
-		local planTolerance = arrivalRingRadius(def.goal) -- 335
-		plan:fitTo(planFitRadius( -- 336
-			bodies, -- 336
-			level.probeStart, -- 336
-			def.goal.planetIndex, -- 336
-			planTolerance, -- 336
-			def.planCenter -- 336
-		)) -- 336
-		local aim = createAimInput( -- 338
-			levelLayers[index + 1], -- 338
-			viewW, -- 338
-			viewH, -- 338
-			def.dvBudget, -- 338
-			rt.aimMin, -- 338
-			rt.playbackSpeeds -- 338
-		) -- 338
-		aim:setBurnInfo(0, def.dvBudget) -- 340
-		local dateSpan = def.timeWindow ~= nil and def.timeWindow.span or 0 -- 342
-		aim:setDate(0, dateSpan) -- 343
-		aim:onWarp(function(dir) -- 344
-			game:stepTime(dir, dateSpan) -- 345
-			print(((("[escape-velocity] time warp dir=" .. __TS__NumberToFixed(dir, 0)) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 346
-		end) -- 344
-		aim:onZoomIn(function() -- 350
-			plan:zoomIn() -- 351
-		end) -- 350
-		aim:onZoomOut(function() -- 353
-			plan:zoomOut() -- 354
-		end) -- 353
-		aim:onFitView(function() -- 356
-			plan:resetView() -- 357
-		end) -- 356
-		local challengesList = {} -- 361
-		if def.mission ~= nil then -- 361
-			do -- 361
-				local k = 0 -- 363
-				while k < #def.mission.challenges do -- 363
-					challengesList[#challengesList + 1] = def.mission.challenges[k + 1].desc -- 364
-					k = k + 1 -- 363
-				end -- 363
-			end -- 363
-		end -- 363
-		local initialRockets = getMissionRockets(progress, index) -- 367
-		local drawerTitle = def.mission ~= nil and (((("L" .. __TS__NumberToFixed(index + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or levelNames[index + 1] -- 368
-		aim:setMissionDrawer(drawerTitle, challengesList, initialRockets) -- 369
-		game = createGame( -- 371
-			level, -- 371
-			{ -- 371
-				scene = scene, -- 372
-				camera = camera, -- 373
-				rig = rig, -- 374
-				trajectory = trajectory, -- 375
-				plan = plan, -- 376
-				visuals = def.visuals, -- 378
-				setWorldVisible = function(____, on) -- 380
-					world.visible = on -- 381
-				end, -- 380
-				aim = aim, -- 383
-				viewW = viewW, -- 384
-				viewH = viewH, -- 385
-				fovYDeg = View.fieldOfView, -- 386
-				aspect = View.aspectRatio, -- 387
-				onPhase = function(____, p) -- 388
-					print(((("[escape-velocity] phase -> " .. p) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 389
-					if index == activeIndex then -- 389
-						local inAim = (p == "Aiming" or p == "Armed") and not game:isIntroTourActive() -- 396
-						aim:setZoomControlsVisible(inAim and game:viewMode() == "2D") -- 397
-						aim:setMissionDrawerVisible(inAim) -- 398
-						if p == "Finale" then -- 398
-							if resultPanel ~= nil then -- 398
-								resultPanel:hide() -- 400
-							end -- 400
-							if finalePanel ~= nil then -- 400
-								finalePanel:show(finaleText.main, finaleText.sub) -- 401
-							end -- 401
-						else -- 401
-							if p ~= "Result" and resultPanel ~= nil then -- 401
-								resultPanel:hide() -- 403
-							end -- 403
-							if finalePanel ~= nil then -- 403
-								finalePanel:hide() -- 404
-							end -- 404
-						end -- 404
-					end -- 404
-				end, -- 388
-				onResult = function(____, r, telemetry) -- 408
-					local telem = telemetry ~= nil and telemetry or ({burnDv = 0, flightTime = 0, closestDist = 0, maxSpeed = 0}) -- 409
-					local evalInfo = evaluateRocketsDetailed(def, r, telem.burnDv, {closestDist = telem.closestDist, maxSpeed = telem.maxSpeed, eccentricity = telem.eccentricity}) -- 415
-					progress = recordMissionResult(progress, index, evalInfo.rockets, levelTotal) -- 422
-					saveProgress(progress) -- 423
-					local currentTotal = getTotalRockets(progress, levelTotal) -- 424
-					print(((((((((("[escape-velocity] result = " .. r) .. " on ") .. levelNames[index + 1]) .. " rockets=") .. __TS__NumberToFixed(evalInfo.rockets, 0)) .. " (total=") .. __TS__NumberToFixed(currentTotal, 0)) .. "/") .. __TS__NumberToFixed(levelTotal * 3, 0)) .. ")") -- 426
-					resultIndex = index -- 430
-					local challengesList = {} -- 432
-					if def.mission ~= nil then -- 432
-						do -- 432
-							local k = 0 -- 434
-							while k < #def.mission.challenges do -- 434
-								challengesList[#challengesList + 1] = def.mission.challenges[k + 1].desc -- 435
-								k = k + 1 -- 434
+			starOrbits = starOrbits(index) -- 288
+		} -- 288
+		local world = Node3D() -- 291
+		Director.entry:addChild(world) -- 292
+		world.visible = false -- 293
+		local rtg = def.probeVariant == "rtg" -- 295
+		local scene = buildScene({ -- 296
+			root = world, -- 297
+			backdropRadius = def.transfer ~= nil and 3000 or nil, -- 298
+			bodies = bodies, -- 299
+			visuals = def.visuals, -- 300
+			probeStart = level.probeStart, -- 301
+			stars = def.stars, -- 302
+			probeScale = levelRuntime(index).probeVisualRadius, -- 308
+			spherePath = "Assets/Model/Sphere.gltf", -- 309
+			ringPath = "Assets/Model/Ring.gltf", -- 310
+			probePath = "Assets/Model/Probe_Voyager_v1.glb", -- 311
+			probeBodyPath = rtg and "Assets/Model/Probe_RTG_Body.glb" or "Assets/Model/Probe_Solar_Body.glb", -- 318
+			probeAntennaPath = rtg and "Assets/Model/Probe_RTG_Antenna.glb" or "Assets/Model/Probe_Solar_Antenna.glb", -- 319
+			probeAntennaPivotY = rtg and 0.6641 or 0.6495, -- 320
+			probeBodyRadius = rtg and 0.871 or 1.084, -- 321
+			probeAtlasPath = "Assets/Image/probe_atlas.jpg", -- 323
+			orbitFlowDots = levelRuntime(index).orbitFlowDots, -- 324
+			orbitRings = levelRuntime(index).orbitRings -- 327
+		}) -- 327
+		if scene == nil then -- 327
+			print("[escape-velocity] FATAL: scene build failed for L" .. __TS__NumberToFixed(index + 1, 0)) -- 330
+			return nil -- 331
+		end -- 331
+		local rt = levelRuntime(index) -- 334
+		local camera = Camera3D() -- 335
+		local rigOptions = defaultRigOptions( -- 339
+			View.fieldOfView, -- 339
+			View.aspectRatio, -- 339
+			rt.cameraMin, -- 339
+			rt.cameraMax, -- 339
+			rt.tiltDeg -- 339
+		) -- 339
+		if def.transfer ~= nil then -- 339
+			rigOptions.margin = 0.16 -- 341
+			rigOptions.screenMinY = 2 * math.min(350, viewH * 0.38) / viewH - 1 -- 342
+			rigOptions.screenMaxY = 1 - 2 * math.min(205, viewH * 0.23) / viewH -- 343
+			rigOptions.screenBiasY = 0.14 -- 344
+		end -- 344
+		local rig = createCameraRig(rigOptions) -- 346
+		local trailOptions = trajectoryOptions() -- 347
+		if def.transfer ~= nil then -- 347
+			trailOptions.tailPoints = 120 -- 350
+			trailOptions.burnLength = 12 -- 351
+			trailOptions.trailHeadRadius = 1.2 -- 352
+			trailOptions.trailHeadAlpha = 0.45 -- 353
+			trailOptions.trailR = 100 -- 354
+			trailOptions.trailG = 180 -- 354
+			trailOptions.trailB = 230 -- 354
+		end -- 354
+		local trajectory = createTrajectoryView(levelLayers[index + 1], trailOptions) -- 356
+		local planOpts = defaultPlanOptions() -- 360
+		planOpts.transferTutorial = def.transfer ~= nil -- 361
+		if levelRuntime(index).orbitFlowDots == false then -- 361
+			planOpts.flowDotRadius = 0 -- 362
+		end -- 362
+		planOpts.probeVisualRadius = levelRuntime(index).probeVisualRadius -- 365
+		if def.transfer ~= nil then -- 365
+			planOpts.trailHex = 6599910 -- 366
+			planOpts.trailWidth = 1.5 -- 366
+		end -- 366
+		local plan = createPlanView( -- 367
+			levelLayers[index + 1], -- 367
+			viewW, -- 367
+			viewH, -- 367
+			planOpts, -- 367
+			def.planCenter -- 367
+		) -- 367
+		local offset = def.goal.offset -- 368
+		local planTolerance = arrivalRingRadius(def.goal) + (offset ~= nil and math.sqrt(offset.x * offset.x + offset.y * offset.y) or 0) -- 369
+		plan:fitTo(planFitRadius( -- 370
+			bodies, -- 370
+			level.probeStart, -- 370
+			def.goal.planetIndex, -- 370
+			planTolerance, -- 370
+			def.planCenter, -- 370
+			starOrbits(index) -- 370
+		)) -- 370
+		local aim = createAimInput( -- 372
+			levelLayers[index + 1], -- 372
+			viewW, -- 372
+			viewH, -- 372
+			def.dvBudget, -- 372
+			rt.aimMin, -- 372
+			rt.playbackSpeeds, -- 372
+			def.transfer ~= nil -- 372
+		) -- 372
+		aim:setBurnInfo(0, def.dvBudget) -- 374
+		local dateSpan = def.timeWindow ~= nil and def.timeWindow.span or 0 -- 376
+		aim:setDate(0, dateSpan) -- 377
+		aim:onWarp(function(dir) -- 378
+			game:stepTime(dir, dateSpan) -- 379
+			print(((("[escape-velocity] time warp dir=" .. __TS__NumberToFixed(dir, 0)) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 380
+		end) -- 378
+		aim:onZoomIn(function() -- 384
+			plan:zoomIn() -- 385
+		end) -- 384
+		aim:onZoomOut(function() -- 387
+			plan:zoomOut() -- 388
+		end) -- 387
+		aim:onFitView(function() -- 390
+			plan:resetView() -- 391
+		end) -- 390
+		local challengesList = {} -- 395
+		if def.mission ~= nil then -- 395
+			do -- 395
+				local k = 0 -- 397
+				while k < #def.mission.challenges do -- 397
+					challengesList[#challengesList + 1] = def.mission.challenges[k + 1].desc -- 398
+					k = k + 1 -- 397
+				end -- 397
+			end -- 397
+		end -- 397
+		local initialRockets = getMissionRockets(progress, index) -- 401
+		local drawerTitle = def.transfer ~= nil and "L1 · 奔向月球" or (def.mission ~= nil and (((("L" .. __TS__NumberToFixed(index + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or levelNames[index + 1]) -- 402
+		aim:setMissionDrawer(drawerTitle, challengesList, initialRockets) -- 403
+		game = createGame( -- 405
+			level, -- 405
+			{ -- 405
+				scene = scene, -- 406
+				camera = camera, -- 407
+				rig = rig, -- 408
+				trajectory = trajectory, -- 409
+				plan = plan, -- 410
+				visuals = def.visuals, -- 412
+				setWorldVisible = function(____, on) -- 414
+					world.visible = on -- 415
+				end, -- 414
+				aim = aim, -- 417
+				viewW = viewW, -- 418
+				viewH = viewH, -- 419
+				fovYDeg = View.fieldOfView, -- 420
+				aspect = View.aspectRatio, -- 421
+				onPhase = function(____, p) -- 422
+					print(((("[escape-velocity] phase -> " .. p) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 423
+					if index == activeIndex then -- 423
+						local inAim = (p == "Aiming" or p == "Armed") and not game:isIntroTourActive() -- 430
+						aim:setZoomControlsVisible(inAim and game:viewMode() == "2D") -- 431
+						aim:setMissionDrawerVisible(inAim) -- 432
+						if p == "Finale" then -- 432
+							if resultPanel ~= nil then -- 432
+								resultPanel:hide() -- 434
 							end -- 434
-						end -- 434
-					end -- 434
-					local titleWithSub = def.mission ~= nil and (((("L" .. __TS__NumberToFixed(index + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or levelNames[index + 1] -- 439
-					local detailParams = { -- 443
-						result = r, -- 444
-						levelName = titleWithSub, -- 445
-						levelIndex = index, -- 446
-						rocketsGot = evalInfo.rockets, -- 447
-						challenges = challengesList, -- 448
-						achieved = evalInfo.achieved, -- 449
-						burnDv = telem.burnDv, -- 450
-						dvBudget = def.dvBudget, -- 451
-						flightTime = telem.flightTime, -- 452
-						totalRockets = currentTotal, -- 453
-						totalPossibleRockets = levelTotal * 3 -- 454
-					} -- 454
-					if resultPanel ~= nil then -- 454
-						resultPanel:show(r, titleWithSub, detailParams) -- 458
-					end -- 458
-				end, -- 408
-				onFinale = function(____, info) -- 462
-					finaleText = { -- 463
-						main = FinaleMainText, -- 463
-						sub = finaleSubtitle(info.distance, info.time) -- 463
-					} -- 463
-					print((((("[escape-velocity] finale: dist=" .. __TS__NumberToFixed(info.distance, 0)) .. " time=") .. __TS__NumberToFixed(info.time, 1)) .. " tWorld=") .. __TS__NumberToFixed(info.tWorld, 0)) -- 464
-				end, -- 462
-				finale = index == levelTotal - 1 -- 469
-			} -- 469
-		) -- 469
-		aim:onQuickRetry(function() -- 472
-			print(("[escape-velocity] quick retry tapped (L" .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 473
-			game:retry() -- 474
-		end) -- 472
-		aim:onDrag(function(a) -- 480
-			game:onAimDrag(a) -- 481
-			aim:setBurnInfo( -- 483
-				math.sqrt(a.velocity.x * a.velocity.x + a.velocity.y * a.velocity.y), -- 483
-				def.dvBudget -- 483
-			) -- 483
-		end) -- 480
-		aim:onAimReady(function(a) -- 486
-			game:onAimDrag(a) -- 487
-			game:aimReady() -- 488
-			print("[escape-velocity] aim ready -> Armed") -- 489
-		end) -- 486
-		aim:onLaunch(function() -- 491
-			print("[escape-velocity] launch button tap") -- 492
-			game:launchArmed() -- 493
-		end) -- 491
-		aim:onObserve(function(dx, dy) -- 496
-			game:observeDrag(dx, dy) -- 497
-		end) -- 496
-		aim:onZoom(function(deltaDist) -- 499
-			game:observeZoom(deltaDist) -- 500
-		end) -- 499
-		aim:onSkipTour(function() -- 502
-			print(("[escape-velocity] tap to skip tour (L" .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 503
-			game:skipIntroTour() -- 504
-		end) -- 502
-		aim:setTourActiveChecker(function() return game:isIntroTourActive() end) -- 506
-		aim:onViewToggle(function() -- 508
-			game:toggleViewMode() -- 509
-			print(((("[escape-velocity] view toggle -> " .. game:viewMode()) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 510
-		end) -- 508
-		aim:onBrake(function(on) -- 513
-			game:setBrakeMode(on) -- 514
-			print(((("[escape-velocity] brake mode = " .. (on and "on" or "off")) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 515
-		end) -- 513
-		aim:setBrake(game:brakeMode()) -- 517
-		aim:onSpeedUp(function() -- 521
-			game:speedUp() -- 522
-		end) -- 521
-		aim:onSpeedDown(function() -- 524
-			game:speedDown() -- 525
-		end) -- 524
-		aim:onTogglePause(function() -- 527
-			game:togglePause() -- 528
-		end) -- 527
-		aim:onPlayback(function(speed) -- 530
-			game:setPlaybackSpeed(speed) -- 531
-			print(((("[escape-velocity] playback speed -> " .. __TS__NumberToFixed(speed, 0)) .. "x (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 532
-		end) -- 530
-		aim:setPlayback(game:playbackSpeed()) -- 534
-		aim:onLiveBrake(function() -- 536
-			print(("[escape-velocity] tap: live brake (L" .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 537
-			game:applyInFlightBrake() -- 538
-		end) -- 536
-		local runtime = { -- 541
-			index = index, -- 542
-			name = levelNames[index + 1], -- 543
-			world = world, -- 544
-			camera = camera, -- 545
-			game = game, -- 546
-			aim = aim, -- 547
-			trajectory = trajectory, -- 548
-			plan = plan, -- 549
-			levelHasTimeWindow = def.timeWindow ~= nil, -- 550
-			dvBudget = def.dvBudget, -- 551
-			dateSpan = dateSpan -- 552
-		} -- 552
-		slot.built = true -- 554
-		slot.runtime = runtime -- 555
-		print((("[escape-velocity] built L" .. __TS__NumberToFixed(index + 1, 0)) .. " ") .. levelNames[index + 1]) -- 556
-		return runtime -- 557
-	end -- 247
+							if finalePanel ~= nil then -- 434
+								finalePanel:show(finaleText.main, finaleText.sub) -- 435
+							end -- 435
+						else -- 435
+							if p ~= "Result" and resultPanel ~= nil then -- 435
+								resultPanel:hide() -- 437
+							end -- 437
+							if finalePanel ~= nil then -- 437
+								finalePanel:hide() -- 438
+							end -- 438
+						end -- 438
+					end -- 438
+				end, -- 422
+				onMissionCompleted = function() -- 442
+					progress = recordMissionResult(progress, index, 1, levelTotal) -- 443
+					saveProgress(progress) -- 444
+					print("[escape-velocity] flyby completion saved L" .. __TS__NumberToFixed(index + 1, 0)) -- 445
+				end, -- 442
+				onResult = function(____, r, telemetry) -- 447
+					local telem = telemetry ~= nil and telemetry or ({burnDv = 0, flightTime = 0, closestDist = 0, maxSpeed = 0}) -- 448
+					local evalInfo = evaluateRocketsDetailed(def, r, telem.burnDv, {closestDist = telem.closestDist, maxSpeed = telem.maxSpeed, eccentricity = telem.eccentricity, starsCollected = telem.starsCollected ~= nil and telem.starsCollected or 0}) -- 454
+					if not game:missionCompleted() then -- 454
+						progress = recordMissionResult(progress, index, evalInfo.rockets, levelTotal) -- 463
+						saveProgress(progress) -- 464
+					end -- 464
+					local currentTotal = getTotalRockets(progress, levelTotal) -- 466
+					print(((((((((("[escape-velocity] result = " .. r) .. " on ") .. levelNames[index + 1]) .. " rockets=") .. __TS__NumberToFixed(evalInfo.rockets, 0)) .. " (total=") .. __TS__NumberToFixed(currentTotal, 0)) .. "/") .. __TS__NumberToFixed(levelTotal * 3, 0)) .. ")") -- 468
+					resultIndex = index -- 472
+					local challengesList = {} -- 474
+					if def.mission ~= nil then -- 474
+						do -- 474
+							local k = 0 -- 476
+							while k < #def.mission.challenges do -- 476
+								challengesList[#challengesList + 1] = def.mission.challenges[k + 1].desc -- 477
+								k = k + 1 -- 476
+							end -- 476
+						end -- 476
+					end -- 476
+					local titleWithSub = def.mission ~= nil and (((("L" .. __TS__NumberToFixed(index + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or levelNames[index + 1] -- 481
+					local detailParams = { -- 485
+						result = r, -- 486
+						levelName = titleWithSub, -- 487
+						levelIndex = index, -- 488
+						rocketsGot = evalInfo.rockets, -- 489
+						challenges = challengesList, -- 490
+						completionOnly = def.transfer ~= nil, -- 491
+						achieved = evalInfo.achieved, -- 492
+						burnDv = telem.burnDv, -- 493
+						dvBudget = def.dvBudget, -- 494
+						flightTime = telem.flightTime, -- 495
+						totalRockets = currentTotal, -- 496
+						totalPossibleRockets = levelTotal * 3 -- 497
+					} -- 497
+					if resultPanel ~= nil then -- 497
+						resultPanel:show(r, titleWithSub, detailParams) -- 501
+					end -- 501
+				end, -- 447
+				onFinale = function(____, info) -- 505
+					finaleText = { -- 506
+						main = FinaleMainText, -- 506
+						sub = finaleSubtitle(info.distance, info.time) -- 506
+					} -- 506
+					print((((("[escape-velocity] finale: dist=" .. __TS__NumberToFixed(info.distance, 0)) .. " time=") .. __TS__NumberToFixed(info.time, 1)) .. " tWorld=") .. __TS__NumberToFixed(info.tWorld, 0)) -- 507
+				end, -- 505
+				finale = index == levelTotal - 1 -- 512
+			} -- 512
+		) -- 512
+		aim:onQuickRetry(function() -- 515
+			print(("[escape-velocity] quick retry tapped (L" .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 516
+			game:retry() -- 517
+		end) -- 515
+		aim:onDrag(function(a) -- 523
+			game:onAimDrag(a) -- 524
+			aim:setBurnInfo( -- 526
+				math.sqrt(a.velocity.x * a.velocity.x + a.velocity.y * a.velocity.y), -- 526
+				def.dvBudget -- 526
+			) -- 526
+		end) -- 523
+		aim:onAimReady(function(a) -- 529
+			game:onAimDrag(a) -- 530
+			game:aimReady() -- 531
+			print("[escape-velocity] aim ready -> Armed") -- 532
+		end) -- 529
+		aim:onLaunch(function() -- 534
+			print("[escape-velocity] launch button tap") -- 535
+			game:launchArmed() -- 536
+		end) -- 534
+		aim:onCancelAim(function() -- 538
+			print("[escape-velocity] cancel aim tap") -- 539
+			game:cancelAim() -- 540
+		end) -- 538
+		aim:onObserve(function(dx, dy) -- 543
+			game:observeDrag(dx, dy) -- 544
+		end) -- 543
+		aim:onZoom(function(deltaDist) -- 546
+			game:observeZoom(deltaDist) -- 547
+		end) -- 546
+		aim:onSkipTour(function() -- 549
+			print(("[escape-velocity] tap to skip tour (L" .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 550
+			game:skipIntroTour() -- 551
+		end) -- 549
+		aim:setTourActiveChecker(function() return game:isIntroTourActive() end) -- 553
+		aim:onViewToggle(function() -- 555
+			game:toggleViewMode() -- 556
+			print(((("[escape-velocity] view toggle -> " .. game:viewMode()) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 557
+		end) -- 555
+		if aim.onCameraFocus ~= nil then -- 555
+			aim:onCameraFocus(function() -- 559
+				game:cycleCameraFocus() -- 559
+			end) -- 559
+		end -- 559
+		if aim.onEndViewing ~= nil then -- 559
+			aim:onEndViewing(function() -- 560
+				game:endViewing() -- 560
+			end) -- 560
+		end -- 560
+		aim:onBrake(function(on) -- 562
+			game:setBrakeMode(on) -- 563
+			print(((("[escape-velocity] brake mode = " .. (on and "on" or "off")) .. " (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 564
+		end) -- 562
+		aim:setBrake(game:brakeMode()) -- 566
+		aim:onSpeedUp(function() -- 570
+			game:speedUp() -- 571
+		end) -- 570
+		aim:onSpeedDown(function() -- 573
+			game:speedDown() -- 574
+		end) -- 573
+		aim:onTogglePause(function() -- 576
+			game:togglePause() -- 577
+		end) -- 576
+		aim:onPlayback(function(speed) -- 579
+			game:setPlaybackSpeed(speed) -- 580
+			print(((("[escape-velocity] playback speed -> " .. __TS__NumberToFixed(speed, 0)) .. "x (L") .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 581
+		end) -- 579
+		aim:setPlayback(game:playbackSpeed()) -- 583
+		aim:onLiveBrake(function() -- 585
+			print(("[escape-velocity] tap: live brake (L" .. __TS__NumberToFixed(index + 1, 0)) .. ")") -- 586
+			game:applyInFlightBrake() -- 587
+		end) -- 585
+		local runtime = { -- 590
+			index = index, -- 591
+			name = levelNames[index + 1], -- 592
+			world = world, -- 593
+			camera = camera, -- 594
+			game = game, -- 595
+			aim = aim, -- 596
+			trajectory = trajectory, -- 597
+			plan = plan, -- 598
+			levelHasTimeWindow = def.timeWindow ~= nil, -- 599
+			dvBudget = def.dvBudget, -- 600
+			dateSpan = dateSpan -- 601
+		} -- 601
+		slot.built = true -- 603
+		slot.runtime = runtime -- 604
+		print((("[escape-velocity] built L" .. __TS__NumberToFixed(index + 1, 0)) .. " ") .. levelNames[index + 1]) -- 605
+		return runtime -- 606
+	end -- 259
 	--- 选关：隐藏选择界面 → 激活该关 → 回到 Aiming。
-	local function enterLevel(index) -- 561
-		local runtime = ensureLevel(index) -- 562
-		if runtime == nil then -- 562
-			return -- 563
-		end -- 563
-		local wasActive = activeIndex == index -- 566
-		if opening ~= nil then -- 566
-			opening.hide() -- 568
-		end -- 568
-		if select ~= nil then -- 568
-			select:hide() -- 569
-		end -- 569
-		if solarHub ~= nil then -- 569
-			solarHub.hide() -- 570
-		end -- 570
-		activeIndex = index -- 571
-		showOnlyLevel(index) -- 572
-		applyClipPlanes(index) -- 574
-		if not wasActive then -- 574
-			Director:pushCamera(runtime.camera) -- 575
-		end -- 575
-		runtime.game:startLevel() -- 576
-		print("[escape-velocity] enter " .. runtime.name) -- 577
-	end -- 561
+	local function enterLevel(index) -- 610
+		local runtime = ensureLevel(index) -- 611
+		if runtime == nil then -- 611
+			return -- 612
+		end -- 612
+		local wasActive = activeIndex == index -- 615
+		if opening ~= nil then -- 615
+			opening.hide() -- 617
+		end -- 617
+		if select ~= nil then -- 617
+			select:hide() -- 618
+		end -- 618
+		if solarHub ~= nil then -- 618
+			solarHub.hide() -- 619
+		end -- 619
+		activeIndex = index -- 620
+		showOnlyLevel(index) -- 621
+		applyClipPlanes(index) -- 623
+		if not wasActive then -- 623
+			Director:pushCamera(runtime.camera) -- 624
+		end -- 624
+		runtime.game:startLevel() -- 625
+		print("[escape-velocity] enter " .. runtime.name) -- 626
+	end -- 610
 	--- 结算面板那一关的运行时（面板显示的 index；越界就退回当前关）。
-	local function resultRuntime() -- 581
-		if resultIndex >= 0 and resultIndex < levelTotal then -- 581
-			local rt = slots[resultIndex + 1].runtime -- 583
-			if rt ~= nil then -- 583
-				return rt -- 584
-			end -- 584
-		end -- 584
-		return activeRuntime() -- 586
-	end -- 581
-	local function onRetryTap() -- 589
-		local rt = resultRuntime() -- 591
-		print(((("[escape-velocity] tap: retry (resultIndex=" .. __TS__NumberToFixed(resultIndex, 0)) .. " phase=") .. (rt ~= nil and rt.game:phase() or "none")) .. ")") -- 592
-		if resultPanel ~= nil then -- 592
-			resultPanel:hide() -- 593
-		end -- 593
-		if rt ~= nil then -- 593
-			rt.game:retry() -- 594
-		end -- 594
-	end -- 589
-	local function ensureSolarHub() -- 597
-		if solarHub ~= nil then -- 597
-			return solarHub -- 598
-		end -- 598
-		solarHub = createSolarHub({ -- 599
-			root = hubRoot, -- 600
-			camera = hubCamera, -- 601
-			layer = hubLayer, -- 602
-			viewW = viewW, -- 603
-			viewH = viewH, -- 604
-			fovYDeg = View.fieldOfView, -- 605
-			aspect = View.aspectRatio, -- 606
-			spherePath = "Assets/Model/Sphere.gltf", -- 607
-			onLaunch = function(____, levelIndex) -- 608
-				print("[escape-velocity] solarHub launch: L" .. __TS__NumberToFixed(levelIndex + 1, 0)) -- 609
-				if solarHub ~= nil then -- 609
-					solarHub.hide() -- 610
-				end -- 610
-				enterLevel(levelIndex) -- 611
-			end, -- 608
-			onReplayIntro = function() -- 613
-				if solarHub ~= nil then -- 613
-					solarHub.hide() -- 614
-				end -- 614
-				startOpening() -- 615
-				print("[escape-velocity] opening replay from solarHub") -- 616
-			end -- 613
-		}) -- 613
-		return solarHub -- 619
-	end -- 597
-	local function onBackToSelectTap() -- 622
-		local rt = resultRuntime() -- 623
-		print(((("[escape-velocity] tap: back-to-select (resultIndex=" .. __TS__NumberToFixed(resultIndex, 0)) .. " phase=") .. (rt ~= nil and rt.game:phase() or "none")) .. ")") -- 624
-		if rt == nil then -- 624
-			return -- 625
-		end -- 625
-		local runtime = rt -- 626
-		if not runtime.game:backToSelect() then -- 626
-			return -- 628
-		end -- 628
-		runtime.world.visible = false -- 629
-		runtime.aim:setEnabled(false) -- 630
-		if resultPanel ~= nil then -- 630
-			resultPanel:hide() -- 631
-		end -- 631
-		if finalePanel ~= nil then -- 631
-			finalePanel:hide() -- 633
+	local function resultRuntime() -- 630
+		if resultIndex >= 0 and resultIndex < levelTotal then -- 630
+			local rt = slots[resultIndex + 1].runtime -- 632
+			if rt ~= nil then -- 632
+				return rt -- 633
+			end -- 633
 		end -- 633
-		if select ~= nil then -- 633
-			select:hide() -- 634
-		end -- 634
-		progress = loadProgress(levelTotal) -- 636
-		local hub = ensureSolarHub() -- 637
-		useCamera(hubCamera, -1) -- 638
-		hub.show(progress) -- 639
-		print("[escape-velocity] back to solarHub: total rockets=" .. __TS__NumberToFixed( -- 640
-			getTotalRockets(progress, levelTotal), -- 640
-			0 -- 640
-		)) -- 640
-	end -- 622
+		return activeRuntime() -- 635
+	end -- 630
+	local function onRetryTap() -- 638
+		local rt = resultRuntime() -- 640
+		print(((("[escape-velocity] tap: retry (resultIndex=" .. __TS__NumberToFixed(resultIndex, 0)) .. " phase=") .. (rt ~= nil and rt.game:phase() or "none")) .. ")") -- 641
+		if resultPanel ~= nil then -- 641
+			resultPanel:hide() -- 642
+		end -- 642
+		if rt ~= nil then -- 642
+			rt.game:retry() -- 643
+		end -- 643
+	end -- 638
+	local function ensureSolarHub() -- 646
+		if solarHub ~= nil then -- 646
+			return solarHub -- 647
+		end -- 647
+		solarHub = createSolarHub({ -- 648
+			root = hubRoot, -- 649
+			camera = hubCamera, -- 650
+			layer = hubLayer, -- 651
+			viewW = viewW, -- 652
+			viewH = viewH, -- 653
+			fovYDeg = View.fieldOfView, -- 654
+			aspect = View.aspectRatio, -- 655
+			spherePath = "Assets/Model/Sphere.gltf", -- 656
+			onLaunch = function(____, levelIndex) -- 657
+				print("[escape-velocity] solarHub launch: L" .. __TS__NumberToFixed(levelIndex + 1, 0)) -- 658
+				if solarHub ~= nil then -- 658
+					solarHub.hide() -- 659
+				end -- 659
+				enterLevel(levelIndex) -- 660
+			end, -- 657
+			onReplayIntro = function() -- 662
+				if solarHub ~= nil then -- 662
+					solarHub.hide() -- 663
+				end -- 663
+				startOpening() -- 664
+				print("[escape-velocity] opening replay from solarHub") -- 665
+			end -- 662
+		}) -- 662
+		return solarHub -- 668
+	end -- 646
+	local function onBackToSelectTap() -- 671
+		local rt = resultRuntime() -- 672
+		print(((("[escape-velocity] tap: back-to-select (resultIndex=" .. __TS__NumberToFixed(resultIndex, 0)) .. " phase=") .. (rt ~= nil and rt.game:phase() or "none")) .. ")") -- 673
+		if rt == nil then -- 673
+			return -- 674
+		end -- 674
+		local runtime = rt -- 675
+		if not runtime.game:backToSelect() then -- 675
+			return -- 677
+		end -- 677
+		runtime.world.visible = false -- 678
+		runtime.aim:setEnabled(false) -- 679
+		if resultPanel ~= nil then -- 679
+			resultPanel:hide() -- 680
+		end -- 680
+		if finalePanel ~= nil then -- 680
+			finalePanel:hide() -- 682
+		end -- 682
+		if select ~= nil then -- 682
+			select:hide() -- 683
+		end -- 683
+		progress = loadProgress(levelTotal) -- 685
+		local hub = ensureSolarHub() -- 686
+		useCamera(hubCamera, -1) -- 687
+		hub.show(progress) -- 688
+		print("[escape-velocity] back to solarHub: total rockets=" .. __TS__NumberToFixed( -- 689
+			getTotalRockets(progress, levelTotal), -- 689
+			0 -- 689
+		)) -- 689
+	end -- 671
 	--- 建（或重建）UI 面板。
 	-- 
 	-- 面板几何全部按 viewW/viewH 推导，所以**视口尺寸一变就必须重建** ——
@@ -638,48 +701,48 @@ else -- 130
 	-- 
 	-- ⚠️ 必须包一层箭头函数：直接把局部函数赋给“成员函数式”的属性会触发
 	-- TS100016（无 this 的函数不能转成带 this 的成员），手册 §5.7 第 4 条
-	local function buildPanels() -- 653
-		finalePanel = createFinalePanel( -- 656
-			uiLayer, -- 656
-			viewW, -- 656
-			viewH, -- 656
-			{onBackToSelect = function() return onBackToSelectTap() end} -- 656
-		) -- 656
-		resultPanel = createResultPanel( -- 659
-			uiLayer, -- 659
-			viewW, -- 659
-			viewH, -- 659
-			{ -- 659
-				onRetry = function() return onRetryTap() end, -- 660
-				onBackToSelect = function() return onBackToSelectTap() end -- 661
-			} -- 661
-		) -- 661
-		activeResultPanel = resultPanel -- 663
-		local created = createLevelSelect( -- 664
-			uiLayer, -- 664
-			viewW, -- 664
-			viewH, -- 664
-			{ -- 664
-				levels = levelEntries, -- 665
-				onPick = function(____, index) -- 666
-					print("[escape-velocity] tap: pick L" .. __TS__NumberToFixed(index + 1, 0)) -- 667
-					if select ~= nil then -- 667
-						select:hide() -- 668
-					end -- 668
-					enterLevel(index) -- 669
-				end, -- 666
-				onReplayIntro = function() -- 672
-					if select ~= nil then -- 672
-						select:hide() -- 673
-					end -- 673
-					startOpening() -- 674
-					print("[escape-velocity] opening replay (user)") -- 675
-				end -- 672
-			} -- 672
-		) -- 672
-		select = created -- 678
-		return created -- 679
-	end -- 653
+	local function buildPanels() -- 702
+		finalePanel = createFinalePanel( -- 705
+			uiLayer, -- 705
+			viewW, -- 705
+			viewH, -- 705
+			{onBackToSelect = function() return onBackToSelectTap() end} -- 705
+		) -- 705
+		resultPanel = createResultPanel( -- 708
+			uiLayer, -- 708
+			viewW, -- 708
+			viewH, -- 708
+			{ -- 708
+				onRetry = function() return onRetryTap() end, -- 709
+				onBackToSelect = function() return onBackToSelectTap() end -- 710
+			} -- 710
+		) -- 710
+		activeResultPanel = resultPanel -- 712
+		local created = createLevelSelect( -- 713
+			uiLayer, -- 713
+			viewW, -- 713
+			viewH, -- 713
+			{ -- 713
+				levels = levelEntries, -- 714
+				onPick = function(____, index) -- 715
+					print("[escape-velocity] tap: pick L" .. __TS__NumberToFixed(index + 1, 0)) -- 716
+					if select ~= nil then -- 716
+						select:hide() -- 717
+					end -- 717
+					enterLevel(index) -- 718
+				end, -- 715
+				onReplayIntro = function() -- 721
+					if select ~= nil then -- 721
+						select:hide() -- 722
+					end -- 722
+					startOpening() -- 723
+					print("[escape-velocity] opening replay (user)") -- 724
+				end -- 721
+			} -- 721
+		) -- 721
+		select = created -- 727
+		return created -- 728
+	end -- 702
 	--- 视口尺寸变化时的整体重建。
 	-- 
 	-- 为什么必须重建：2D 节点的子坐标原点是「位置 − anchor × 尺寸」（本轮已两次踩到），
@@ -688,451 +751,483 @@ else -- 130
 	-- 
 	-- 旧的层与关卡运行时只**隐藏 + 断触摸**，不销毁（避免依赖不确定的销毁 API）；
 	-- 关卡运行时按需重建（slots 标记为未建）。
-	local function relayoutForViewport() -- 692
-		local w = View.size.width -- 693
-		local h = View.size.height -- 694
-		if w == viewW and h == viewH then -- 694
-			return -- 695
-		end -- 695
-		if opening ~= nil then -- 695
-			opening.hide() -- 701
-			opening = nil -- 702
-		end -- 702
-		if select ~= nil then -- 702
-			select:hide() -- 704
-		end -- 704
-		if resultPanel ~= nil then -- 704
-			resultPanel:hide() -- 705
-		end -- 705
-		if finalePanel ~= nil then -- 705
-			finalePanel:hide() -- 706
-		end -- 706
-		do -- 706
-			local i = 0 -- 707
-			while i < levelTotal do -- 707
-				local slot = slots[i + 1] -- 708
-				if slot.runtime ~= nil then -- 708
-					slot.runtime.world.visible = false -- 710
-					slot.runtime.aim:setEnabled(false) -- 711
-					slot.runtime.trajectory:clearPrediction() -- 714
-					slot.runtime.trajectory:clearTrail() -- 715
-					slot.runtime.trajectory:clearGoalRings() -- 717
-					slot.runtime.plan:setVisible(false) -- 720
-					slot.runtime.plan:clear() -- 721
-				end -- 721
-				slot.built = false -- 723
-				slot.runtime = nil -- 724
-				i = i + 1 -- 707
-			end -- 707
-		end -- 707
-		viewW = w -- 728
-		viewH = h -- 729
-		uiLayer.size = Size(viewW, viewH) -- 730
-		openingLayer.size = Size(viewW, viewH) -- 731
-		hubLayer.size = Size(viewW, viewH) -- 732
-		do -- 732
-			local i = 0 -- 733
-			while i < levelTotal do -- 733
-				levelLayers[i + 1].size = Size(viewW, viewH) -- 733
-				i = i + 1 -- 733
-			end -- 733
-		end -- 733
-		if solarHub ~= nil then -- 733
-			solarHub.relayout(viewW, viewH) -- 735
-		end -- 735
-		buildPanels() -- 739
-		if activeIndex >= 0 then -- 739
-			local keep = activeIndex -- 741
-			activeIndex = -1 -- 742
-			enterLevel(keep) -- 743
-		else -- 743
-			local hub = ensureSolarHub() -- 745
-			useCamera(hubCamera, -1) -- 746
-			hub.show(progress) -- 747
-		end -- 747
-		print((("[escape-velocity] viewport rebuilt: " .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) -- 749
-	end -- 692
-	Director.entry:onAppChange(function(name) -- 753
-		if name == "Size" then -- 753
-			relayoutForViewport() -- 754
+	local function relayoutForViewport() -- 741
+		local w = View.size.width -- 742
+		local h = View.size.height -- 743
+		if w == viewW and h == viewH then -- 743
+			return -- 744
+		end -- 744
+		if opening ~= nil then -- 744
+			opening.hide() -- 750
+			opening = nil -- 751
+		end -- 751
+		if select ~= nil then -- 751
+			select:hide() -- 753
+		end -- 753
+		if resultPanel ~= nil then -- 753
+			resultPanel:hide() -- 754
 		end -- 754
-	end) -- 753
-	local introSeen = loadIntroSeen() -- 762
-	local forceIntro = false -- 763
-	opening = nil -- 764
-	startOpening = function() -- 766
-		if opening == nil then -- 766
-			opening = createOpening({ -- 768
-				root = openingRoot, -- 769
-				camera = openingCamera, -- 770
-				layer = openingLayer, -- 771
-				viewW = viewW, -- 772
-				viewH = viewH, -- 773
-				fovYDeg = View.fieldOfView, -- 774
-				aspect = View.aspectRatio, -- 775
-				spherePath = "Assets/Model/Sphere.gltf", -- 776
-				probePath = "Assets/Model/Probe_Voyager_v1.glb", -- 777
-				probeBodyPath = "Assets/Model/Probe_Body.glb", -- 778
-				probeAntennaPath = "Assets/Model/Probe_Antenna.glb", -- 779
-				onFinish = function() -- 780
-					introHold = -1 -- 781
-					if not introSeen then -- 781
-						saveIntroSeen() -- 783
-						introSeen = true -- 784
-						print("[escape-velocity] intro seen -> saved") -- 785
-					end -- 785
-					if opening ~= nil then -- 785
-						opening.hide() -- 788
-					end -- 788
-					if select ~= nil then -- 788
-						select:hide() -- 789
-					end -- 789
-					local hub = ensureSolarHub() -- 790
-					useCamera(hubCamera, -1) -- 791
-					hub.show(progress) -- 792
-					print("[escape-velocity] opening finished -> show solarHub: frame=" .. (opening ~= nil and __TS__NumberToFixed( -- 793
-						opening.frameIndex(), -- 793
-						0 -- 793
-					) or "?")) -- 793
-				end -- 780
-			}) -- 780
-		end -- 780
-		if opening == nil then -- 780
-			return -- 797
-		end -- 797
-		useCamera(openingCamera, -1) -- 798
-		opening.start() -- 799
-		print("[escape-velocity] opening start (first launch)") -- 800
-	end -- 766
-	local startupPanel = buildPanels() -- 803
-	local enterReq = Path( -- 815
-		Path(".", ".agent", "test-results"), -- 815
-		"enter-request.txt" -- 815
-	) -- 815
-	local autoLaunchAt = -1 -- 816
+		if finalePanel ~= nil then -- 754
+			finalePanel:hide() -- 755
+		end -- 755
+		do -- 755
+			local i = 0 -- 756
+			while i < levelTotal do -- 756
+				local slot = slots[i + 1] -- 757
+				if slot.runtime ~= nil then -- 757
+					slot.runtime.world.visible = false -- 759
+					slot.runtime.aim:setEnabled(false) -- 760
+					slot.runtime.trajectory:clearPrediction() -- 763
+					slot.runtime.trajectory:clearTrail() -- 764
+					slot.runtime.trajectory:clearGoalRings() -- 766
+					slot.runtime.plan:setVisible(false) -- 769
+					slot.runtime.plan:clear() -- 770
+				end -- 770
+				slot.built = false -- 772
+				slot.runtime = nil -- 773
+				i = i + 1 -- 756
+			end -- 756
+		end -- 756
+		viewW = w -- 777
+		viewH = h -- 778
+		uiLayer.size = Size(viewW, viewH) -- 779
+		openingLayer.size = Size(viewW, viewH) -- 780
+		hubLayer.size = Size(viewW, viewH) -- 781
+		do -- 781
+			local i = 0 -- 782
+			while i < levelTotal do -- 782
+				levelLayers[i + 1].size = Size(viewW, viewH) -- 782
+				i = i + 1 -- 782
+			end -- 782
+		end -- 782
+		if solarHub ~= nil then -- 782
+			solarHub.relayout(viewW, viewH) -- 784
+		end -- 784
+		buildPanels() -- 788
+		if activeIndex >= 0 then -- 788
+			local keep = activeIndex -- 790
+			activeIndex = -1 -- 791
+			enterLevel(keep) -- 792
+		else -- 792
+			local hub = ensureSolarHub() -- 794
+			useCamera(hubCamera, -1) -- 795
+			hub.show(progress) -- 796
+		end -- 796
+		print((("[escape-velocity] viewport rebuilt: " .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) -- 798
+	end -- 741
+	Director.entry:onAppChange(function(name) -- 802
+		if name == "Size" then -- 802
+			relayoutForViewport() -- 803
+		end -- 803
+	end) -- 802
+	local introSeen = loadIntroSeen() -- 811
+	local forceIntro = false -- 812
+	opening = nil -- 813
+	startOpening = function() -- 815
+		if opening == nil then -- 815
+			opening = createOpening({ -- 817
+				root = openingRoot, -- 818
+				camera = openingCamera, -- 819
+				layer = openingLayer, -- 820
+				viewW = viewW, -- 821
+				viewH = viewH, -- 822
+				fovYDeg = View.fieldOfView, -- 823
+				aspect = View.aspectRatio, -- 824
+				spherePath = "Assets/Model/Sphere.gltf", -- 825
+				probePath = "Assets/Model/Probe_Voyager_v1.glb", -- 826
+				probeBodyPath = "Assets/Model/Probe_Body.glb", -- 827
+				probeAntennaPath = "Assets/Model/Probe_Antenna.glb", -- 828
+				onFinish = function() -- 829
+					introHold = -1 -- 830
+					if not introSeen then -- 830
+						saveIntroSeen() -- 832
+						introSeen = true -- 833
+						print("[escape-velocity] intro seen -> saved") -- 834
+					end -- 834
+					if opening ~= nil then -- 834
+						opening.hide() -- 837
+					end -- 837
+					if select ~= nil then -- 837
+						select:hide() -- 838
+					end -- 838
+					local hub = ensureSolarHub() -- 839
+					useCamera(hubCamera, -1) -- 840
+					hub.show(progress) -- 841
+					print("[escape-velocity] opening finished -> show solarHub: frame=" .. (opening ~= nil and __TS__NumberToFixed( -- 842
+						opening.frameIndex(), -- 842
+						0 -- 842
+					) or "?")) -- 842
+				end -- 829
+			}) -- 829
+		end -- 829
+		if opening == nil then -- 829
+			return -- 846
+		end -- 846
+		useCamera(openingCamera, -1) -- 847
+		opening.start() -- 848
+		print("[escape-velocity] opening start (first launch)") -- 849
+	end -- 815
+	local startupPanel = buildPanels() -- 852
+	local enterReq = Path( -- 864
+		Path(".", ".agent", "test-results"), -- 864
+		"enter-request.txt" -- 864
+	) -- 864
+	local autoLaunchAt = -1 -- 865
 	--- "N@arm:<frames>"：自动进 Armed 的帧号（-1 = 不自动）。
-	local autoArmAt = -1 -- 818
-	local autoFrame = 0 -- 819
-	local autoVX = 0 -- 820
-	local autoVY = 0 -- 821
+	local autoArmAt = -1 -- 867
+	local autoFrame = 0 -- 868
+	local autoVX = 0 -- 869
+	local autoVY = 0 -- 870
 	--- "N@frames:vx:vy:steps"：自动发射**之前**先按 steps 次「加速 ▶」（每次 TimeWarpStep 秒）。
 	-- 为什么需要它：L4/L6 的可行解在**特定发射日期**上（L6 在 t0 = 180），而
 	-- `game.launch()` 只认 core.t0 —— 不先把世界时钟拨过去，发出去的就是第 0 天的航线。
 	-- 走的是 `Game.stepTime`（玩家按时间流按钮的同一条公开路径，含相态守卫与 span 夹紧），
 	-- 不是直接写 core.t0 ⇒ 与真机操作等价。0 / 缺省 = 不拨（旧行为不变）。
-	local autoWarpSteps = 0 -- 829
-	local autoBackAt = -1 -- 831
-	local autoReenterAt = -1 -- 832
-	local autoEntered = false -- 833
-	introHold = -1 -- 835
-	if Content:exist(enterReq) then -- 835
-		local spec = Content:load(enterReq) -- 837
-		local at = (string.find(spec, "@", nil, true) or 0) - 1 -- 838
-		local head = __TS__StringTrim(at < 0 and spec or __TS__StringSubstring(spec, 0, at)) -- 839
-		if head == "intro" then -- 839
-			forceIntro = true -- 841
-			if at >= 0 then -- 841
-				local rest = __TS__StringSubstring(spec, at + 1) -- 843
-				local colon = (string.find(rest, ":", nil, true) or 0) - 1 -- 844
-				if colon > 0 and __TS__StringTrim(__TS__StringSubstring(rest, 0, colon)) == "hold" then -- 844
-					local v = tonumber(__TS__StringSubstring(rest, colon + 1)) -- 846
-					if v ~= nil and v >= 0 then -- 846
-						introHold = v -- 848
-						print("[escape-velocity] opening hold at frame " .. __TS__NumberToFixed(v, 0)) -- 849
-					end -- 849
-				end -- 849
-			end -- 849
-		end -- 849
-		local n = tonumber(head) -- 854
-		if n ~= nil and n >= 1 and n <= levelTotal then -- 854
-			print(("[escape-velocity] auto enter L" .. __TS__NumberToFixed(n, 0)) .. " (enter-request)") -- 856
-			enterLevel(n - 1) -- 857
-			autoEntered = true -- 858
-			if at >= 0 then -- 858
-				local rest = __TS__StringSubstring(spec, at + 1) -- 860
-				if __TS__StringSubstring(rest, 0, 4) == "arm:" then -- 860
-					local f = tonumber(__TS__StringSubstring(rest, 4)) -- 865
-					if f ~= nil and f >= 0 then -- 865
-						autoArmAt = f -- 867
-						print("[escape-velocity] auto arm scheduled: frame " .. __TS__NumberToFixed(f, 0)) -- 868
-					end -- 868
-				else -- 868
-					local c1 = (string.find(rest, ":", nil, true) or 0) - 1 -- 871
-					local c2 = (string.find( -- 872
-						rest, -- 872
-						":", -- 872
-						math.max(c1 + 1 + 1, 1), -- 872
-						true -- 872
-					) or 0) - 1 -- 872
-					if c1 > 0 and c2 > c1 then -- 872
-						local frames = tonumber(__TS__StringSubstring(rest, 0, c1)) -- 874
-						local vx = tonumber(__TS__StringSubstring(rest, c1 + 1, c2)) -- 875
-						local tail = __TS__StringSubstring(rest, c2 + 1) -- 878
-						local c3 = (string.find(tail, ":", nil, true) or 0) - 1 -- 879
-						local vyText = c3 > 0 and __TS__StringSubstring(tail, 0, c3) or tail -- 880
-						local vy = tonumber(vyText) -- 881
-						local ____temp_0 -- 882
-						if c3 > 0 then -- 882
-							____temp_0 = tonumber(__TS__StringSubstring(tail, c3 + 1)) -- 882
-						else -- 882
-							____temp_0 = nil -- 882
-						end -- 882
-						local steps = ____temp_0 -- 882
-						if frames ~= nil and vx ~= nil and vy ~= nil then -- 882
-							autoLaunchAt = frames -- 884
-							autoVX = vx -- 885
-							autoVY = vy -- 886
-							if steps ~= nil and steps > 0 then -- 886
-								autoWarpSteps = math.floor(steps) -- 888
-							end -- 888
-							print(((((((("[escape-velocity] auto launch scheduled: frame " .. __TS__NumberToFixed(frames, 0)) .. " v=(") .. __TS__NumberToFixed(vx, 1)) .. ",") .. __TS__NumberToFixed(vy, 1)) .. ")") .. " warpSteps=") .. __TS__NumberToFixed(autoWarpSteps, 0)) -- 890
-						end -- 890
-					end -- 890
-				end -- 890
-			end -- 890
-		end -- 890
-	end -- 890
-	if autoEntered then -- 890
-		print("[escape-velocity] opening skipped (auto enter)") -- 903
-	elseif forceIntro or not introSeen then -- 903
-		startOpening() -- 905
-	else -- 905
-		local hub = ensureSolarHub() -- 907
-		useCamera(hubCamera, -1) -- 908
-		hub.show(progress) -- 909
-		print("[escape-velocity] entered solarHub (already seen)") -- 910
-	end -- 910
-	threadLoop(function() -- 915
-		advanceUiClock(App.deltaTime) -- 919
-		if solarHub ~= nil and solarHub.visible() then -- 919
-			solarHub.step(App.deltaTime) -- 923
-		end -- 923
-		if opening ~= nil and opening.running() then -- 923
-			if introHold < 0 or opening.frameIndex() < introHold then -- 923
-				opening.step() -- 929
-			end -- 929
-			if App.deltaTime > 0.05 then -- 929
-				print((("[escape-velocity] hitch " .. __TS__NumberToFixed(App.deltaTime * 1000, 0)) .. "ms @ opening frame ") .. __TS__NumberToFixed( -- 933
-					opening.frameIndex(), -- 933
-					0 -- 933
-				)) -- 933
-			end -- 933
-		end -- 933
-		local runtime = activeRuntime() -- 937
-		if runtime ~= nil then -- 937
-			runtime.game:update(App.deltaTime) -- 939
-			runtime.aim:setBurnInfo( -- 941
-				runtime.game:burnNow(), -- 941
-				runtime.dvBudget -- 941
-			) -- 941
-			if runtime.levelHasTimeWindow then -- 941
-				runtime.aim:setDate( -- 944
-					runtime.game:dateNow(), -- 944
-					runtime.dateSpan -- 944
-				) -- 944
-			end -- 944
-			local phaseNow = runtime.game:phase() -- 948
-			runtime.aim:setTimeEnabled(phaseNow == "Aiming" or phaseNow == "Armed") -- 949
-			runtime.aim:update(App.deltaTime) -- 950
-			runtime.aim:setArmed(runtime.game:armed()) -- 952
-			local is2D = runtime.game:viewMode() == "2D" -- 954
-			runtime.aim:setViewMode(runtime.game:viewMode()) -- 955
-			local inAim = (phaseNow == "Aiming" or phaseNow == "Armed") and not runtime.game:isIntroTourActive() -- 956
-			runtime.aim:setZoomControlsVisible(is2D and inAim) -- 957
-			runtime.aim:setMissionDrawerVisible(inAim) -- 958
-			local curBurn = runtime.game:burnNow() -- 960
-			local fuelLimit = runtime.dvBudget * 0.75 -- 961
-			runtime.aim:setLiveFuelChallengeStatus(curBurn <= fuelLimit and curBurn >= 0.001) -- 962
-			runtime.aim:setTimeControl( -- 965
-				runtime.game:speedPow(), -- 966
-				runtime.game:speedMaxPow(), -- 967
-				runtime.game:isPaused(), -- 968
-				runtime.game:missionSeconds() -- 969
-			) -- 969
-			local brakeActive = phaseNow == "Flying" and runtime.game:isBrakeWindowActive() or debugForceBrakeWindow -- 972
-			local isBraked = runtime.game:hasBraked() or debugForceBraked -- 973
-			runtime.aim:setLiveBrakeVisible(brakeActive) -- 974
-			runtime.aim:setLiveBraked(isBraked) -- 975
-			if autoLaunchAt >= 0 or autoBackAt >= 0 or autoReenterAt >= 0 or autoArmAt >= 0 then -- 975
-				autoFrame = autoFrame + 1 -- 978
-				if autoArmAt >= 0 and autoFrame >= autoArmAt then -- 978
-					autoArmAt = -1 -- 981
-					print("[escape-velocity] auto arm (enter-request)") -- 982
-					runtime.game:aimReady() -- 983
-				end -- 983
-				if autoLaunchAt >= 0 and autoFrame >= autoLaunchAt then -- 983
-					autoLaunchAt = -1 -- 986
-					print("[escape-velocity] auto launch") -- 987
-					if autoWarpSteps > 0 then -- 987
-						do -- 987
-							local s = 0 -- 991
-							while s < autoWarpSteps do -- 991
-								runtime.game:stepTime(1, runtime.dateSpan) -- 991
-								s = s + 1 -- 991
-							end -- 991
-						end -- 991
-						autoWarpSteps = 0 -- 992
-						print(("[escape-velocity] auto warp done (date=" .. __TS__NumberToFixed( -- 993
-							runtime.game:dateNow(), -- 993
-							0 -- 993
-						)) .. ")") -- 993
-					end -- 993
-					print(((("[escape-velocity] auto launch burn=(" .. __TS__NumberToFixed(autoVX, 5)) .. ",") .. __TS__NumberToFixed(autoVY, 5)) .. ")") -- 995
-					runtime.game:launch({x = autoVX, y = autoVY}) -- 996
-					autoBackAt = autoFrame + 320 -- 997
-					autoReenterAt = autoFrame + 380 -- 998
-				end -- 998
-				if autoBackAt >= 0 and autoFrame >= autoBackAt then -- 998
-					autoBackAt = -1 -- 1002
-					if runtime.game:backToSelect() then -- 1002
-						print("[escape-velocity] auto back to select") -- 1003
-					end -- 1003
-				end -- 1003
-				if autoReenterAt >= 0 and autoFrame >= autoReenterAt then -- 1003
-					autoReenterAt = -1 -- 1006
-					print("[escape-velocity] auto re-enter") -- 1007
-					enterLevel(0) -- 1008
-				end -- 1008
-			end -- 1008
-		end -- 1008
-		return false -- 1013
-	end) -- 915
-	print((((((((((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", view=") .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) .. ", platform=") .. App.platform) .. ", introSeen=") .. (introSeen and "yes" or "no")) -- 1017
-	debugTriggerResultFn = function(levelIndex, outcome) -- 1019
-		if outcome == nil then -- 1019
-			outcome = "success" -- 1019
-		end -- 1019
-		if solarHub ~= nil then -- 1019
-			solarHub.hide() -- 1020
-		end -- 1020
-		if opening ~= nil then -- 1020
-			opening.hide() -- 1021
-		end -- 1021
-		local def = getLevel(levelIndex) -- 1022
-		if def == nil or resultPanel == nil then -- 1022
-			return -- 1023
-		end -- 1023
-		local burn = def.dvBudget * 0.65 -- 1024
-		local challengesList = {} -- 1025
-		if def.mission ~= nil then -- 1025
-			do -- 1025
-				local k = 0 -- 1027
-				while k < #def.mission.challenges do -- 1027
-					challengesList[#challengesList + 1] = def.mission.challenges[k + 1].desc -- 1028
-					k = k + 1 -- 1027
-				end -- 1027
-			end -- 1027
-		end -- 1027
-		local titleWithSub = def.mission ~= nil and (((("L" .. __TS__NumberToFixed(levelIndex + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or "L" .. __TS__NumberToFixed(levelIndex + 1, 0) -- 1031
-		resultPanel:show(outcome, titleWithSub, { -- 1035
-			result = outcome, -- 1036
-			levelName = titleWithSub, -- 1037
-			levelIndex = levelIndex, -- 1038
-			rocketsGot = outcome == "success" and 3 or 0, -- 1039
-			challenges = challengesList, -- 1040
-			achieved = outcome == "success" and ({true, true, true}) or ({false, false, false}), -- 1041
-			burnDv = burn, -- 1042
-			dvBudget = def.dvBudget, -- 1043
-			flightTime = 12.8, -- 1044
-			totalRockets = outcome == "success" and 16 or 13, -- 1045
-			totalPossibleRockets = 18 -- 1046
-		}) -- 1046
-	end -- 1019
-	debugTriggerBrakeWindowFn = function(levelIndex) -- 1050
-		if solarHub ~= nil then -- 1050
-			solarHub.hide() -- 1051
-		end -- 1051
-		if opening ~= nil then -- 1051
-			opening.hide() -- 1052
-		end -- 1052
-		enterLevel(levelIndex) -- 1053
-		local rt = activeRuntime() -- 1054
-		if rt ~= nil then -- 1054
-			rt.game:launch({x = 2, y = -20}) -- 1056
-			debugForceBrakeWindow = true -- 1057
-			debugForceBraked = false -- 1058
-			rt.aim:setLiveBrakeVisible(true) -- 1059
-			rt.aim:setLiveBraked(false) -- 1060
-			if rt.game:viewMode() ~= "3D" then -- 1060
-				rt.game:toggleViewMode() -- 1061
-			end -- 1061
-		end -- 1061
-	end -- 1050
-	debugTriggerBrakePressFn = function() -- 1065
-		debugForceBrakeWindow = true -- 1066
-		debugForceBraked = true -- 1067
-		local rt = activeRuntime() -- 1068
-		if rt ~= nil then -- 1068
-			rt.aim:setLiveBrakeVisible(true) -- 1070
-			rt.aim:setLiveBraked(true) -- 1071
+	local autoWarpSteps = 0 -- 878
+	local autoBackAt = -1 -- 880
+	local autoReenterAt = -1 -- 881
+	local autoEntered = false -- 882
+	introHold = -1 -- 884
+	if Content:exist(enterReq) then -- 884
+		local spec = Content:load(enterReq) -- 886
+		local at = (string.find(spec, "@", nil, true) or 0) - 1 -- 887
+		local head = __TS__StringTrim(at < 0 and spec or __TS__StringSubstring(spec, 0, at)) -- 888
+		if head == "intro" then -- 888
+			forceIntro = true -- 890
+			if at >= 0 then -- 890
+				local rest = __TS__StringSubstring(spec, at + 1) -- 892
+				local colon = (string.find(rest, ":", nil, true) or 0) - 1 -- 893
+				if colon > 0 and __TS__StringTrim(__TS__StringSubstring(rest, 0, colon)) == "hold" then -- 893
+					local v = tonumber(__TS__StringSubstring(rest, colon + 1)) -- 895
+					if v ~= nil and v >= 0 then -- 895
+						introHold = v -- 897
+						print("[escape-velocity] opening hold at frame " .. __TS__NumberToFixed(v, 0)) -- 898
+					end -- 898
+				end -- 898
+			end -- 898
+		end -- 898
+		local n = tonumber(head) -- 903
+		if n ~= nil and n >= 1 and n <= levelTotal then -- 903
+			print(("[escape-velocity] auto enter L" .. __TS__NumberToFixed(n, 0)) .. " (enter-request)") -- 905
+			enterLevel(n - 1) -- 906
+			autoEntered = true -- 907
+			if at >= 0 then -- 907
+				local rest = __TS__StringSubstring(spec, at + 1) -- 909
+				if __TS__StringSubstring(rest, 0, 4) == "arm:" then -- 909
+					local f = tonumber(__TS__StringSubstring(rest, 4)) -- 914
+					if f ~= nil and f >= 0 then -- 914
+						autoArmAt = f -- 916
+						print("[escape-velocity] auto arm scheduled: frame " .. __TS__NumberToFixed(f, 0)) -- 917
+					end -- 917
+				else -- 917
+					local c1 = (string.find(rest, ":", nil, true) or 0) - 1 -- 920
+					local c2 = (string.find( -- 921
+						rest, -- 921
+						":", -- 921
+						math.max(c1 + 1 + 1, 1), -- 921
+						true -- 921
+					) or 0) - 1 -- 921
+					if c1 > 0 and c2 > c1 then -- 921
+						local frames = tonumber(__TS__StringSubstring(rest, 0, c1)) -- 923
+						local vx = tonumber(__TS__StringSubstring(rest, c1 + 1, c2)) -- 924
+						local tail = __TS__StringSubstring(rest, c2 + 1) -- 927
+						local c3 = (string.find(tail, ":", nil, true) or 0) - 1 -- 928
+						local vyText = c3 > 0 and __TS__StringSubstring(tail, 0, c3) or tail -- 929
+						local vy = tonumber(vyText) -- 930
+						local ____temp_0 -- 931
+						if c3 > 0 then -- 931
+							____temp_0 = tonumber(__TS__StringSubstring(tail, c3 + 1)) -- 931
+						else -- 931
+							____temp_0 = nil -- 931
+						end -- 931
+						local steps = ____temp_0 -- 931
+						if frames ~= nil and vx ~= nil and vy ~= nil then -- 931
+							autoLaunchAt = frames -- 933
+							autoVX = vx -- 934
+							autoVY = vy -- 935
+							if steps ~= nil and steps > 0 then -- 935
+								autoWarpSteps = math.floor(steps) -- 937
+							end -- 937
+							print(((((((("[escape-velocity] auto launch scheduled: frame " .. __TS__NumberToFixed(frames, 0)) .. " v=(") .. __TS__NumberToFixed(vx, 1)) .. ",") .. __TS__NumberToFixed(vy, 1)) .. ")") .. " warpSteps=") .. __TS__NumberToFixed(autoWarpSteps, 0)) -- 939
+						end -- 939
+					end -- 939
+				end -- 939
+			end -- 939
+		end -- 939
+	end -- 939
+	if autoEntered then -- 939
+		print("[escape-velocity] opening skipped (auto enter)") -- 952
+	elseif forceIntro or not introSeen then -- 952
+		startOpening() -- 954
+	else -- 954
+		local hub = ensureSolarHub() -- 956
+		useCamera(hubCamera, -1) -- 957
+		hub.show(progress) -- 958
+		print("[escape-velocity] entered solarHub (already seen)") -- 959
+	end -- 959
+	threadLoop(function() -- 964
+		advanceUiClock(App.deltaTime) -- 968
+		if solarHub ~= nil and solarHub.visible() then -- 968
+			solarHub.step(App.deltaTime) -- 972
+		end -- 972
+		if opening ~= nil and opening.running() then -- 972
+			if introHold < 0 or opening.frameIndex() < introHold then -- 972
+				opening.step() -- 978
+			end -- 978
+			if App.deltaTime > 0.05 then -- 978
+				print((("[escape-velocity] hitch " .. __TS__NumberToFixed(App.deltaTime * 1000, 0)) .. "ms @ opening frame ") .. __TS__NumberToFixed( -- 982
+					opening.frameIndex(), -- 982
+					0 -- 982
+				)) -- 982
+			end -- 982
+		end -- 982
+		local runtime = activeRuntime() -- 986
+		if runtime ~= nil then -- 986
+			runtime.game:update(App.deltaTime) -- 988
+			runtime.aim:setBurnInfo( -- 990
+				runtime.game:burnNow(), -- 990
+				runtime.dvBudget -- 990
+			) -- 990
+			if runtime.levelHasTimeWindow then -- 990
+				runtime.aim:setDate( -- 993
+					runtime.game:dateNow(), -- 993
+					runtime.dateSpan -- 993
+				) -- 993
+			end -- 993
+			local phaseNow = runtime.game:phase() -- 997
+			runtime.aim:setTimeEnabled(phaseNow == "Aiming" or phaseNow == "Armed") -- 998
+			runtime.aim:update(App.deltaTime) -- 999
+			runtime.aim:setArmed(runtime.game:armed()) -- 1001
+			runtime.aim:setStarsStatus(runtime.game:starsNow()) -- 1002
+			local is2D = runtime.game:viewMode() == "2D" -- 1004
+			runtime.aim:setViewMode(runtime.game:viewMode()) -- 1005
+			if runtime.aim.setFlightViewing ~= nil then -- 1005
+				runtime.aim:setFlightViewing( -- 1006
+					phaseNow == "Flying", -- 1006
+					runtime.game:missionCompleted(), -- 1006
+					runtime.game:cameraFocus(), -- 1006
+					not is2D, -- 1006
+					runtime.game:flightStage() -- 1006
+				) -- 1006
+			end -- 1006
+			local inAim = (phaseNow == "Aiming" or phaseNow == "Armed") and not runtime.game:isIntroTourActive() -- 1007
+			runtime.aim:setZoomControlsVisible(is2D and inAim) -- 1008
+			runtime.aim:setMissionDrawerVisible(inAim) -- 1009
+			local curBurn = runtime.game:burnNow() -- 1011
+			local fuelLimit = runtime.dvBudget * 0.75 -- 1012
+			runtime.aim:setLiveFuelChallengeStatus(curBurn <= fuelLimit and curBurn >= 0.001) -- 1013
+			runtime.aim:setTimeControl( -- 1016
+				runtime.game:speedPow(), -- 1017
+				runtime.game:speedMaxPow(), -- 1018
+				runtime.game:isPaused(), -- 1019
+				runtime.game:missionSeconds(), -- 1020
+				runtime.game:speedRate() -- 1021
+			) -- 1021
+			local brakeActive = phaseNow == "Flying" and runtime.game:isBrakeWindowActive() or debugForceBrakeWindow -- 1024
+			local isBraked = runtime.game:hasBraked() or debugForceBraked -- 1025
+			runtime.aim:setLiveBrakeVisible(brakeActive) -- 1026
+			runtime.aim:setLiveBraked(isBraked) -- 1027
+			if autoLaunchAt >= 0 or autoBackAt >= 0 or autoReenterAt >= 0 or autoArmAt >= 0 then -- 1027
+				autoFrame = autoFrame + 1 -- 1030
+				if autoArmAt >= 0 and autoFrame >= autoArmAt then -- 1030
+					autoArmAt = -1 -- 1033
+					print("[escape-velocity] auto arm (enter-request)") -- 1034
+					runtime.game:aimReady() -- 1035
+				end -- 1035
+				if autoLaunchAt >= 0 and autoFrame >= autoLaunchAt then -- 1035
+					autoLaunchAt = -1 -- 1038
+					print("[escape-velocity] auto launch") -- 1039
+					if autoWarpSteps > 0 then -- 1039
+						do -- 1039
+							local s = 0 -- 1043
+							while s < autoWarpSteps do -- 1043
+								runtime.game:stepTime(1, runtime.dateSpan) -- 1043
+								s = s + 1 -- 1043
+							end -- 1043
+						end -- 1043
+						autoWarpSteps = 0 -- 1044
+						print(("[escape-velocity] auto warp done (date=" .. __TS__NumberToFixed( -- 1045
+							runtime.game:dateNow(), -- 1045
+							0 -- 1045
+						)) .. ")") -- 1045
+					end -- 1045
+					print(((("[escape-velocity] auto launch burn=(" .. __TS__NumberToFixed(autoVX, 5)) .. ",") .. __TS__NumberToFixed(autoVY, 5)) .. ")") -- 1047
+					runtime.game:launch({x = autoVX, y = autoVY}) -- 1048
+					autoBackAt = autoFrame + 320 -- 1049
+					autoReenterAt = autoFrame + 380 -- 1050
+				end -- 1050
+				if autoBackAt >= 0 and autoFrame >= autoBackAt then -- 1050
+					autoBackAt = -1 -- 1054
+					if runtime.game:backToSelect() then -- 1054
+						print("[escape-velocity] auto back to select") -- 1055
+					end -- 1055
+				end -- 1055
+				if autoReenterAt >= 0 and autoFrame >= autoReenterAt then -- 1055
+					autoReenterAt = -1 -- 1058
+					print("[escape-velocity] auto re-enter") -- 1059
+					enterLevel(0) -- 1060
+				end -- 1060
+			end -- 1060
+		end -- 1060
+		return false -- 1065
+	end) -- 964
+	print((((((((((("[escape-velocity] started: " .. __TS__NumberToFixed(levelTotal, 0)) .. " levels, unlocked=") .. __TS__NumberToFixed(progress.unlocked, 0)) .. ", view=") .. __TS__NumberToFixed(viewW, 0)) .. "x") .. __TS__NumberToFixed(viewH, 0)) .. ", platform=") .. App.platform) .. ", introSeen=") .. (introSeen and "yes" or "no")) -- 1069
+	debugTriggerResultFn = function(levelIndex, outcome) -- 1071
+		if outcome == nil then -- 1071
+			outcome = "success" -- 1071
 		end -- 1071
-	end -- 1065
-	debugTriggerEnterLevelFn = function(levelIndex) -- 1075
-		if solarHub ~= nil then -- 1075
-			solarHub.hide() -- 1076
-		end -- 1076
-		if opening ~= nil then -- 1076
-			opening.hide() -- 1077
-		end -- 1077
-		enterLevel(levelIndex) -- 1078
-	end -- 1075
-	debugTriggerZoomInFn = function() -- 1081
-		local rt = activeRuntime() -- 1082
-		if rt ~= nil then -- 1082
-			rt.plan:zoomIn() -- 1084
-		end -- 1084
-	end -- 1081
-	debugTriggerResetViewFn = function() -- 1088
-		local rt = activeRuntime() -- 1089
-		if rt ~= nil then -- 1089
-			rt.plan:resetView() -- 1091
-		end -- 1091
-	end -- 1088
-end -- 1088
---- 获取当前处于激活状态的结算面板（调试/截图用）。
-function ____exports.getActiveResultPanel() -- 1097
-	return activeResultPanel -- 1098
-end -- 1097
---- 触发一次指定关卡的结算卡片演出（调试/自动化截图用）。
-function ____exports.triggerDebugResult(levelIndex, outcome) -- 1102
-	if outcome == nil then -- 1102
-		outcome = "success" -- 1102
+		if solarHub ~= nil then -- 1071
+			solarHub.hide() -- 1072
+		end -- 1072
+		if opening ~= nil then -- 1072
+			opening.hide() -- 1073
+		end -- 1073
+		local def = getLevel(levelIndex) -- 1074
+		if def == nil or resultPanel == nil then -- 1074
+			return -- 1075
+		end -- 1075
+		local burn = def.dvBudget * 0.65 -- 1076
+		local challengesList = {} -- 1077
+		if def.mission ~= nil then -- 1077
+			do -- 1077
+				local k = 0 -- 1079
+				while k < #def.mission.challenges do -- 1079
+					challengesList[#challengesList + 1] = def.mission.challenges[k + 1].desc -- 1080
+					k = k + 1 -- 1079
+				end -- 1079
+			end -- 1079
+		end -- 1079
+		local titleWithSub = def.mission ~= nil and (((("L" .. __TS__NumberToFixed(levelIndex + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or "L" .. __TS__NumberToFixed(levelIndex + 1, 0) -- 1083
+		resultPanel:show(outcome, titleWithSub, { -- 1087
+			result = outcome, -- 1088
+			levelName = titleWithSub, -- 1089
+			levelIndex = levelIndex, -- 1090
+			rocketsGot = outcome == "success" and 3 or 0, -- 1091
+			challenges = challengesList, -- 1092
+			achieved = outcome == "success" and ({true, true, true}) or ({false, false, false}), -- 1093
+			burnDv = burn, -- 1094
+			dvBudget = def.dvBudget, -- 1095
+			flightTime = 12.8, -- 1096
+			totalRockets = outcome == "success" and 16 or 13, -- 1097
+			totalPossibleRockets = 18 -- 1098
+		}) -- 1098
+	end -- 1071
+	debugTriggerBrakeWindowFn = function(levelIndex) -- 1102
+		if solarHub ~= nil then -- 1102
+			solarHub.hide() -- 1103
+		end -- 1103
+		if opening ~= nil then -- 1103
+			opening.hide() -- 1104
+		end -- 1104
+		enterLevel(levelIndex) -- 1105
+		local rt = activeRuntime() -- 1106
+		if rt ~= nil then -- 1106
+			rt.game:launch({x = 2, y = -20}) -- 1108
+			debugForceBrakeWindow = true -- 1109
+			debugForceBraked = false -- 1110
+			rt.aim:setLiveBrakeVisible(true) -- 1111
+			rt.aim:setLiveBraked(false) -- 1112
+			if rt.game:viewMode() ~= "3D" then -- 1112
+				rt.game:toggleViewMode() -- 1113
+			end -- 1113
+		end -- 1113
 	end -- 1102
-	if debugTriggerResultFn ~= nil then -- 1102
-		debugTriggerResultFn(levelIndex, outcome) -- 1104
-	end -- 1104
-end -- 1102
---- 触发进入制动窗口演示（调试/自动化截图用）。
-function ____exports.triggerDebugBrakeWindow(levelIndex) -- 1109
-	if levelIndex == nil then -- 1109
-		levelIndex = 3 -- 1109
-	end -- 1109
-	if debugTriggerBrakeWindowFn ~= nil then -- 1109
-		debugTriggerBrakeWindowFn(levelIndex) -- 1111
-	end -- 1111
-end -- 1109
---- 触发按下逆喷制动按钮演示（调试/自动化截图用）。
-function ____exports.triggerDebugBrakePress() -- 1116
-	if debugTriggerBrakePressFn ~= nil then -- 1116
-		debugTriggerBrakePressFn() -- 1118
-	end -- 1118
-end -- 1116
---- 触发进入关卡并启动入场 3D 运镜（调试/截图用）。
-function ____exports.triggerDebugEnterLevel(levelIndex) -- 1123
-	if debugTriggerEnterLevelFn ~= nil then -- 1123
-		debugTriggerEnterLevelFn(levelIndex) -- 1125
-	end -- 1125
-end -- 1123
---- 触发 2D 规划视口放大（调试/截图用）。
-function ____exports.triggerDebugZoomIn() -- 1130
-	if debugTriggerZoomInFn ~= nil then -- 1130
-		debugTriggerZoomInFn() -- 1132
+	debugTriggerBrakePressFn = function() -- 1117
+		debugForceBrakeWindow = true -- 1118
+		debugForceBraked = true -- 1119
+		local rt = activeRuntime() -- 1120
+		if rt ~= nil then -- 1120
+			rt.aim:setLiveBrakeVisible(true) -- 1122
+			rt.aim:setLiveBraked(true) -- 1123
+		end -- 1123
+	end -- 1117
+	debugTriggerEnterLevelFn = function(levelIndex) -- 1127
+		if solarHub ~= nil then -- 1127
+			solarHub.hide() -- 1128
+		end -- 1128
+		if opening ~= nil then -- 1128
+			opening.hide() -- 1129
+		end -- 1129
+		enterLevel(levelIndex) -- 1130
+	end -- 1127
+	debugGameStateFn = function() -- 1132
+		local rt = activeRuntime() -- 1133
+		if rt == nil then -- 1133
+			return "phase=LevelSelect" -- 1134
+		end -- 1134
+		local g = rt.game -- 1135
+		return (((((((((((((("phase=" .. g:phase()) .. "\ndate=") .. __TS__NumberToFixed( -- 1136
+			g:dateNow(), -- 1136
+			6 -- 1136
+		)) .. "\nworld=") .. __TS__NumberToFixed( -- 1136
+			g:missionSeconds(), -- 1136
+			6 -- 1136
+		)) .. "\nrate=") .. __TS__NumberToFixed( -- 1136
+			g:speedRate(), -- 1137
+			6 -- 1137
+		)) .. "\npaused=") .. (g:isPaused() and "1" or "0")) .. "\nfocus=") .. g:cameraFocus()) .. "\ncompleted=") .. (g:missionCompleted() and "1" or "0")) .. "\nview=") .. g:viewMode() -- 1137
 	end -- 1132
-end -- 1130
+	debugTriggerZoomInFn = function() -- 1141
+		local rt = activeRuntime() -- 1142
+		if rt ~= nil then -- 1142
+			rt.plan:zoomIn() -- 1144
+		end -- 1144
+	end -- 1141
+	debugTriggerResetViewFn = function() -- 1148
+		local rt = activeRuntime() -- 1149
+		if rt ~= nil then -- 1149
+			rt.plan:resetView() -- 1151
+		end -- 1151
+	end -- 1148
+end -- 1148
+--- 获取当前处于激活状态的结算面板（调试/截图用）。
+function ____exports.getActiveResultPanel() -- 1157
+	return activeResultPanel -- 1158
+end -- 1157
+--- GameShot 专用的只读状态；输入验收据此等待实际状态，避免固定延迟猜时机。
+function ____exports.getDebugGameState() -- 1162
+	return debugGameStateFn ~= nil and debugGameStateFn() or "phase=Loading" -- 1163
+end -- 1162
+--- 触发一次指定关卡的结算卡片演出（调试/自动化截图用）。
+function ____exports.triggerDebugResult(levelIndex, outcome) -- 1167
+	if outcome == nil then -- 1167
+		outcome = "success" -- 1167
+	end -- 1167
+	if debugTriggerResultFn ~= nil then -- 1167
+		debugTriggerResultFn(levelIndex, outcome) -- 1169
+	end -- 1169
+end -- 1167
+--- 触发进入制动窗口演示（调试/自动化截图用）。
+function ____exports.triggerDebugBrakeWindow(levelIndex) -- 1174
+	if levelIndex == nil then -- 1174
+		levelIndex = 3 -- 1174
+	end -- 1174
+	if debugTriggerBrakeWindowFn ~= nil then -- 1174
+		debugTriggerBrakeWindowFn(levelIndex) -- 1176
+	end -- 1176
+end -- 1174
+--- 触发按下逆喷制动按钮演示（调试/自动化截图用）。
+function ____exports.triggerDebugBrakePress() -- 1181
+	if debugTriggerBrakePressFn ~= nil then -- 1181
+		debugTriggerBrakePressFn() -- 1183
+	end -- 1183
+end -- 1181
+--- 触发进入关卡并启动入场 3D 运镜（调试/截图用）。
+function ____exports.triggerDebugEnterLevel(levelIndex) -- 1188
+	if debugTriggerEnterLevelFn ~= nil then -- 1188
+		debugTriggerEnterLevelFn(levelIndex) -- 1190
+	end -- 1190
+end -- 1188
+--- 触发 2D 规划视口放大（调试/截图用）。
+function ____exports.triggerDebugZoomIn() -- 1195
+	if debugTriggerZoomInFn ~= nil then -- 1195
+		debugTriggerZoomInFn() -- 1197
+	end -- 1197
+end -- 1195
 --- 触发 2D 规划视口自适应重置（调试/截图用）。
-function ____exports.triggerDebugResetView() -- 1137
-	if debugTriggerResetViewFn ~= nil then -- 1137
-		debugTriggerResetViewFn() -- 1139
-	end -- 1139
-end -- 1137
-return ____exports -- 1137
+function ____exports.triggerDebugResetView() -- 1202
+	if debugTriggerResetViewFn ~= nil then -- 1202
+		debugTriggerResetViewFn() -- 1204
+	end -- 1204
+end -- 1202
+return ____exports -- 1202

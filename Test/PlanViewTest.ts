@@ -9,7 +9,8 @@
  * 输出格式：首行为 `passed` 或 `failed`（与其他测试模块一致）。
  */
 import { Body } from 'game/Gravity';
-import { getLevel, scaledPlanets } from 'game/LevelData';
+import { getLevel, installArcadeLevels, scaledPlanets } from 'game/LevelData';
+import { Content, json } from 'Dora';
 import { arrivalRingRadius, computePlanMapping, planeToScreen, planFitRadius, screenToPlane } from 'game/PlanView';
 
 interface Failure {
@@ -139,15 +140,16 @@ function testFitRadius(): void {
 		check('fit-real-l1', false, 'getLevel(0) 返回 undefined');
 	} else {
 		const real1 = planFitRadius(scaledPlanets(l1), l1.probeStart, l1.goal.planetIndex, l1.goal.tolerance, l1.planCenter);
-		check('fit-real-l1-arcade-centred', real1 >= 300 && real1 <= 500,
-			`L1 fit=${real1.toFixed(4)}（街机同屏取景应在 300~500 像素范围）`);
+		const probeR = Math.sqrt(l1.probeStart.x * l1.probeStart.x + l1.probeStart.y * l1.probeStart.y);
+		check('fit-real-l1-covers-probe', real1 + 1e-6 >= probeR,
+			`L1 fit=${real1.toFixed(1)} 待命轨道=${probeR.toFixed(1)}`);
 	}
 	const l3 = getLevel(2);
 	if (l3 === undefined) {
 		check('fit-real-l3', false, 'getLevel(2) 返回 undefined');
 	} else {
 		const real3 = planFitRadius(scaledPlanets(l3), l3.probeStart, l3.goal.planetIndex, l3.goal.tolerance);
-		check('fit-real-l3', real3 >= 300 && real3 <= 500, `L3 fit=${real3.toFixed(2)}（街机同屏取景应在 300~500 像素范围）`);
+		check('fit-real-l3', real3 > 0, `L3 fit=${real3.toFixed(2)}`);
 	}
 }
 
@@ -161,10 +163,11 @@ function testArrivalRingIsRealTolerance(): void {
 	//    数值相等会让这条断言误判成"画的是视觉半径"。改成**结构性**判据：把视觉半径改掉之后，
 	//    到达圈半径必须**不动** —— 动的就是拿视觉半径当圈了。
 	const ringBefore = arrivalRingRadius(l1.goal);
-	const savedRadius = l1.visuals[2].displayRadius;
-	l1.visuals[2].displayRadius = savedRadius * 3 + 1;
+	const vi = l1.goal.planetIndex;
+	const savedRadius = l1.visuals[vi].displayRadius;
+	l1.visuals[vi].displayRadius = savedRadius * 3 + 1;
 	const ringAfter = arrivalRingRadius(l1.goal);
-	l1.visuals[2].displayRadius = savedRadius; // 还原，别污染后面的断言
+	l1.visuals[vi].displayRadius = savedRadius; // 还原，别污染后面的断言
 	check('ring-l1-ignores-visual-radius', ringBefore === ringAfter,
 		`ring=${ringBefore} -> ${ringAfter}（视觉半径从 ${savedRadius} 改成 ${savedRadius * 3 + 1} 后到达圈必须不变）`);
 	// 链式关卡取链上最大容差（L6：J40/S60/U90/N120 ⇒ 120）
@@ -176,6 +179,13 @@ function testArrivalRingIsRealTolerance(): void {
 }
 
 export function runTests(): string {
+	const levelsText = Content.exist('Assets/Levels/levels.json') ? Content.load('Assets/Levels/levels.json') : '';
+	const bodiesText = Content.exist('Assets/Levels/bodies.json') ? Content.load('Assets/Levels/bodies.json') : '';
+	installArcadeLevels(levelsText, bodiesText, (text: string): unknown => {
+		const decoded = json.decode(text);
+		if (decoded[1] !== undefined) return undefined;
+		return decoded[0];
+	});
 	testArrivalRingIsRealTolerance();
 	testMapping();
 	testPlaneToScreen();

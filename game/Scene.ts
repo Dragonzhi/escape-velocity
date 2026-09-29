@@ -235,6 +235,8 @@ export interface PlanetNode {
 }
 
 export interface SceneOptions {
+	/** 背景天球必须包住相机最远机位与全部天体，避免背景遮住月球。 */
+	backdropRadius?: number;
 	/** 是否画轨道流动光点（B2）；省略 = 画。见 Tuning.LevelRuntime.orbitFlowDots。 */
 	orbitFlowDots?: boolean;
 	/**
@@ -308,6 +310,8 @@ export interface GameScene {
 	probeRadius: number;
 	/** 街机星尘节点。 */
 	starNodes?: { node: Node3D.Type; pos: P2; collected: boolean }[];
+	/** 按当前世界时刻把星尘挪到公转位置。不传 = 留在创建时的坐标。 */
+	syncStars?: (positions: P2[]) => void;
 	/** 设置某颗星尘被收集。 */
 	setStarCollected?: (index: number) => void;
 	/** 重置所有星尘状态。 */
@@ -513,7 +517,7 @@ export interface StarBackdrop {
  * + StarSphere.gltf（单位球，**scale = 天球半径**，材质自带 doubleSided）。
  * 旧的 StarQuad.gltf / 1024² 贴图保留作回退。
  */
-export function createStarBackdrop(root: Node3D.Type): StarBackdrop | undefined {
+export function createStarBackdrop(root: Node3D.Type, radius: number = SkyRadius): StarBackdrop | undefined {
 	const tex = Texture2D('Assets/Image/starfield.png');
 
 	// 主路：天球
@@ -530,7 +534,7 @@ export function createStarBackdrop(root: Node3D.Type): StarBackdrop | undefined 
 				sm.roughness = 1.0;
 				sm.metallic = 0.0;
 			}
-			sphere.scale = Vec3(SkyRadius, SkyRadius, SkyRadius);
+			sphere.scale = Vec3(radius, radius, radius);
 			sphere.position = Vec3(0, 0, 0);
 			root.addChild(sphere);
 			return {
@@ -831,7 +835,7 @@ om.baseColor = Color((OrbitRingTintHex >>> 16) & 0xff, (OrbitRingTintHex >>> 8) 
 
 	// ---- 星空背板（2026-09-25 用户拍板：方案 B「程序化星图贴图」，放弃 C2 星点壳）----
 	// 素材、亮度旋钮与"每帧钉在视线前方"的理由都收在 createStarBackdrop 里（S3.3 开场复用同一份）。
-	const backdrop = createStarBackdrop(root);
+	const backdrop = createStarBackdrop(root, options.backdropRadius);
 
 	// ---- 太阳光晕（S3.12）：一张朝向相机的自发光面片 ----
 	// 引擎不做后处理，所以"发光"只能靠**自发光贴图 + 面片**（Assets/Image/glow.png 由

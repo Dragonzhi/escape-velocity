@@ -61,6 +61,7 @@ export function projectPolyline(points: P2[], y: number, basis: CameraBasis, ori
 
 /** 预测线 + 尾迹的渲染句柄。 */
 export interface TrajectoryView {
+	setBurn?: (p: P2, direction: P2, on: boolean, basis: CameraBasis) => void;
 	/**
 	 * 重画预测线（虚线 + 末端渐隐 + 光晕）。
 	 *
@@ -97,6 +98,9 @@ export interface TrajectoryView {
 
 /** 一个"到达环"：平面坐标的圆心 + 半径（= 该航点的容差）。 */
 export interface GoalRing {
+	point?: boolean;
+	showRange?: boolean;
+	pulse?: number;
 	center: P2;
 	radius: number;
 	/** 已经掠过的航点：画暗一些。 */
@@ -134,6 +138,8 @@ export interface TrajectoryOptions {
 	trailHeadRadius: number;
 	/** 尾迹头部 alpha（0–1）；尾部渐到 0。 */
 	trailHeadAlpha: number;
+	/** 点火尾焰的世界长度；省略保持 32，L1 特写采用更短的喷流。 */
+	burnLength?: number;
 	/** 预测线 RGB（0–255）。 */
 	predictR: number;
 	predictG: number;
@@ -367,6 +373,8 @@ export function createTrajectoryView(
 	root.addChild(orbitDraw);
 
 	const ringDraw = DrawNode();
+	const burnDraw = DrawNode();
+	root.addChild(burnDraw);
 	ringDraw.blendFunc = BlendFunc(BlendOp.One, BlendOp.One);
 	root.addChild(ringDraw);
 
@@ -425,10 +433,19 @@ export function createTrajectoryView(
 		},
 		clearTrail(): void {
 			trailDraw.clear();
+			burnDraw.clear();
 		},
 		setGoalRings(rings: GoalRing[], basis: CameraBasis): void {
 			ringDraw.clear();
 			for (const ring of rings) {
+				if (ring.point === true) {
+					const pts = projectPolyline([ring.center], options.y, basis, options.layerOriginX, options.layerOriginY);
+					if (pts.length > 0) {
+						ringDraw.drawDot(pts[0], 10 * (ring.pulse !== undefined ? ring.pulse : 1), Color(70, 220, 190, 45));
+						ringDraw.drawDot(pts[0], 3.5, Color(170, 255, 230, 255));
+					}
+				}
+				if (ring.showRange === false) continue;
 				if (ring.radius <= 0) continue;
 				// 平面上的圆 → 逐点投影 → 虚线闭合折线（首尾相接）。
 				const n = options.ringSegments;
@@ -447,6 +464,18 @@ export function createTrajectoryView(
 		},
 		clearGoalRings(): void {
 			ringDraw.clear();
+		},
+		setBurn: (p: P2, direction: P2, on: boolean, basis: CameraBasis): void => {
+			burnDraw.clear();
+			if (!on) return;
+			const mag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+			if (mag <= 0) return;
+			const length = options.burnLength !== undefined ? options.burnLength : 32;
+			const pts = projectPolyline([p, { x: p.x - direction.x * length / mag, y: p.y - direction.y * length / mag }], options.y, basis, options.layerOriginX, options.layerOriginY);
+			if (pts.length === 2) {
+				burnDraw.drawSegment(pts[0], pts[1], 5, Color(255, 135, 35, 140));
+				burnDraw.drawSegment(pts[0], pts[1], 2, Color(255, 235, 145, 255));
+			}
 		},
 		setOrbitRing(center: P2, radius: number, basis: CameraBasis): void {
 			orbitDraw.clear();

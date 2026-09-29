@@ -46,12 +46,17 @@
  * 本模块**纯数据 + 纯函数**，不 import 'Dora'，可单测。
  */
 import { Body, P2, bodyPositionAt, distance } from 'game/Gravity';
+import { loadArcadeLevels } from 'game/LevelLoader';
+import { TransferTutorial } from 'game/Transfer';
 import { GravityScale, OrbitSpeedScale } from 'game/Config';
-import {
-	EarthGm, EarthRadius, KmPerUnit, MoonOrbitRadius, MoonRadius, REAL, SecPerGameSec, SunGm, SunRadius,
-	circularSpeed, period, trueGm, trueOrbit, trueRadius,
-} from 'game/Scale';
-import { visualRadius } from 'game/Tuning';
+import { SecPerGameSec } from 'game/Scale';
+
+/**
+ * **1 真实秒 = 多少游戏秒**。
+ * 街机三关的关卡 JSON 用的是屏幕单位，但倍速档位仍读这个换算（pow 0 = 现实 1 秒）。
+ * 街机节奏不靠它：每关的 speedDefaultPow 在 Tuning 里另给。
+ */
+export const GameSecondsPerRealSecond = 1 / SecPerGameSec;
 
 /** 行星视觉描述（与 Scene.PlanetVisual 结构兼容，避免跨模块依赖）。 */
 export interface PlanetVisualDef {
@@ -79,6 +84,7 @@ export interface PlanetVisualDef {
 
 /** 顺序航线的一个航点（S3.7）。 */
 export interface WaypointSpec {
+	offset?: P2;
 	planetIndex: number;
 	/** 掠过容差（平面单位）。 */
 	tolerance: number;
@@ -96,6 +102,8 @@ export interface WaypointSpec {
 
 /** 目标规格。 */
 export interface GoalSpec {
+	/** 目标光点相对天体的径向/切向偏移，不参与引力与实体碰撞。 */
+	offset?: P2;
 	/** 'planet' = 进入目标容差（掠过/到达）；'escape' = 飞出边界。 */
 	kind: 'planet' | 'escape';
 	/** 目标行星索引（单目标时有效）。 */
@@ -113,8 +121,8 @@ export interface GoalSpec {
 export interface RocketChallengeDef {
 	/** 挑战目标描述 */
 	desc: string;
-	/** 判定类型：'success' | 'fuel' | 'distance' | 'speed' | 'eccentricity' */
-	type: 'success' | 'fuel' | 'distance' | 'speed' | 'eccentricity';
+	/** 判定类型。'stars' = 本局拾取的星尘数 ≥ threshold（街机三星）。 */
+	type: 'success' | 'fuel' | 'distance' | 'speed' | 'eccentricity' | 'stars';
 	/** 判定阈值 */
 	threshold?: number;
 	/** 关心的目标天体索引（用于计算 closestDist，默认取 goal.planetIndex） */
@@ -156,13 +164,14 @@ export interface MissionMeta {
 	/** 载具类型：'flyby' | 'orbiter' */
 	vehicle: 'flyby' | 'orbiter';
 	/** 三枚火箭挑战列表 [第1枚, 第2枚, 第3枚] */
-	challenges: [RocketChallengeDef, RocketChallengeDef, RocketChallengeDef];
+	challenges: RocketChallengeDef[];
 	/** 入场 3D 倒叙长镜头运镜（S8.1） */
 	introTour?: IntroTourDef;
 }
 
 /** 一关的完整定义。 */
 export interface LevelDef {
+	transfer?: TransferTutorial;
 	id: number;
 	/** 选关按钮上的名字（= 编年章节名）。 */
 	title: string;
@@ -235,9 +244,15 @@ export function evaluateRocketsDetailed(
 		closestDist?: number;
 		maxSpeed?: number;
 		eccentricity?: number;
+		/** 本局拾取的星尘数（街机三星）。 */
+		starsCollected?: number;
 	},
 ): MissionEvaluation {
 	const achieved: [boolean, boolean, boolean] = [false, false, false];
+	if (level.transfer !== undefined) {
+		achieved[0] = result === 'success';
+		return { rockets: achieved[0] ? 1 : 0, achieved, burnDv, stats: extra !== undefined ? extra : {} };
+	}
 	if (result !== 'success') {
 		return {
 			rockets: 0,
@@ -253,7 +268,12 @@ export function evaluateRocketsDetailed(
 	if (challenges !== undefined) {
 		// 第 2 枚火箭：燃料控制
 		const c2 = challenges[1];
-		if (c2.type === 'fuel' && c2.threshold !== undefined) {
+		if (c2.type === 'stars' && c2.threshold !== undefined) {
+			if (extra !== undefined && extra.starsCollected !== undefined && extra.starsCollected >= c2.threshold) {
+				achieved[1] = true;
+				count += 1;
+			}
+		} else if (c2.type === 'fuel' && c2.threshold !== undefined) {
 			if (burnDv <= level.dvBudget * c2.threshold) {
 				achieved[1] = true;
 				count += 1;
@@ -277,6 +297,11 @@ export function evaluateRocketsDetailed(
 			}
 		} else if (c3.type === 'eccentricity' && c3.threshold !== undefined) {
 			if (extra !== undefined && extra.eccentricity !== undefined && extra.eccentricity <= c3.threshold) {
+				achieved[2] = true;
+				count += 1;
+			}
+		} else if (c3.type === 'stars' && c3.threshold !== undefined) {
+			if (extra !== undefined && extra.starsCollected !== undefined && extra.starsCollected >= c3.threshold) {
 				achieved[2] = true;
 				count += 1;
 			}
@@ -305,6 +330,7 @@ export function evaluateRockets(
 		closestDist?: number;
 		maxSpeed?: number;
 		eccentricity?: number;
+		starsCollected?: number;
 	},
 ): number {
 	return evaluateRocketsDetailed(level, result, burnDv, extra).rockets;
@@ -329,8 +355,22 @@ export function bodyVelocityAt(b: Body, t: number): P2 {
 /** 航点列表（链式目标取 chain，否则就是唯一目标）。 */
 export function goalWaypoints(goal: GoalSpec): WaypointSpec[] {
 	if (goal.chain !== undefined) return goal.chain;
-	if (goal.kind === 'planet') return [{ planetIndex: goal.planetIndex, tolerance: goal.tolerance }];
+	if (goal.kind === 'planet') return [{ planetIndex: goal.planetIndex, tolerance: goal.tolerance, offset: goal.offset }];
 	return [];
+}
+
+/** 空域目标随天体公转：offset.x 径向，offset.y 沿公转切向。 */
+export function goalPositionAt(body: Body, t: number, offset?: P2): P2 {
+	const p = bodyPositionAt(body, t);
+	if (offset === undefined) return p;
+	const center = body.host !== undefined ? bodyPositionAt(body.host, t) : body.orbitCenter;
+	const dx = p.x - center.x;
+	const dy = p.y - center.y;
+	const r = Math.sqrt(dx * dx + dy * dy);
+	const ux = r > 0 ? dx / r : 1;
+	const uy = r > 0 ? dy / r : 0;
+	return { x: p.x + ux * offset.x - uy * offset.y * body.orbitDirection,
+		y: p.y + uy * offset.x + ux * offset.y * body.orbitDirection };
 }
 
 /**
@@ -394,7 +434,7 @@ export function waypointProgress(
 		const w = wps[next];
 		const body = bodies[w.planetIndex];
 		if (body === undefined) return { passed: 0, lastIndex: -1 };
-		const gp = bodyPositionAt(body, start + i * dt);
+		const gp = goalPositionAt(body, start + i * dt, w.offset);
 		if (distance(points[i], gp) < w.tolerance) {
 			// 捕获（S3.9.2）：进环还不够，还得"慢到能被抓住"。太快 ⇒ 不算，继续扫后面的采样点。
 			if (w.capture === true) {
@@ -422,393 +462,36 @@ export function findGoalIndex(points: P2[], bodies: Body[], goal: GoalSpec, dt: 
 	return st.passed >= wps.length ? st.lastIndex : -1;
 }
 
-// ---------------------------------------------------------------------------
-// 天体构造器 —— 半径 / gm / 轨道 / 周期**全部由 Scale 从真实数据算出**
-// ---------------------------------------------------------------------------
-
-/** 度 → 弧度（关卡数据里写角度比写弧度好读）。 */
-function deg(d: number): number {
-	return (d * Math.PI) / 180;
-}
-
-/** 太阳（每关的第 0 号天体）。 */
-function sun(): Body {
-	return { gm: SunGm, radius: SunRadius, orbitCenter: { x: 0, y: 0 }, orbitRadius: 0, orbitPeriod: 0, phase0: 0, orbitDirection: 1 };
-}
 
 /**
- * 绕太阳公转的行星：`key` 是 Scale.REAL 里的键。
- *
- * 真半径 0.0034（地球）到 0.0374（木星），**不再有任何放大** —— 用户要求"天体大小改为符合物理的大小"。
- * 看得见的那一层在 Tuning.BODY_VISUAL_RADIUS。
+ * 三关由 `Assets/Levels/*.json` 装配（见文件末尾的 `installArcadeLevels`）。
+ * 没装上之前是空的：入口会停在 FATAL，而不是悄悄退回旧的静态坐标。
  */
-function orbiter(key: string, phaseDeg: number): Body {
-	const real = REAL[key];
-	const a = trueOrbit(real.au);
-	return {
-		gm: trueGm(real.gm),
-		radius: trueRadius(real.radiusKm),
-		orbitCenter: { x: 0, y: 0 },
-		orbitRadius: a,
-		orbitPeriod: period(a, SunGm),
-		phase0: deg(phaseDeg),
-		orbitDirection: 1, // 全太阳系一致：顺行（从北极看逆时针）
-	};
-}
-
-/**
- * 绕**会动的宿主**公转的卫星（L1 的月球）。
- *
- * 周期用开普勒第三定律 `2π·sqrt(a³/μ)` 算，**μ 取宿主（地球）的 gm** ——
- * 这是最容易搞错的一步：拿月球自己的 gm 去算会得到 11.35 秒（正确值 1.2593 秒）。
- */
-function satellite(key: string, host: Body, orbitRadius: number, phaseDeg: number): Body {
-	const real = REAL[key];
-	return {
-		gm: trueGm(real.gm),
-		radius: trueRadius(real.radiusKm),
-		orbitCenter: { x: 0, y: 0 },
-		orbitRadius,
-		orbitPeriod: period(orbitRadius, host.gm),
-		phase0: deg(phaseDeg),
-		orbitDirection: 1,
-		host,
-	};
-}
-
-/** 视觉：`key` 只用来查 Tuning 里的视觉半径，`body.radius` 是查不到时的兜底。 */
-/**
- * 视觉描述。`levelIndex` 决定用哪张视觉半径表：0 = L1 用地月系专用表（见 Tuning）。
- */
-function planetVisual(key: string, body: Body, r: number, g: number, b: number, model: string, ring: boolean, levelIndex?: number): PlanetVisualDef {
-	return { r, g, b, displayRadius: visualRadius(key, body.radius, levelIndex), ring, model };
-}
-
-/** 太阳的视觉（自发光 + 光晕）。 */
-function sunVisual(levelIndex?: number): PlanetVisualDef {
-	// ⚠️ S3.12：太阳自己照不到自己（光在它内部、表面法线朝外）⇒ 必须靠 emissive 把自己点亮。
-	return { r: 1.0, g: 0.97, b: 0.88, displayRadius: visualRadius('sun', SunRadius, levelIndex), ring: false, model: 'Sun', emissive: { r: 1.0, g: 0.95, b: 0.82 } };
-}
-
-// ---------------------------------------------------------------------------
-// 六站数据
-// ---------------------------------------------------------------------------
-
-/**
- * 出发轨道半径 = 1 AU（地球轨道）。六关共用 —— L1 的地球就在这里，L2–L6 从这里出发。
- */
-export const EarthOrbitRadius = trueOrbit(REAL.earth.au);
-
-/**
- * **1 真实秒 = 多少游戏秒**（B3，2026-09-28）。
- *
- * 全项目只有这里读 Scale，别处（Game / Hud / init）都从这里拿 —— 于是"倍速档位"
- * 的单位可以老实写成「×现实时间」：档位 pow ⇒ 速率 = 10^pow × 本常数。
- * pow = 0 就是 1×（现实 1 秒）。
- */
-export const GameSecondsPerRealSecond = 1 / SecPerGameSec;
-
-/** 该点的日心圆轨速度（30.00 平面单位/秒 —— 全套尺度的速度锚点）。 */
-export const EarthOrbitSpeed = circularSpeed(SunGm, EarthOrbitRadius);
-
-/**
- * 相位表 —— **全部由 `node tools/level-phases.mjs <关号> --dirs 240 --dvs 31 --tmax N` 解出**，不许手填。
- *
- * ⚠️ 同一颗行星在**不同关的相位不同**，这是对的：相位代表"哪一天的太阳系"，
- *    每一关的可行发射窗口本来就不一样。物理量（gm / 半径 / 轨道 / 周期）才是六关共用、不许变的。
- *
- * 每一行后面的注释就是它的出处（工具输出），改数值必须重跑工具。
- */
-const PH = {
-	/**
-	 * L2 水手10号：金星 37.6°、水星 2.2°（真实内太阳系前向逆向减速借力求解，2026-09-28）。
-	 * 探测器在 1 AU 顺行公转轨出发，反向点火 Δv ≈ 2.85 霍曼降轨，在 t ≈ 5.40s 擦过金星公转前方引力走廊
-	 * （近心点 r_peri ≈ 0.0087，在金星希尔球 0.54 内部），获得反向重力拖拽削减日心能量，近日点跌落
-	 * 至水星公转轨道（30.97），并在 t ≈ 7.12s 与水星相切交会（交会最小距离 0.48 < 容差 6.0）。
-	 */
-	mercury: 2.18,
-	venus: 37.587,
-	// node tools/level-phases.mjs 3 --dirs 180 --dvs 21  → 186.1°
-	// node tools/level-phases.mjs 4 --dirs 240 --dvs 31 --tmax 200 → 184.4°
-	// node tools/level-phases.mjs 5 --dirs 240 --dvs 31 --tmax 450 → 175.6°
-	// node tools/level-phases.mjs 6 --dirs 240 --dvs 31 --tmax 800 → 175.2°
-	jupiter3: 186.1,
-	jupiter4: 184.4,
-	jupiter5: 175.6,
-	jupiter6: 175.2,
-	// L4 199.6° / L5 190.8° / L6 190.3°
-	saturn4: 199.6,
-	saturn5: 190.8,
-	saturn6: 190.3,
-	// L5 202.8° / L6 201.8°
-	uranus5: 202.8,
-	uranus6: 201.8,
-	// L6 207.6°
-	neptune6: 207.6,
-	/**
-	 * L1 的月球（绕地球的卫星）相位 = **202°**（B 剖面重解，2026-09-28）。
-	 *
-	 * 旧值 154.7° 是给「0.1 单位停泊轨 + 0.4034 游戏秒转移」算的；换成真实阿波罗剖面后
-	 * 停泊轨降到 6,571 km（3.514e-3 单位）、转移到月球要 **4.978 天**，月球在这期间走 **65°**，
-	 * 所以相位必须重解 —— 旧值下实测 **0/235 个候选能命中**（死关）。
-	 *
-	 * 解法：Node 侧用仓库同一份 `Gravity.simulate` + **游戏自己的 `findGoalIndex`** 扫
-	 * 「方向 × 力度 × 相位」，取粗网格（12 方向 × 4 档，与 Test/LevelDataTest 同一张网格）
-	 * 解数最多的那个相位。202° 下：粗网格 **4/48**、细网格（36×6）**6.0%**，
-	 * 命中样本的近月点 3,500–5,300 km（= 2–3 个月球半径，真实擦过）。
-	 */
-	moon: 202,
-};
-
-/**
- * 街机第 1 关：地月弯道 (Moon Curve)。
- *
- * 核心玩法：引力转弯教学，正前方碎石墙阻挡直射，利用地球引力弯折变向绕过陨石，吃 3 颗星尘进入月球靶心！
- */
-function level1(): LevelDef {
-	const earth: Body = {
-		gm: 460000,
-		radius: 42,
-		orbitCenter: { x: 35, y: -15 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		name: '地球',
-	};
-	const asteroid: Body = {
-		gm: 0,
-		radius: 32,
-		orbitCenter: { x: -40, y: 5 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		isObstacle: true,
-		name: '陨石障碍',
-	};
-	const moon: Body = {
-		gm: 40000,
-		radius: 28,
-		orbitCenter: { x: 140, y: 320 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		name: '月球',
-	};
-
-	return {
-		id: 1,
-		title: '第 1 关 · 地月弯道',
-		probeVariant: 'solar',
-		brief: '【街机引力转弯教学】直射路线被太空碎石墙阻挡！后拉弹弓瞄准，利用地球引力弯折变向，绕过陨石并收集 3 颗金色星尘，滑入月球靶心！',
-		probeStart: { x: -140, y: -340 },
-		probeVel0: { x: 0, y: 0 },
-		stars: [
-			{ x: -70, y: -220 }, // 基础星：出射线路上
-			{ x: 130, y: 15 },   // 技巧星：引力转弯外侧弧顶
-			{ x: 160, y: 220 },  // 大师星：月球靶心前门
-		],
-		planets: [earth, asteroid, moon],
-		visuals: [
-			{ r: 0.42, g: 0.62, b: 0.85, displayRadius: 42, ring: false, model: 'Planet_Earth' },
-			{ r: 0.70, g: 0.60, b: 0.50, displayRadius: 32, ring: false, model: 'Asteroid_Rock' },
-			{ r: 0.80, g: 0.80, b: 0.85, displayRadius: 28, ring: false, model: 'Moon' },
-		],
-		goal: { kind: 'planet', planetIndex: 2, tolerance: 65 },
-		dvBudget: 450,
-		escapeRadius: 1200,
-		maxSteps: 1000,
-		mission: {
-			id: 'L1',
-			codeName: 'MoonCurve',
-			historicalRef: '街机引力弹弓',
-			subtitle: '地月弯道',
-			vehicle: 'flyby',
-			challenges: [
-				{ desc: '成功穿过月球靶心星门', type: 'success' },
-				{ desc: '收集至少 2 颗金色星尘', type: 'fuel', threshold: 0.8 },
-				{ desc: '完美收集全部 3 颗金色星尘', type: 'speed', threshold: 300 },
-			],
-		},
-	};
-}
-
-/** L2–L6 共用的出发状态：1 AU 圆轨道上的一点，顺行（-x），速度 = 该点圆轨速度。 */
-function departure(): { pos: P2; vel: P2 } {
-	return {
-		pos: { x: 0, y: EarthOrbitRadius },
-		vel: { x: -EarthOrbitSpeed, y: 0 },
-	};
-}
-
-/**
- * 街机第 2 关：金星逆向漂移 (Venus Drift)。
- *
- * 核心玩法：逆向引力减速，上方发射，下方水星靶心。中间陨石墙阻挡，必须迎头切入金星引力井反向减速并大角度转弯，平稳滑入水星靶心！
- */
-function level2(): LevelDef {
-	const venus: Body = {
-		gm: 520000,
-		radius: 40,
-		orbitCenter: { x: -40, y: 40 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		name: '金星',
-	};
-	const asteroid: Body = {
-		gm: 0,
-		radius: 35,
-		orbitCenter: { x: -30, y: -100 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		isObstacle: true,
-		name: '陨石障碍',
-	};
-	const mercury: Body = {
-		gm: 30000,
-		radius: 26,
-		orbitCenter: { x: -160, y: -280 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		name: '水星',
-	};
-
-	return {
-		id: 2,
-		title: '第 2 关 · 金星逆向漂移',
-		probeVariant: 'solar',
-		brief: '【逆向引力减速】上方发射，下方水星靶心。碎石带封锁直落通道！向金星右侧迎面切入逆向引力井，借力减速并完成大角度转弯，进入水星狭窄靶心！',
-		probeStart: { x: 30, y: 380 },
-		probeVel0: { x: 0, y: 0 },
-		stars: [
-			{ x: 10, y: 200 },    // 基础星：出射
-			{ x: -20, y: 30 },    // 技巧星：切入金星引力井
-			{ x: -120, y: -160 }, // 大师星：降速拐角处
-		],
-		planets: [venus, asteroid, mercury],
-		visuals: [
-			{ r: 0.90, g: 0.78, b: 0.55, displayRadius: 40, ring: false, model: 'Planet_Venus' },
-			{ r: 0.70, g: 0.60, b: 0.50, displayRadius: 35, ring: false, model: 'Asteroid_Rock' },
-			{ r: 0.65, g: 0.65, b: 0.65, displayRadius: 26, ring: false, model: 'Planet_Mercury' },
-		],
-		goal: { kind: 'planet', planetIndex: 2, tolerance: 65 },
-		dvBudget: 450,
-		escapeRadius: 1200,
-		maxSteps: 1000,
-		mission: {
-			id: 'L2',
-			codeName: 'VenusDrift',
-			historicalRef: '街机引力弹弓',
-			subtitle: '逆向减速',
-			vehicle: 'flyby',
-			challenges: [
-				{ desc: '成功穿过水星靶心星门', type: 'success' },
-				{ desc: '收集至少 2 颗金色星尘', type: 'fuel', threshold: 0.8 },
-				{ desc: '完美收集全部 3 颗金色星尘', type: 'speed', threshold: 300 },
-			],
-		},
-	};
-}
-
-/**
- * 街机第 3 关：双星大甩尾 (Grand Slingshot)。
- *
- * 核心玩法：木星 90° 强力大甩尾变向将探测器抛向土星，土星二次加速飞越深空障碍墙，连续借力冲入海王星靶心星门！
- */
-function level3(): LevelDef {
-	const jupiter: Body = {
-		gm: 550000,
-		radius: 46,
-		orbitCenter: { x: -90, y: -60 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		name: '木星',
-	};
-	const saturn: Body = {
-		gm: 480000,
-		radius: 42,
-		orbitCenter: { x: 70, y: 80 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		name: '土星',
-	};
-	const asteroid: Body = {
-		gm: 0,
-		radius: 35,
-		orbitCenter: { x: 40, y: -40 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		isObstacle: true,
-		name: '陨石障碍',
-	};
-	const neptune: Body = {
-		gm: 35000,
-		radius: 30,
-		orbitCenter: { x: 200, y: 320 },
-		orbitRadius: 0,
-		orbitPeriod: 0,
-		phase0: 0,
-		orbitDirection: 1,
-		name: '海王星',
-	};
-
-	return {
-		id: 3,
-		title: '第 3 关 · 双星大甩尾',
-		probeVariant: 'rtg',
-		brief: '【双星极限接力弹弓】木星 90° 强力甩尾变向将探测器抛向土星，土星二次加速飞越深空障碍墙，呼啸冲入海王星靶心星门！',
-		probeStart: { x: -220, y: -320 },
-		probeVel0: { x: 0, y: 0 },
-		stars: [
-			{ x: -130, y: -250 }, // 基础星：奔向木星
-			{ x: 130, y: 15 },    // 技巧星：木星抛射交棒区
-			{ x: 230, y: 230 },   // 大师星：冲向海王星
-		],
-		planets: [jupiter, saturn, asteroid, neptune],
-		visuals: [
-			{ r: 0.85, g: 0.72, b: 0.50, displayRadius: 46, ring: false, model: 'Planet_Jupiter' },
-			{ r: 0.75, g: 0.70, b: 0.60, displayRadius: 42, ring: true, model: 'Planet_Saturn' },
-			{ r: 0.70, g: 0.60, b: 0.50, displayRadius: 35, ring: false, model: 'Asteroid_Rock' },
-			{ r: 0.34, g: 0.50, b: 0.86, displayRadius: 30, ring: false, model: 'Planet_Neptune' },
-		],
-		goal: { kind: 'planet', planetIndex: 3, tolerance: 70 },
-		dvBudget: 480,
-		escapeRadius: 1200,
-		maxSteps: 1000,
-		mission: {
-			id: 'L3',
-			codeName: 'GrandSlingshot',
-			historicalRef: '街机引力弹弓',
-			subtitle: '双星连环甩尾',
-			vehicle: 'flyby',
-			challenges: [
-				{ desc: '成功穿过海王星靶心星门', type: 'success' },
-				{ desc: '收集至少 2 颗金色星尘', type: 'fuel', threshold: 0.8 },
-				{ desc: '完美收集全部 3 颗金色星尘', type: 'speed', threshold: 300 },
-			],
-		},
-	};
-}
-
-const LEVELS: LevelDef[] = [level1(), level2(), level3()];
+let LEVELS: LevelDef[] = [];
+/** 与 LEVELS 一一对应的星尘轨道（按 t 求位置）。 */
+let STAR_ORBITS: Body[][] = [];
 
 /** 关卡总数。 */
 export function levelCount(): number {
 	return LEVELS.length;
+}
+
+/** 这一关的星尘轨道。没有（或还没装配）返回空数组。 */
+export function starOrbits(index: number): Body[] {
+	const row = STAR_ORBITS[index];
+	return row !== undefined ? row : [];
+}
+
+/**
+ * 用两份 JSON 文本替换关卡表。
+ * 解析失败或没有任何关时**保持原表不动**，返回 false。
+ */
+export function installArcadeLevels(levelsText: string, bodiesText: string, decode: (text: string) => unknown): boolean {
+	const loaded = loadArcadeLevels(levelsText, bodiesText, decode);
+	if (loaded.levels.length === 0) return false;
+	LEVELS = loaded.levels;
+	STAR_ORBITS = loaded.starOrbits;
+	return true;
 }
 
 /** 取第 index 关（0 起）。越界返回 undefined。 */

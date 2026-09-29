@@ -333,12 +333,12 @@ export interface LevelRuntime {
  * L1 转移飞行 0.40 游戏秒 ⇒ 0.05× 播放 = 8 真实秒；L6 飞行 513 秒 ⇒ 16× = 32 真实秒。
  */
 export const LEVEL_RUNTIME: LevelRuntime[] = [
-	{ // L1 地月弯道 (Moon Curve)
-		physicsStep: 0.016, maxStepsPerFrame: 4, sampleEvery: 1, predictSteps: 800,
+	{ // L1 低轨减速掠月：待机与分段播放倍率由 levels.json 的 transfer.flyby 给。
+		physicsStep: 0.016, maxStepsPerFrame: 4, sampleEvery: 1, predictSteps: 3600,
 		playback: 1.0, playbackSpeeds: [0.5, 1.0, 2.0],
-		cameraMin: 200, cameraMax: 1200, aimMin: 60, introCloseDist: 100,
+		cameraMin: 200, cameraMax: 2000, aimMin: 0, introCloseDist: 100,
 		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 10,
-		aimFraming: 'local', tiltDeg: 0, orbitFlowDots: false, orbitRings: false,
+		tiltDeg: 45, orbitFlowDots: false, orbitRings: false,
 		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
 		cameraNear: 0.1, cameraFar: 5000,
 	},

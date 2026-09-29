@@ -1,0 +1,83 @@
+{
+  "version": "2.0.0",
+  "levels": [
+    {
+      "id": 1,
+      "title": "第 1 关 · 奔向月球",
+      "subtitle": "借月球减速返回",
+      "brief": "拖动抬高远地点，等待地月窗口。短时点火后，安全掠过月球，观察引力如何让航线弯回地球。",
+      "centerBody": "earth",
+      "transfer": {
+        "apoapsisMax": 520, "thrustAcceleration": 50, "coastPlayback": 3,
+        "flyby": {
+          "standbyPlayback": 0.25, "encounterRadius": 110,
+          "minPeriapsis": 42, "maxPeriapsis": 85, "minEnergyDrop": 25,
+          "returnRadius": 180, "maxViewingTime": 12, "slowWindow": 2, "overviewDuration": 3
+        }
+      },
+      "probe": {
+        "orbitRadius": 132,
+        "startAngleDeg": 250,
+        "minSpeed": 0,
+        "maxSpeed": 16,
+        "dvBudget": 16
+      },
+      "orbiters": [
+        { "body": "moon", "type": "target", "orbitRadius": 390, "angleDeg": 341.020715805128, "direction": 1, "tolerance": 15, "offset": { "x": 52.2, "y": 6.5 } }
+      ],
+      "stars": [],
+      "environment": { "escapeRadius": 900, "maxSteps": 3600 }
+    },
+    {
+      "id": 2,
+      "title": "第 2 关 · 金星逆向",
+      "subtitle": "迎面借力减速",
+      "brief": "从外圈顺行出发，迎面切进金星，借它的引力把速度抹掉，再滑进内圈星门。",
+      "centerBody": "sun",
+      "probe": {
+        "orbitRadius": 400,
+        "startAngleDeg": 90,
+        "minSpeed": 40,
+        "maxSpeed": 280,
+        "dvBudget": 280
+      },
+      "orbiters": [
+        { "body": "venus", "orbitRadius": 220, "angleDeg": 180, "direction": 1 },
+        { "body": "asteroid", "orbitRadius": 310, "angleDeg": 200, "direction": -1, "spin": 0.7 },
+        { "body": "target_gate", "type": "target", "orbitRadius": 150, "angleDeg": 300, "direction": 1, "tolerance": 68 }
+      ],
+      "stars": [
+        { "orbitRadius": 280, "angleDeg": 69 },
+        { "orbitRadius": 180, "angleDeg": 350.4 },
+        { "orbitRadius": 240, "angleDeg": 285.5 }
+      ],
+      "environment": { "escapeRadius": 1400, "maxSteps": 900 }
+    },
+    {
+      "id": 3,
+      "title": "第 3 关 · 双星甩尾",
+      "subtitle": "木星交棒土星",
+      "brief": "先贴木星甩一个弯，再交给土星加速，从两颗星之间的缝里冲进外圈星门。",
+      "centerBody": "sun",
+      "probe": {
+        "orbitRadius": 280,
+        "startAngleDeg": 200,
+        "minSpeed": 40,
+        "maxSpeed": 320,
+        "dvBudget": 320
+      },
+      "orbiters": [
+        { "body": "jupiter", "orbitRadius": 350, "angleDeg": 120, "direction": 1 },
+        { "body": "saturn", "orbitRadius": 500, "angleDeg": 20, "direction": 1 },
+        { "body": "asteroid", "orbitRadius": 420, "angleDeg": 300, "direction": 1, "spin": 0.5 },
+        { "body": "target_gate", "type": "target", "orbitRadius": 600, "angleDeg": 80, "direction": 1, "tolerance": 72 }
+      ],
+      "stars": [
+        { "orbitRadius": 320, "angleDeg": 169.9 },
+        { "orbitRadius": 400, "angleDeg": 102.6 },
+        { "orbitRadius": 540, "angleDeg": 78.2 }
+      ],
+      "environment": { "escapeRadius": 1600, "maxSteps": 1000 }
+    }
+  ]
+}

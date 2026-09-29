@@ -8,10 +8,13 @@
  */
 import { Body, P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { SunGm } from 'game/Scale';
-import { GoalSpec, bodyVelocityAt, captureThreshold, evaluateRockets, evaluateRocketsDetailed, findGoalIndex, getLevel, goalWaypoints, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
+import { GoalSpec, bodyVelocityAt, captureThreshold, evaluateRockets, evaluateRocketsDetailed, findGoalIndex, getLevel, goalWaypoints, installArcadeLevels, levelCount, relativeSpeedAt, scaledPlanets, waypointProgress } from 'game/LevelData';
+import { Content, json } from 'Dora';
 import { AimMaxSpeed, AimMinSpeed, BrakeShare, PhysicsStep } from 'game/Config';
 import { levelRuntime } from 'game/Tuning';
 import { resolveResult } from 'game/Game';
+import { analyzeFlyby, planTransfer } from 'game/Transfer';
+import { goalPositionAt } from 'game/LevelData';
 
 interface Failure {
 	name: string;
@@ -26,10 +29,21 @@ function check(name: string, ok: boolean, detail: string): void {
 	if (!ok) failures.push({ name, detail });
 }
 
+/** 测试与游戏走同一份 JSON。装不上就让后面的断言全部失败，而不是悄悄测空表。 */
+function loadFixture(): void {
+	const levelsText = Content.exist('Assets/Levels/levels.json') ? Content.load('Assets/Levels/levels.json') : '';
+	const bodiesText = Content.exist('Assets/Levels/bodies.json') ? Content.load('Assets/Levels/bodies.json') : '';
+	check('json-installed', installArcadeLevels(levelsText, bodiesText, (text: string): unknown => {
+		const decoded = json.decode(text);
+		if (decoded[1] !== undefined) return undefined;
+		return decoded[0];
+	}), 'Assets/Levels/*.json 没有装上');
+}
+
 /** 1) 结构有效性：视觉表对齐、目标索引合法、容差 > 半径。 */
 function testValidity(): void {
 	const n = levelCount();
-	check('level-count', n === 3, `levelCount=${n}（史诗三部曲三关）`);
+	check('level-count', n === 3, `levelCount=${n}（街机三关）`);
 
 	for (let i = 0; i < n; i++) {
 		const lv = getLevel(i);
@@ -54,18 +68,27 @@ function testValidity(): void {
 			const gp = lv.planets[goal.planetIndex];
 			check(`lv${lv.id}-goal-index`, gp !== undefined, `planetIndex=${goal.planetIndex} 越界`);
 			if (gp !== undefined) {
-				check(`lv${lv.id}-tolerance>radius`, goal.tolerance > gp.radius,
+				check(`lv${lv.id}-tolerance>radius`, goal.offset !== undefined ? distance(goalPositionAt(gp, 0, goal.offset), bodyPositionAt(gp, 0)) > goal.tolerance + gp.radius : goal.tolerance > gp.radius,
 					`tolerance=${goal.tolerance} radius=${gp.radius}（容差必须大于半径，否则不可达）`);
 			}
 		}
 
 		check(`lv${lv.id}-brief`, lv.brief !== undefined && lv.brief.length > 0, '缺少任务简报');
 
-		// 街机模式：探测器在发射台静止出发，由弹弓拖拽赋予初速
+		// 探测器停在中心天体的圆轨道上：初速 = 切向 √(μ/r)，不是静止
 		const v0 = lv.probeVel0;
 		check(`lv${lv.id}-probe-velocity-present`, v0 !== undefined, 'probeVel0 必须存在');
-		if (v0 !== undefined) {
-			check(`lv${lv.id}-probe-at-rest`, v0.x === 0 && v0.y === 0, `初速度在发射台上必须为 0: (${v0.x}, ${v0.y})`);
+		if (v0 !== undefined && lv.planets.length > 0) {
+			const host = lv.planets[0];
+			const rx = lv.probeStart.x - host.orbitCenter.x;
+			const ry = lv.probeStart.y - host.orbitCenter.y;
+			const rr = Math.sqrt(rx * rx + ry * ry);
+			const expect = rr > 0 ? Math.sqrt(host.gm / rr) : 0;
+			const got = Math.sqrt(v0.x * v0.x + v0.y * v0.y);
+			check(`lv${lv.id}-probe-circular`, Math.abs(got - expect) < 1e-6, `v=${got.toFixed(3)} 圆轨=${expect.toFixed(3)}`);
+			// 切向：位置 × 速度 ≈ r·v（逆时针）
+			const cross = rx * v0.y - ry * v0.x;
+			check(`lv${lv.id}-probe-tangent`, Math.abs(cross - rr * expect) < 1e-4, `cross=${cross.toFixed(3)}`);
 		}
 
 		// 街机模式：秒开局，入场运镜为可选
@@ -80,8 +103,8 @@ function testValidity(): void {
 	const l1 = getLevel(0);
 	if (l1 !== undefined) {
 		check('arcade-l1-earth-radius', l1.planets[0].radius > 0 && l1.planets[0].gm > 0, `earth r=${l1.planets[0].radius}`);
-		check('arcade-l1-obstacle-present', l1.planets[1].isObstacle === true, '第2个天体必须为障碍物');
-		check('arcade-l1-stars-count', l1.stars !== undefined && l1.stars.length === 3, '必须有 3 颗金色星尘');
+		check('transfer-l1-moon-present', l1.planets[1].name === '月球' && l1.planets[1].gm > 0 && l1.planets.length === 2, '地月教学关必须只有地球与月球');
+		check('transfer-l1-no-stars', l1.stars !== undefined && l1.stars.length === 0, '教学关不收集星尘');
 	}
 }
 
@@ -199,7 +222,7 @@ interface SweepStat {
  *    但它们的数值验收（成功率 / 相位 / 时间窗）推迟到后续轮次。
  *    这里**如实标注**：外圈关的扫掠照跑、结果照打，只是不让本模块变红。
  */
-const REACH_GATE_LEVELS = 1;
+const REACH_GATE_LEVELS = 3;
 
 /**
  * 时间轴判据是否作为硬门（S5 本轮 = false）。
@@ -312,6 +335,23 @@ function testReachability(): SweepStat[] {
 	for (let i = 0; i < n; i++) {
 		const lv = getLevel(i);
 		if (lv === undefined) { out.push(sweepLevel(lv, 12, 4, 1)); continue; }
+		if (lv.transfer !== undefined) {
+			const bodies = scaledPlanets(lv);
+			const radius = distance(lv.probeStart, bodyPositionAt(bodies[0], 0));
+			const ra = distance(goalPositionAt(bodies[lv.goal.planetIndex], 0, lv.goal.offset), bodyPositionAt(bodies[0], 0));
+			const t0 = lv.transfer.flyby !== undefined ? 1 : 0;
+			const a = Math.atan2(lv.probeStart.y, lv.probeStart.x) + Math.sqrt(bodies[0].gm / (radius * radius * radius)) * t0;
+			const pos = { x: radius * Math.cos(a), y: radius * Math.sin(a) };
+			const vel = { x: -Math.sin(a) * Math.sqrt(bodies[0].gm / radius), y: Math.cos(a) * Math.sqrt(bodies[0].gm / radius) };
+			const plan = planTransfer(bodies[0].gm, radius, vel, lv.transfer.flyby !== undefined ? 0.875 : (ra - radius) / (lv.transfer.apoapsisMax - radius), lv.transfer.apoapsisMax);
+			const duration = plan.dv / lv.transfer.thrustAcceleration;
+			const flight = simulate({ pos, vel }, bodies, { dt: levelRuntime(i).physicsStep, steps: lv.maxSteps, sampleEvery: 1, escapeRadius: lv.escapeRadius, t0,
+				initialBurn: { duration, acceleration: { x: plan.velocity.x / duration, y: plan.velocity.y / duration } } });
+			const gi = lv.transfer.flyby !== undefined ? analyzeFlyby(flight, bodies[0], bodies[lv.goal.planetIndex], lv.transfer.flyby, levelRuntime(i).physicsStep, t0).completionIndex : findGoalIndex(flight.points, bodies, lv.goal, levelRuntime(i).physicsStep, t0, flight.velocities);
+			check(`lv${lv.id}-reachable`, gi >= 0, '顺行有限燃烧基准解必须安全完成掠月');
+			out.push({ solutions: gi >= 0 ? 1 : 0, total: 1, perT0: [], t0s: [], best: '有限燃烧地月转移' });
+			continue;
+		}
 		if (i >= sweepCount) {
 			out.push({ solutions: 0, total: 0, perT0: [], t0s: [], best: '（本轮不扫掠，见 testReachability 的说明）' });
 			continue;
@@ -320,24 +360,16 @@ function testReachability(): SweepStat[] {
 		// ⚠️ t0 档数从 24 降到 4（S5）：步长按关卡给之后，外圈关一次扫掠仍是
 		// "样本数 × 步数"，24 档 × 1152 样本会让批跑跑到超时被杀（2026-09-27 实测）。
 		const t0Count = lv.timeWindow !== undefined ? 4 : 1;
-		const rtLv = levelRuntime(i);
-		levelDvMin = rtLv.aimMin;
-		levelDvTop = AimMaxSpeed;
+		levelDvMin = lv.planets.length > 0 ? 40 : AimMinSpeed;
+		levelDvTop = lv.dvBudget;
 		levelVel0 = lv.probeVel0 !== undefined ? lv.probeVel0 : { x: 0, y: 0 };
-		sweepDt = rtLv.physicsStep;
-		sweepEvery = 1;
+		sweepDt = 1 / 60;
+		sweepEvery = 2;
 		sweepSteps = lv.maxSteps;
 		levelBrake = false;
-		let stat = sweepLevel(lv, 12, 4, t0Count);
+		let stat = sweepLevel(lv, 18, 5, t0Count);
 		if (stat.solutions === 0) {
-			stat = sweepLevel(lv, 24, 6, lv.timeWindow !== undefined ? 4 : 1);
-		}
-		if (stat.solutions === 0) {
-			stat = sweepLevel(lv, 120, 6, 1);
-		}
-		if (stat.solutions === 0) {
-			levelBrake = true;
-			stat = sweepLevel(lv, 12, 4, t0Count);
+			stat = sweepLevel(lv, 36, 6, 1);
 		}
 		out.push(stat);
 		if (i < REACH_GATE_LEVELS) {
@@ -402,25 +434,26 @@ function testMissionMeta(): void {
 
 		check(`lv${lv.id}-mission-id`, m.id === `L${lv.id}`, `id=${m.id}`);
 		check(`lv${lv.id}-mission-codename`, m.codeName.length > 0, 'codeName 为空');
-		check(`lv${lv.id}-mission-challenges-count`, m.challenges.length === 3, `challenges.length=${m.challenges.length}`);
+		check(`lv${lv.id}-mission-challenges-count`, m.challenges.length === (lv.transfer !== undefined ? 1 : 3), `challenges.length=${m.challenges.length}`);
 		check(`lv${lv.id}-c1-type-success`, m.challenges[0].type === 'success', `c1 type=${m.challenges[0].type}`);
-		check(`lv${lv.id}-c2-type-fuel`, m.challenges[1].type === 'fuel', `c2 type=${m.challenges[1].type}`);
-		check(`lv${lv.id}-c3-type-valid`, ['distance', 'speed', 'eccentricity'].indexOf(m.challenges[2].type) >= 0, `c3 type=${m.challenges[2].type}`);
+		if (lv.transfer !== undefined) continue;
+		check(`lv${lv.id}-c2-type-stars`, m.challenges[1].type === 'stars', `c2 type=${m.challenges[1].type}`);
+		check(`lv${lv.id}-c3-type-stars`, m.challenges[2].type === 'stars', `c3 type=${m.challenges[2].type}`);
 	}
 }
 
 /** 7) 火箭星级评价逻辑（S7 纯函数判定）。 */
 function testEvaluateRockets(): void {
-	const l1 = getLevel(0);
+	const l1 = getLevel(1);
 	if (l1 !== undefined) {
 		check('rockets-fail-0', evaluateRockets(l1, 'crash', 0.1) === 0, '失败应为 0 枚火箭');
 		check('rockets-escaped-0', evaluateRockets(l1, 'escaped', 0.1) === 0, '逃逸应为 0 枚火箭');
-		check('rockets-success-overburn-1', evaluateRockets(l1, 'success', l1.dvBudget * 0.95) === 1, '燃油超标应为 1 枚火箭');
-		check('rockets-fuel-ok-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5) === 2, '达成省油应为 2 枚火箭');
-		check('rockets-peri-ok-3', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { maxSpeed: 320 }) === 3, '达成高速狂飙应为 3 枚火箭');
-		check('rockets-peri-fail-2', evaluateRockets(l1, 'success', l1.dvBudget * 0.5, { maxSpeed: 200 }) === 2, '未达成速度挑战应为 2 枚火箭');
+		check('rockets-success-nostar-1', evaluateRockets(l1, 'success', l1.dvBudget, { starsCollected: 0 }) === 1, '只进门应为 1 星');
+		check('rockets-stars-2', evaluateRockets(l1, 'success', l1.dvBudget, { starsCollected: 2 }) === 2, '两颗星尘应为 2 星');
+		check('rockets-stars-3', evaluateRockets(l1, 'success', l1.dvBudget, { starsCollected: 3 }) === 3, '三颗星尘应为 3 星');
+		check('rockets-stars-1-not-2', evaluateRockets(l1, 'success', l1.dvBudget, { starsCollected: 1 }) === 1, '一颗星尘仍是 1 星');
 
-		const det = evaluateRocketsDetailed(l1, 'success', l1.dvBudget * 0.5, { maxSpeed: 320 });
+		const det = evaluateRocketsDetailed(l1, 'success', l1.dvBudget, { starsCollected: 3 });
 		check('rockets-detailed-count', det.rockets === 3, '详细评价火箭数应为 3');
 		check('rockets-detailed-c1', det.achieved[0] === true, '挑战 1 应达成');
 		check('rockets-detailed-c2', det.achieved[1] === true, '挑战 2 应达成');
@@ -434,11 +467,12 @@ function testEvaluateRockets(): void {
 
 	const l3 = getLevel(2);
 	if (l3 !== undefined) {
-		check('rockets-l3-speed-3', evaluateRockets(l3, 'success', l3.dvBudget * 0.7, { maxSpeed: 350 }) === 3, '高速狂飙应为 3 枚火箭');
+		check('rockets-l3-stars-3', evaluateRockets(l3, 'success', l3.dvBudget, { starsCollected: 3 }) === 3, '三颗星尘应为 3 星');
 	}
 }
 
 export function runTests(): string {
+	loadFixture();
 	testValidity();
 	testFindGoalIndex();
 	const stats = testReachability();

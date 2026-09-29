@@ -1,0 +1,77 @@
+{
+  "version": "2.0.0",
+  "bodies": {
+    "sun": {
+      "name": "太阳",
+      "gm": 800000,
+      "radius": 50,
+      "model": "Sun",
+      "color": [1.0, 0.85, 0.4],
+      "emissive": [1.0, 0.9, 0.6]
+    },
+    "earth": {
+      "name": "地球",
+      "gm": 480000,
+      "radius": 42,
+      "model": "Planet_Earth",
+      "color": [0.42, 0.62, 0.85]
+    },
+    "moon": {
+      "name": "月球",
+      "gm": 6000,
+      "radius": 28,
+      "model": "Moon",
+      "color": [0.8, 0.8, 0.85]
+    },
+    "venus": {
+      "name": "金星",
+      "gm": 520000,
+      "radius": 40,
+      "model": "Planet_Venus",
+      "color": [0.9, 0.78, 0.55]
+    },
+    "mercury": {
+      "name": "水星",
+      "gm": 30000,
+      "radius": 26,
+      "model": "Planet_Mercury",
+      "color": [0.65, 0.65, 0.65]
+    },
+    "jupiter": {
+      "name": "木星",
+      "gm": 550000,
+      "radius": 46,
+      "model": "Planet_Jupiter",
+      "color": [0.85, 0.72, 0.5]
+    },
+    "saturn": {
+      "name": "土星",
+      "gm": 480000,
+      "radius": 42,
+      "model": "Planet_Saturn",
+      "color": [0.75, 0.7, 0.6],
+      "ring": true
+    },
+    "neptune": {
+      "name": "海王星",
+      "gm": 35000,
+      "radius": 30,
+      "model": "Planet_Neptune",
+      "color": [0.34, 0.5, 0.86]
+    },
+    "asteroid": {
+      "name": "太空陨石",
+      "gm": 0,
+      "radius": 28,
+      "model": "Asteroid_Rock",
+      "color": [0.7, 0.6, 0.5]
+    },
+    "target_gate": {
+      "name": "星门终点",
+      "gm": 2500,
+      "radius": 26,
+      "model": "Target_Gate",
+      "color": [0.34, 0.85, 0.75]
+    }
+  }
+}

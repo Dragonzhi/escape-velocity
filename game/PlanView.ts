@@ -117,7 +117,7 @@ function bodyCenterDist(b: Body): number {
  * - 每颗天体：自己的最远距离 + `max(本体半径, 目标容差)`（目标那颗要留出圈的余量）；
  * - 探测器的出发点也要在画面内（L1 的探测器在 90，比地球轨道 80 还远）。
  */
-export function planFitRadius(bodies: Body[], probeStart: P2, goalIndex: number, goalTolerance: number, centerIndex?: number): number {
+export function planFitRadius(bodies: Body[], probeStart: P2, goalIndex: number, goalTolerance: number, centerIndex?: number, starOrbits?: Body[]): number {
 	// 给了 centerIndex ⇒ 以那颗天体为中心取景（L1 用：那一关的全局尺度与局部尺度差 80 倍）
 	if (centerIndex !== undefined && centerIndex >= 0 && centerIndex < bodies.length) {
 		const c = bodies[centerIndex];
@@ -153,6 +153,15 @@ export function planFitRadius(bodies: Body[], probeStart: P2, goalIndex: number,
 	}
 	const pd = Math.sqrt(probeStart.x * probeStart.x + probeStart.y * probeStart.y);
 	if (pd > r) r = pd;
+	// 星尘是公转的，最远就是它的轨道半径（静态星尘则是坐标本身）
+	if (starOrbits !== undefined) {
+		for (let i = 0; i < starOrbits.length; i++) {
+			const sd = starOrbits[i].orbitRadius > 0
+				? starOrbits[i].orbitRadius
+				: Math.sqrt(starOrbits[i].orbitCenter.x * starOrbits[i].orbitCenter.x + starOrbits[i].orbitCenter.y * starOrbits[i].orbitCenter.y);
+			if (sd > r) r = sd;
+		}
+	}
 	return r > 1e-6 ? r : 1;
 }
 
@@ -180,6 +189,7 @@ export function arrivalRingRadius(goal: { tolerance: number; chain?: { tolerance
 
 /** 2D 规划视图的可调参数（配色与 3D 的 Trajectory 对齐：同一颗行星在两个视图里颜色一致）。 */
 export interface PlanOptions {
+	transferTutorial?: boolean;
 	/** 四周留白比例（0.12 = 各留 12%）。 */
 	marginFrac: number;
 	/** 轨道圈颜色（0xRRGGBB）。 */
@@ -300,6 +310,7 @@ export function formatKm(km: number): string {
 
 /** 2D 规划视图句柄（属性式方法，见 Trajectory 的同款约定）。 */
 export interface PlanView {
+	setBurn?: (direction: P2, on: boolean) => void;
 	/**
 	 * 显隐（状态驱动，由 Game 按 `viewMode` 切）。
 	 *
@@ -416,6 +427,8 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 	// 状态：隐藏时也照常存着 ⇒ 切回 2D 的下一帧立刻能画（不用等下一次 sync）
 	let bodies: Body[] = [];
 	let visuals: PlanetVisualDef[] = [];
+	let burning = false;
+	let burnDirection: P2 = { x: 0, y: 0 };
 	// 探测器停泊轨（B2）：宿主中心 + 相对半径（0 = 不画）
 	let probeOrbitCenter: P2 = { x: 0, y: 0 };
 	let probeOrbitRadius = 0;
@@ -519,7 +532,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		const gravityRingColor = Color(100, 180, 255, 70);
 		for (const b of bodies) {
 			if (b.gm > 0 && !b.isObstacle) {
-				const center = b.host !== undefined ? bodyPositionAt(b.host, tWorld) : b.orbitCenter;
+				const center = options.transferTutorial === true ? bodyPositionAt(b, tWorld) : b.host !== undefined ? bodyPositionAt(b.host, tWorld) : b.orbitCenter;
 				const s = planeToScreen(center, map);
 				const gravR = (b.radius * 3.6 + Math.sin(tWorld * 3) * 4) * map.scale;
 				if (gravR >= 5) {
@@ -531,6 +544,11 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		// ② 到达圈：半径 = 该航点的容差 **按平面单位换算**（圈的像素大小就是"够不够得着"的信息）
 		for (const ring of rings) {
 			const s = planeToScreen(ring.center, map);
+			if (ring.point === true) {
+				ringDraw.drawDot(Vec2(s.x, s.y), 10 * (ring.pulse !== undefined ? ring.pulse : 1), Color(70, 220, 190, 45));
+				ringDraw.drawDot(Vec2(s.x, s.y), 3.5, Color(170, 255, 230, 255));
+			}
+			if (ring.showRange === false) continue;
 			const rPx = ring.radius * map.scale;
 			if (rPx < 1) continue;
 			ringDraw.drawPolygon(circleVerts(s.x, s.y, rPx, options.ringSegments), noFill, options.ringWidth, ringColor);
@@ -574,7 +592,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 				setLabelVisible(lb, near);
 				if (!near) continue;
 				const name = i < visuals.length ? bodyLabel(visuals[i].model) : '天体';
-				const text = b.orbitRadius > 0 ? name + ' · ' + formatKm(b.orbitRadius * KmPerUnit) : name;
+				const text = name;
 				if (i >= lastBodyReadout.length || lastBodyReadout[i] !== text) {
 					lastBodyReadout[i] = text;
 					setLabelText(lb, text);
@@ -604,6 +622,12 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		}
 
 		// ⑤c 街机金色星尘（🌟）
+		const burnMag = Math.sqrt(burnDirection.x * burnDirection.x + burnDirection.y * burnDirection.y);
+		if (burning && burnMag > 0) {
+			const end = planeToScreen({ x: probe.x - burnDirection.x * 32 / burnMag, y: probe.y - burnDirection.y * 32 / burnMag }, map);
+			pinDraw.drawSegment(Vec2(ps.x, ps.y), Vec2(end.x, end.y), 4, Color(255, 135, 35, 160));
+			pinDraw.drawSegment(Vec2(ps.x, ps.y), Vec2(end.x, end.y), 1.5, Color(255, 235, 145, 255));
+		}
 		for (let i = 0; i < stars.length; i++) {
 			const st = stars[i];
 			const isCol = i < collectedStars.length && collectedStars[i];
@@ -727,8 +751,8 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 				}
 			}
 			if (best >= 0) {
-				const alt = (bestDist - bodies[best].radius) * KmPerUnit;
-				probeReadout = '探测器 · 高度 ' + formatKm(alt > 0 ? alt : 0);
+				const alt = bestDist - bodies[best].radius;
+				probeReadout = '探测器 · ' + (alt > 0 ? alt : 0).toFixed(0);
 			} else {
 				probeReadout = '探测器';
 			}
@@ -762,6 +786,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			rings = rs;
 			dirty = true;
 		},
+		setBurn: (direction: P2, on: boolean): void => { burnDirection = direction; burning = on; },
 		clearGoalRings(): void {
 			rings = [];
 			dirty = true;

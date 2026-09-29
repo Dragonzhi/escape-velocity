@@ -55,6 +55,7 @@ import {
 	setLabelCenter,
 	setLabelColor,
 	setLabelText,
+	setLabelVisible,
 } from 'game/Ui';
 
 const DegToRad = Math.PI / 180;
@@ -555,10 +556,12 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 		const rocketsGot = getMissionRockets(progress, levelIndex);
 		for (let k = 0; k < 3; k++) {
 			const c = m.challenges[k];
+			if (c === undefined) { setLabelVisible(challengeLabels[k], false); continue; }
+			setLabelVisible(challengeLabels[k], true);
 			const achieved = rocketsGot >= k + 1;
 			const icon = achieved ? '★' : '☆';
 			const prefix = k === 0 ? '一星' : (k === 1 ? '二星' : '三星');
-			const text = icon + ' [' + prefix + '] ' + c.desc;
+			const text = lv.transfer !== undefined ? (rocketsGot >= 1 ? '已完成 · ' : '目标 · ') + c.desc : icon + ' [' + prefix + '] ' + c.desc;
 			setLabelText(challengeLabels[k], text);
 			setLabelColor(challengeLabels[k], achieved ? GoldStarHex : 0x9cb8d9);
 		}
@@ -624,11 +627,12 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 		for (let i = 0; i < pins.length; i++) {
 			const p = pins[i];
 			const count = getMissionRockets(prog, p.levelIndex);
-			setLabelText(p.rocketLabel, formatRocketsString(count));
+			const teaching = getLevel(p.levelIndex)?.transfer !== undefined;
+			setLabelText(p.rocketLabel, teaching ? (count > 0 ? '已完成' : '转移练习') : formatRocketsString(count));
 			setLabelColor(p.rocketLabel, count > 0 ? GoldStarHex : DimStarHex);
 
 			// 同步刷新底部 Dock 按钮文字
-			dockButtons[i].setText('L' + (p.levelIndex + 1).toFixed(0) + ' ' + (count > 0 ? count.toFixed(0) + '★' : ''));
+			dockButtons[i].setText('L' + (p.levelIndex + 1).toFixed(0) + ' ' + (count > 0 ? (teaching ? '已完成' : count.toFixed(0) + '★') : ''));
 		}
 	};
 

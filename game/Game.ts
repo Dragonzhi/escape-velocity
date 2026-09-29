@@ -16,21 +16,22 @@
  *
  * ===== 确定性设计（验收硬指标）=====
  *
- * 发射瞬间用与预测线**完全相同的** `simulate` 预推演整段飞行，
+ * 发射瞬间用与预测线共用的 `simulate` 预推演整段飞行，
  * 之后逐帧**回放**。因为物理是确定性的（S1.1 已证逐位一致），
- * 回放 == 实时积分，但保证了“预测线看见的就是飞出来的”，
+ * 回放 == 固定步长实时积分。转移教程的规划用瞬时点火近似、飞行积分有限燃烧，允许小幅偏差；
  * 且结局判定（§5.8）也在发射瞬间就确定 —— 与 D2 的时间模型自洽。
  *
  * 分层：`GameCore`（纯逻辑，可单测）+ `createGame`（驱动引擎对象）。
  */
 import { Camera3D, Vec3 } from 'Dora';
 import { AimInput, AimResult } from 'game/Hud';
-import { Body, BrakeThrust, Outcome, P2, SimResult, bodyPositionAt, distance, evaluateCollectedStars, simulate, sub } from 'game/Gravity';
+import { Body, BrakeThrust, Outcome, P2, SimResult, bodyPositionAt, distance, evaluateCollectedStars, simulate, starPositionAt, sub } from 'game/Gravity';
 import { GameScene, planeToWorld } from 'game/Scene';
-import { CameraRig } from 'game/CameraRig';
+import { CameraRig, RigFrame } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
-import { GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalPositionAt, goalWaypoints, waypointProgress } from 'game/LevelData';
+import { CameraFocusMode, FlybyAnalysis, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeFlyby, nextCameraFocus, planTransfer, transferPlaybackRate, transferShotAt } from 'game/Transfer';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
@@ -82,6 +83,7 @@ export function resolveResult(outcome: Outcome, goalIndex: number, goal: GoalSpe
 
 /** 一关的物理定义（由 LevelData 转换而来）。 */
 export interface GameLevel {
+	transfer?: TransferTutorial;
 	bodies: Body[];
 	probeStart: P2;
 	/** 出发时已有的速度（S3.9.3）；S5 起六关都必填 = 该点的圆轨速度。 */
@@ -130,14 +132,20 @@ export interface GameLevel {
 	aimMin?: number;
 	/** 任务专属元数据（S7）。 */
 	mission?: MissionMeta;
-	/** 街机模式：沿途 3 颗金色星尘坐标。 */
+	/** 街机模式：沿途 3 颗金色星尘在 t = 0 的坐标（兼容旧调用）。 */
 	stars?: P2[];
+	/**
+	 * 星尘的公转轨道。给了就按 t 求位置，预测线与飞行用同一个时刻。
+	 * 省略 = 星尘钉在 `stars` 的坐标上不动。
+	 */
+	starOrbits?: Body[];
 }
 
 /**
  * 状态机核心（纯逻辑，不碰引擎对象，可单测）。
  */
 export interface GameCore {
+	burnDuration: number;
 	phase: GamePhase;
 	/** 当前矄准（Aiming 态有意义）。 */
 	aim: AimResult;
@@ -157,6 +165,9 @@ export interface GameCore {
 	t0: number;
 	/** 飞行已播放的物理时间（秒）。 */
 	flightTime: number;
+	/** 教学关的完成与结束观赏分开；完成后不因后续撞毁而撤销。 */
+	missionCompleted: boolean;
+	flyby: FlybyAnalysis | undefined;
 	/** 第一个进入目标容差的采样点索引；-1 = 未到达。 */
 	goalIndex: number;
 	/** 结算三态（发射瞬间即确定；Result 态对外可见）。 */
@@ -184,8 +195,10 @@ export interface GameCore {
 	hasBraked: boolean;
 	/** 逆喷制动生效时的采样点索引（-1 = 未制动）。 */
 	brakePointIndex: number;
-	/** 街机模式：沿途星尘坐标。 */
+	/** 街机模式：星尘在 t = 0 的坐标。 */
 	stars: P2[];
+	/** 星尘公转轨道，与 stars 一一对应。空 = 静止。 */
+	starOrbits: Body[];
 	/** 街机模式：各星尘是否已收集。 */
 	collectedStars: boolean[];
 	/** 街机模式：当前瞄准预览下能吃到的星数。 */
@@ -234,18 +247,32 @@ function levelAimMin(aimMin: number | undefined): number {
 	return aimMin !== undefined && aimMin >= 0 ? aimMin : AimMinSpeed;
 }
 
-export function createCore(dt?: number, stars?: P2[]): GameCore {
+/** 星尘在时刻 t 的位置（没有轨道就用静态坐标）。 */
+function starPositionsNow(orbits: Body[], fallback: P2[], t: number): P2[] {
+	const out: P2[] = [];
+	for (let i = 0; i < fallback.length; i++) {
+		const orbit = i < orbits.length ? orbits[i] : undefined;
+		out.push(starPositionAt(orbit, fallback[i], t));
+	}
+	return out;
+}
+
+export function createCore(dt?: number, stars?: P2[], starOrbits?: Body[]): GameCore {
 	const stList = stars !== undefined ? stars : [];
 	const colList: boolean[] = [];
 	for (let i = 0; i < stList.length; i++) colList.push(false);
+	const orbits = starOrbits !== undefined ? starOrbits : [];
 	return {
 		phase: 'Aiming',
 		aim: neutralAim(AimMinSpeed),
 		flight: undefined,
 		dt: dt !== undefined && dt > 0 ? dt : PhysicsStep,
 		brakeMode: false,
+		burnDuration: 0,
 		t0: 0,
 		flightTime: 0,
+		missionCompleted: false,
+		flyby: undefined,
 		goalIndex: -1,
 		result: undefined,
 		// 进关先给 2D：设计稿第 4 条"进关/瞄准在 2D"（发射那一刻才切 3D）
@@ -257,6 +284,7 @@ export function createCore(dt?: number, stars?: P2[]): GameCore {
 		hasBraked: false,
 		brakePointIndex: -1,
 		stars: stList,
+		starOrbits: orbits,
 		collectedStars: colList,
 		previewStarsCount: 0,
 	};
@@ -273,6 +301,19 @@ export function createCore(dt?: number, stars?: P2[]): GameCore {
 export function coreToggleView(core: GameCore): PlanViewMode {
 	core.viewMode = core.viewMode === '2D' ? '3D' : '2D';
 	return core.viewMode;
+}
+
+/** 教学关显式指定中心宿主；旧关卡仍按最近的有引力天体选择。 */
+export function selectIdleHost(bodies: Body[], start: P2, preferred?: number): number {
+	if (preferred !== undefined && bodies[preferred] !== undefined && bodies[preferred].gm > 0) return preferred;
+	let index = -1;
+	let nearest = 1e9;
+	for (let i = 0; i < bodies.length; i++) {
+		if (bodies[i].gm <= 0) continue;
+		const d = distance(bodyPositionAt(bodies[i], 0), start);
+		if (d < nearest) { nearest = d; index = i; }
+	}
+	return index;
 }
 
 /**
@@ -316,23 +357,32 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	// 允许从 Aiming（老路径/回归脚本）或 Armed（松手后再按发射）出
 	if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
 	const base = vel0 !== undefined ? vel0 : level.probeVel0;
-	const motion = burnToMotion(burn, base, core.brakeMode, level.maxSteps);
+	const motion = burnToMotion(burn, base, level.transfer === undefined && core.brakeMode, level.maxSteps);
+	const mag = Math.sqrt(burn.x * burn.x + burn.y * burn.y);
+	core.burnDuration = level.transfer !== undefined ? mag / level.transfer.thrustAcceleration : 0;
+	const thrust = core.burnDuration > 0 ? { acceleration: { x: burn.x / core.burnDuration, y: burn.y / core.burnDuration }, duration: core.burnDuration } : undefined;
 	const p0 = from !== undefined ? from : level.probeStart;
 	const flight = simulate(
-		{ pos: { x: p0.x, y: p0.y }, vel: motion.init },
+		{ pos: { x: p0.x, y: p0.y }, vel: level.transfer !== undefined && base !== undefined ? base : motion.init },
 		level.bodies,
-		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0, brake: motion.brake },
+		{ steps: level.maxSteps, dt: core.dt, sampleEvery: 1, escapeRadius: level.escapeRadius, t0: core.t0, brake: motion.brake, initialBurn: thrust },
 	);
 	core.flight = flight;
-	core.goalIndex = findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
-	core.result = resolveResult(flight.outcome, core.goalIndex, level.goal);
+	core.missionCompleted = false;
+	const flybyCfg = level.transfer !== undefined ? level.transfer.flyby : undefined;
+	core.flyby = flybyCfg !== undefined ? analyzeFlyby(flight, level.bodies[0], level.bodies[level.goal.planetIndex], flybyCfg, core.dt, core.t0) : undefined;
+	core.goalIndex = core.flyby !== undefined ? core.flyby.completionIndex : findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
+	core.result = core.flyby !== undefined && core.goalIndex >= 0 ? undefined : resolveResult(flight.outcome, core.goalIndex, level.goal);
+	if (core.flyby !== undefined) print('[escape-velocity] flyby planned entry=' + core.flyby.entryIndex.toFixed(0)
+		+ ' peri=' + core.flyby.periapsis.toFixed(2) + ' exit=' + core.flyby.exitIndex.toFixed(0)
+		+ ' energyDrop=' + core.flyby.energyDrop.toFixed(2) + ' complete=' + core.flyby.completionIndex.toFixed(0) + ' end=' + core.flyby.viewEndIndex.toFixed(0));
 	// 诊断（S5 L1 验收）：把"发射那一刻的真实起点与初速"打全精度。
 	// 排查"Node 侧算得出解、引擎里却 missed"时必须看这几个数 —— 差一点就是几何完全不同。
 	print('[escape-velocity][dbg] launch p0=(' + p0.x.toFixed(6) + ',' + p0.y.toFixed(6)
 		+ ') v=(' + motion.init.x.toFixed(5) + ',' + motion.init.y.toFixed(5)
 		+ ') t0=' + core.t0.toFixed(6) + ' dt=' + core.dt.toFixed(6)
 		+ ' pts=' + flight.points.length.toFixed(0) + ' gi=' + core.goalIndex.toFixed(0)
-		+ ' outcome=' + flight.outcome + ' result=' + core.result);
+		+ ' outcome=' + flight.outcome + ' result=' + (core.result !== undefined ? core.result : 'pending'));
 	core.flightTime = 0;
 	// S3.17：慢动作状态由 coreUpdate 逐帧重算，这里给干净的初值（发射瞬间不可能在慢动作里）
 	core.slowmo = false;
@@ -498,21 +548,29 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 	if (core.phase !== 'Flying' || core.flight === undefined) return false;
 	// ⚠️ 不传 level = **不判定**（不清标志）：测试与回归脚本可以直接驱动 core.slowmo。
 	//    真实游戏里 updateFlying 每帧都传 level ⇒ 标志每帧重算，不会留下陈旧值。
-	if (level !== undefined) {
+	if (level !== undefined && level.transfer === undefined) {
 		const idx = coreProbeIndex(core);
 		core.slowmoBody = slowMotionBody(level.bodies, core.flight.points[idx], core.t0 + core.flightTime, anchorBodyIndex(level.bodies), level.slowMoFloor);
 		core.slowmo = core.slowmoBody >= 0;
 	}
 	// 基准（别算错）：默认手动档 2× ⇒ 慢动作期间 2 × 0.25 = 0.5× 实时
-	const speed = core.playback * (core.slowmo ? SlowMoFactor : 1);
-	core.flightTime += dt * speed;
+	if (level !== undefined && level.transfer !== undefined) {
+		core.flightTime = advanceTransferPlayback(core.flightTime, dt, core.playback, core.burnDuration, level.transfer, core.flyby, core.dt);
+	} else {
+		core.flightTime += dt * core.playback * (core.slowmo ? SlowMoFactor : 1);
+	}
+	if (core.flyby !== undefined && !core.missionCompleted && core.flyby.completionIndex >= 0 && coreProbeIndex(core) >= core.flyby.completionIndex) {
+		core.missionCompleted = true;
+		core.result = 'success';
+	}
 
 	// 街机模式：实时星尘收集判定
 	if (core.stars !== undefined && core.stars.length > 0) {
 		const curPos = core.flight.points[coreProbeIndex(core)];
 		for (let s = 0; s < core.stars.length; s++) {
 			if (!core.collectedStars[s]) {
-				const stPos = core.stars[s];
+				const orbit = s < core.starOrbits.length ? core.starOrbits[s] : undefined;
+				const stPos = starPositionAt(orbit, core.stars[s], core.t0 + core.flightTime);
 				const dx = curPos.x - stPos.x;
 				const dy = curPos.y - stPos.y;
 				if (dx * dx + dy * dy <= 30 * 30) {
@@ -523,7 +581,7 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 	}
 
 	const naturalEnd = core.flight.points.length - 1;
-	const endIdx = core.goalIndex >= 0 && core.goalIndex < naturalEnd ? core.goalIndex : naturalEnd;
+	const endIdx = core.flyby !== undefined ? core.flyby.viewEndIndex : (core.goalIndex >= 0 && core.goalIndex < naturalEnd ? core.goalIndex : naturalEnd);
 	if (coreProbeIndex(core) >= endIdx) {
 		// 吸附到终点：回放每帧跳多个索引，可能越过终点几个采样点
 		core.flightTime = endIdx * core.dt;
@@ -531,6 +589,14 @@ export function coreUpdate(core: GameCore, dt: number, level?: GameLevel): boole
 		return true;
 	}
 	return false;
+}
+
+/** 已完成的教学关可提前结束观赏，不能用该操作跳过掠月判定。 */
+export function coreEndViewing(core: GameCore): boolean {
+	if (core.phase !== 'Flying' || !core.missionCompleted) return false;
+	core.flightTime = coreProbeIndex(core) * core.dt;
+	core.phase = 'Result';
+	return true;
 }
 
 /**
@@ -613,8 +679,11 @@ export function coreRetry(core: GameCore, aimMin?: number): void {
 	core.viewMode = '2D';
 	core.flight = undefined;
 	core.flightTime = 0;
+	core.missionCompleted = false;
+	core.flyby = undefined;
 	core.goalIndex = -1;
 	core.result = undefined;
+	core.burnDuration = 0;
 	core.slowmo = false;
 	core.slowmoBody = -1;
 	core.hasBraked = false;
@@ -629,6 +698,7 @@ export function coreRetry(core: GameCore, aimMin?: number): void {
  * 纯函数，可单测。
  */
 export function isBrakeWindowActive(core: GameCore, level: GameLevel): boolean {
+	if (level.transfer !== undefined) return false;
 	if (core.phase !== 'Flying' || core.flight === undefined || core.hasBraked) return false;
 	const curIdx = coreProbeIndex(core);
 	const pts = core.flight.points;
@@ -852,6 +922,8 @@ export interface GameDeps {
 	onPhase: (p: GamePhase) => void;
 	/** 结算回调（驱动结果面板，携带遥测数据）。 */
 	onResult: (r: ResultKind, telemetry?: FlightTelemetry) => void;
+	/** 非模态里程碑：首次安全离开月球时记通关，仍继续 Flying。 */
+	onMissionCompleted?: (telemetry: FlightTelemetry) => void;
 	/**
 	 * 这一关成功之后是否进**终章「暗淡蓝点」**（S3.18）。
 	 *
@@ -884,12 +956,19 @@ export interface Game {
 	aimReady: () => void;
 	/** 「发射」按钮：从 Armed 真的打出去（带状态守卫 + Ui 的防抖）。 */
 	launchArmed: () => void;
+	/** 「取消瞄准」：从 Armed 回到 Aiming，表继续走，预测线收起。 */
+	cancelAim: () => void;
 	/** 当前是否 Armed（HUD 按钮显隐同步用）。 */
 	armed: () => boolean;
 	/** 当前视图（HUD 的 2D/3D 按钮文字同步用；状态是唯一事实来源）。 */
 	viewMode: () => PlanViewMode;
 	/** 手动切换 2D/3D（右下角那颗按钮）。 */
 	toggleViewMode: () => void;
+	cameraFocus: () => CameraFocusMode;
+	flightStage: () => TransferShot | undefined;
+	cycleCameraFocus: () => void;
+	missionCompleted: () => boolean;
+	endViewing: () => void;
 	/** 观察拖动（像素增量）→ 绕目标转。 */
 	observeDrag: (dx: number, dy: number) => void;
 	/** 捏合缩放（deltaDist；>0 放大/拉远，见 applyObserve）。 */
@@ -935,6 +1014,8 @@ export interface Game {
 	 * 旧实现只在拖动回调里更新，静止态永远停在初始值 0）。
 	 */
 	burnNow: () => number;
+	/** 这一帧要显示的星数：飞行中是已拾取，瞄准中是预测线能吃到的。 */
+	starsNow: () => number;
 	/** 飞行中实时制动窗口是否开启（L4 伽利略号等轨道器关卡）。 */
 	isBrakeWindowActive: () => boolean;
 	/** 触发飞行中实时逆喷制动。 */
@@ -967,7 +1048,7 @@ export interface Game {
 
 /** 组装游戏（状态机 + 引擎驱动）。 */
 export function createGame(level: GameLevel, deps: GameDeps): Game {
-	const core = createCore(level.physicsStep, level.stars);
+	const core = createCore(level.physicsStep, level.stars, level.starOrbits);
 
 	// ---- 时间档位（B3，2026-09-28）----
 	// `core.playback` 从此就是"**当前速率**"（游戏秒/真实秒），瞄准期与飞行期共用它 ——
@@ -993,6 +1074,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	 * （脚本走 launch、按钮走 launchArmed，两条路都跑一遍才看得见）。
 	 */
 	const applyFlightSpeed = (): void => {
+		if (level.transfer !== undefined) { paused = false; speedPow = 0; applySpeedRate(); return; }
 		if (level.flightSpeedPow === undefined || level.flightSpeedPow <= speedPow) return;
 		speedPow = level.flightSpeedPow;
 		paused = false;
@@ -1073,6 +1155,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let predAccum = 1;
 	let predForce = true;
 	let predPoints: P2[] = [];
+	/** 与 predPoints 一一对应的世界时刻（星尘公转用）。 */
+	let predTimes: number[] = [];
 	// 进关影视化倒叙/溯源运镜（S8.1 / L1-L3 重构）：先在 3D 下目标特写 ➔ 飞掠 ➔ 地球探测器 ➔ 切入 2D
 	let introTourActive = false;
 	let introTourT = tourDuration;
@@ -1095,6 +1179,11 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let obsYawDeg = 0;
 	let obsPitchDeg = 0;
 	let obsZoom = 1;
+	let focusMode: CameraFocusMode = 'Auto';
+	let cineKey = '';
+	let cineFrame: RigFrame | undefined = undefined;
+	let cineFrom: RigFrame | undefined = undefined;
+	let cineTransition = 0;
 	/** 时间流量程（秒）：世界时钟夹在 [0, span]；0 = 不限制。 */
 	let warpSpan = 0;
 	// 待机轨道的解析模型（B1，见 prepareIdle）：宿主索引 + 相对圆轨的半径/初相/角速度。
@@ -1138,18 +1227,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		idleOrbit = undefined;
 		if (level.probeVel0 === undefined) return;
 		// ① 宿主 = 离出发点最近的、有引力的天体（L1 = 地球）
-		let hostIndex = -1;
-		let bestD = 1e9;
-		for (let i = 0; i < level.bodies.length; i++) {
-			const b = level.bodies[i];
-			if (b.gm <= 0) continue;
-			const d = distance(bodyPositionAt(b, 0), level.probeStart);
-			if (d < bestD) {
-				bestD = d;
-				hostIndex = i;
-			}
-		}
-		if (hostIndex < 0 || bestD < 1e-9) return;
+		const hostIndex = selectIdleHost(level.bodies, level.probeStart, level.transfer !== undefined ? 0 : undefined);
+		if (hostIndex < 0) return;
 		const host = level.bodies[hostIndex];
 		const hp = bodyPositionAt(host, 0);
 		const hv = bodyVelocityAt(host, 0);
@@ -1222,6 +1301,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	 * 想看全景的玩家自己捏合拉远（observeZoom），开场分镜也还给过一次全景。
 	 */
 	const framingPoints = (probe: P2, t: number): { pts: P2[]; radii: number[] } => {
+		if (level.transfer !== undefined) {
+			return { pts: [probe, bodyPositionAt(level.bodies[0], t), bodyPositionAt(level.bodies[level.goal.planetIndex], t), goalPositionAt(level.bodies[level.goal.planetIndex], t, level.goal.offset)],
+				radii: [deps.scene.probeRadius, level.bodies[0].radius, level.bodies[level.goal.planetIndex].radius, level.goal.tolerance] };
+		}
 		// ⓪ **贴局部天体**（B2，L1 专用）：只装「探测器 + 锚点天体」，月球允许出画。
 		//    L1 的停泊轨 3.514e-3，而月球轨 0.2056 = 59 倍 ⇒ 装进月球就看不见停泊轨了。
 		if (level.aimFraming === 'local' && anchorDef !== undefined) {
@@ -1285,6 +1368,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (upto !== undefined && core.flight !== undefined) {
 			passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, upto, core.flight.velocities).passed;
 		}
+		if (level.transfer !== undefined && level.transfer.flyby !== undefined) passed = 0; // 引导光点不随旧的到达判定消失。
 		// 只画**下一个**航点的环（S3.9 用户反馈："行星旁边的蓝色虚线圈是什么？"）。
 		// 四个航点同时亮四个圈，加上灰色的行星轨道圈，看起来像两套轨道 —— 目标环的语义只有"下一站"，
 		// 所以已经掠过的、还没轮到的都不画；掠过的航点靠 HUD 的航点灯表示。
@@ -1292,11 +1376,20 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const nextWp = wps[passed];
 		const body = level.bodies[nextWp.planetIndex];
 		if (body === undefined) return [];
-		return [{ center: bodyPositionAt(body, t), radius: nextWp.tolerance, passed: false }];
+		return [{ center: goalPositionAt(body, t, nextWp.offset), radius: nextWp.tolerance, passed: false,
+			point: level.transfer !== undefined, showRange: level.transfer === undefined || (aimed && (core.phase === 'Aiming' || core.phase === 'Armed')),
+			pulse: 1 + 0.1 * Math.sin(t * 4) }];
 	};
 
 	/** 把自动取景按观察参数改写成"玩家的机位"（绕 target 转 + 缩放）。 */
 	const applyObserve = (f: { eye: Vec3.Type; target: Vec3.Type }): { eye: Vec3.Type; target: Vec3.Type } => {
+		if (level.transfer !== undefined && level.transfer.flyby === undefined) {
+			const basis = makeBasis(f);
+			const dx = f.eye.x - f.target.x, dy = f.eye.y - f.target.y, dz = f.eye.z - f.target.z;
+			const shift = Math.sqrt(dx * dx + dy * dy + dz * dz) * Math.tan(deps.fovYDeg * Math.PI / 360) * 0.14;
+			f = { eye: Vec3(f.eye.x - basis.up.x * shift, f.eye.y - basis.up.y * shift, f.eye.z - basis.up.z * shift),
+				target: Vec3(f.target.x - basis.up.x * shift, f.target.y - basis.up.y * shift, f.target.z - basis.up.z * shift) };
+		}
 		if (obsYawDeg === 0 && obsPitchDeg === 0 && obsZoom === 1) return f;
 		const dx = f.eye.x - f.target.x;
 		const dy = f.eye.y - f.target.y;
@@ -1319,14 +1412,86 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		};
 	};
 
+	/** 五个具体机位，沿用 CameraRig 的真实投影拟合；近景只包含当下的主体。 */
+	const transferCamera = (pos: P2, t: number, wallDt: number): RigFrame => {
+		const cfg = level.transfer!.flyby!;
+		const autoShot = transferShotAt(core.flightTime, core.burnDuration, core.flyby, cfg, core.dt);
+		const shot: TransferShot = focusMode === 'Auto' ? autoShot : (focusMode === 'Probe' ? 'Cruise' : focusMode);
+		const key = focusMode + ':' + shot;
+		const earth = bodyPositionAt(level.bodies[0], t);
+		const moon = bodyPositionAt(level.bodies[level.goal.planetIndex], t);
+		const velocity = core.flight !== undefined ? core.flight.velocities[coreProbeIndex(core)] : probeVel;
+		const vmag = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+		const firstV = core.flight !== undefined ? core.flight.velocities[0] : velocity;
+		const launchAz = Math.atan2(firstV.x, firstV.y) * 180 / Math.PI + 100;
+		let moonAz = launchAz;
+		if (core.flyby !== undefined && core.flyby.entryIndex >= 0 && core.flight !== undefined) {
+			const at = core.flyby.entryIndex;
+			const m = bodyPositionAt(level.bodies[level.goal.planetIndex], core.t0 + at * core.dt);
+			// 在进入会遇时选定方位，整个掠月段保持，避免速度转弯时镜头跟着旋转。
+			moonAz = Math.atan2(core.flight.points[at].x - m.x, core.flight.points[at].y - m.y) * 180 / Math.PI + 90;
+		}
+		let pts: P2[] = [pos], radii = [deps.scene.probeRadius];
+		let az = launchAz, tilt = 28, minDist = 130;
+		if (shot === 'Cruise') {
+			pts.push({ x: pos.x + (vmag > 0 ? velocity.x * 32 / vmag : 0), y: pos.y + (vmag > 0 ? velocity.y * 32 / vmag : 0) });
+			radii.push(0); minDist = 180; tilt = 35;
+		} else if (shot === 'Moon') {
+			pts = focusMode === 'Moon' ? [moon] : [pos, moon];
+			radii = focusMode === 'Moon' ? [level.bodies[level.goal.planetIndex].radius] : [deps.scene.probeRadius, level.bodies[level.goal.planetIndex].radius];
+			az = moonAz; tilt = 45; minDist = 160;
+		} else if (shot === 'Earth') {
+			pts = focusMode === 'Earth' ? [earth] : [pos, earth];
+			radii = focusMode === 'Earth' ? [level.bodies[0].radius] : [deps.scene.probeRadius, level.bodies[0].radius];
+			az = moonAz + 35; tilt = 42; minDist = 180;
+			if (core.flyby !== undefined && core.flyby.completionIndex >= 0 && core.flight !== undefined) {
+				const at = Math.min(core.flight.points.length - 1, core.flyby.completionIndex + Math.floor(cfg.overviewDuration / core.dt));
+				const home = bodyPositionAt(level.bodies[0], core.t0 + at * core.dt);
+				// 返回的地球/探测器沿画面纵向排布，竖屏不必为横向跨度退到总览距离。
+				az = Math.atan2(core.flight.points[at].x - home.x, core.flight.points[at].y - home.y) * 180 / Math.PI;
+			}
+		} else if (shot === 'Overview') {
+			pts = [pos, earth, moon]; radii = [deps.scene.probeRadius, level.bodies[0].radius, level.bodies[level.goal.planetIndex].radius];
+			az = moonAz; tilt = 60; minDist = 200;
+		}
+		if (key !== cineKey) {
+			cineFrom = cineFrame;
+			cineTransition = 0;
+			// 发射特写直接切入；之后的机位用真实秒 0.6 秒过渡。
+			if (cineKey === '' || shot === 'Launch') cineFrom = undefined;
+			cineKey = key;
+			print('[escape-velocity] camera shot -> ' + key + ' t=' + core.flightTime.toFixed(2));
+		}
+		const want = deps.rig.step(pts, deps.scene.probeRadius, radii, minDist, { azDeg: az, tiltDeg: tilt, lerp: 1 });
+		let frame = want;
+		if (cineFrom !== undefined) {
+			cineTransition += wallDt;
+			const u = Math.min(1, cineTransition / 0.6);
+			const k = u * u * (3 - 2 * u);
+			frame = { eye: Vec3(cineFrom.eye.x + (want.eye.x - cineFrom.eye.x) * k, cineFrom.eye.y + (want.eye.y - cineFrom.eye.y) * k, cineFrom.eye.z + (want.eye.z - cineFrom.eye.z) * k),
+				target: Vec3(cineFrom.target.x + (want.target.x - cineFrom.target.x) * k, cineFrom.target.y + (want.target.y - cineFrom.target.y) * k, cineFrom.target.z + (want.target.z - cineFrom.target.z) * k) };
+			if (u >= 1) cineFrom = undefined;
+		}
+		cineFrame = frame;
+		return applyObserve(frame);
+	};
+
+	const resetCinematic = (): void => {
+		focusMode = 'Auto'; cineKey = ''; cineFrame = undefined; cineFrom = undefined;
+		obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
+	};
+
 	const updateAiming = (dt: number): void => {
+		if (deps.plan.setBurn !== undefined) deps.plan.setBurn(core.aim.velocity, false);
 		deps.aim.setEnabled(true);
 		// S3.9.4 待机时钟：**没在操控**时世界照常走（探测器沿自己的轨道绕地球转），一按下就冻结。
 		const dragging = deps.aim.isDragging();
 		// 只在**纯瞄准态**流时间：Armed（已瞄好等发射）时冻结 —— 否则目标会从瞄准线下面跑掉。
 		// B3：`Aiming`（没在拖）与 `Armed` 都按档位流；**瞄准中（按住探测器附近拖动）自动暂停**
 		// —— 用户口径：「只有对探测器进行瞄准的时候，时间暂停」。
-		if ((core.phase === 'Aiming' || core.phase === 'Armed') && !dragging && idleOrbit !== undefined) {
+		// 街机：拖动瞄准与松手后的 Armed 都停表。线是按这一刻算的，表再走目标就从线下面跑掉。
+		const clockFrozen = dragging || core.phase === 'Armed' || (level.transfer !== undefined && level.transfer.flyby !== undefined && introTourActive);
+		if ((core.phase === 'Aiming' || core.phase === 'Armed') && !clockFrozen && idleOrbit !== undefined) {
 			// ⚠️ 0 = **冻结**（不是"回退成 1"）：L1 是教学关，开局状态必须完全确定，
 			//    否则"进关那几十帧"就足以让探测器自己转掉十几度（实测 0.017 秒 = 14°），
 			//    而且玩家没有任何读数可以据此瞄准。
@@ -1336,8 +1501,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			//    （= 探测器日心轨道上 0.64 秒后的位置），而 probeStart 是 (0, 80.10)，
 			//    于是"Node 侧算得出解、引擎里却 missed"。
 			// 速率 = core.playback（档位 × 10^pow ÷ SecPerGameSec；暂停时是 0）
-			clock += dt * core.playback;
-			orbitClock += dt * core.playback;
+			const rate = core.playback * (level.transfer !== undefined && level.transfer.flyby !== undefined ? level.transfer.flyby.standbyPlayback : 1);
+			clock += dt * rate;
+			orbitClock += dt * rate;
 		}
 		const tNow = core.t0 + clock;
 		// 待机位置/速度：**解析求**（宿主位置 + 相对圆轨），不再查惯性轨迹表（B1）
@@ -1346,11 +1512,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		probeVel = idleState.vel;
 
 		deps.scene.syncBodies(tNow);
+		if (deps.scene.syncStars !== undefined) deps.scene.syncStars(starPositionsNow(level.starOrbits !== undefined ? level.starOrbits : [], core.stars, tNow));
 		deps.scene.syncProbe(probePos);
 		if (idleOrbit !== undefined) deps.scene.faceVelocity(probeVel);
 		// 2D 规划视图：轨道圈与图钉按**同一个 tWorld**（硬约束 7：待机会绕地球走，日期也会动）
 		deps.plan.syncBodies(level.bodies, deps.visuals, tNow);
 		deps.plan.syncProbe(probePos, probeVel);
+		if (!aimed && core.stars.length > 0) {
+			deps.plan.setStars(starPositionsNow(level.starOrbits !== undefined ? level.starOrbits : [], core.stars, tNow), core.collectedStars);
+		}
 
 		// 取景（S3.12）：探测器 + 锚点天体（太阳/地球）+ 下一站 —— 远处的行星允许出画
 		const fr = framingPoints(probePos, tNow);
@@ -1543,6 +1713,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 代价：每帧 600 步 simulate + ~150 点投影，可忽略。
 		// 只在瞄准/日期变化时重算（同一次拖动里每帧都算一遍是浪费；投影仍然每帧做）。
 		if (!aimed) {
+			if (level.transfer !== undefined && deps.aim.setTransferInfo !== undefined) deps.aim.setTransferInfo(distance(probePos, bodyPositionAt(level.bodies[0], tNow)) - level.bodies[0].radius, 0);
 			// 还没瞄过：**不画预测线**（用户 S3.12 明确要求"默认不要显示预览线"）。
 			// 从前这里画的是"什么都不做会飞到哪"（待机轨道），既不是玩家的意图，
 			// 又会在玩家松手后把他的线**覆盖**掉。
@@ -1565,21 +1736,34 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				predPosKey = posKey;
 				// ⚠️ 与 coreLaunch 共用 burnToMotion：预测线里必须带上反推段，否则"看到的 ≠ 飞到的"
 				// 基准是**此刻**的探测器状态（待机时它在动，不是 probeStart）。
-				const motion = burnToMotion(core.aim.velocity, probeVel, core.brakeMode, level.maxSteps);
-				predPoints = simulate(
+				const motion = burnToMotion(core.aim.velocity, probeVel, level.transfer === undefined && core.brakeMode, level.maxSteps);
+				const sim = simulate(
 					{ pos: { x: probePos.x, y: probePos.y }, vel: motion.init },
 					level.bodies,
 					{ steps: level.predictSteps !== undefined ? level.predictSteps : PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: tNow, brake: motion.brake },
-				).points;
+				);
+				predPoints = sim.points;
+				if (level.transfer !== undefined) {
+					const analysis = level.transfer.flyby !== undefined ? analyzeFlyby(sim, level.bodies[0], level.bodies[level.goal.planetIndex], level.transfer.flyby, core.dt * 4, tNow) : undefined;
+					const gi = analysis !== undefined ? analysis.completionIndex : findGoalIndex(sim.points, level.bodies, level.goal, core.dt * 4, tNow, sim.velocities);
+					if (analysis !== undefined) predPoints = sim.points.slice(0, analysis.viewEndIndex + 1);
+					else if (gi >= 0) predPoints = sim.points.slice(0, gi + 1);
+					const radius = distance(probePos, bodyPositionAt(level.bodies[0], tNow));
+					const plan = planTransfer(level.bodies[0].gm, radius, probeVel, core.aim.power, level.transfer.apoapsisMax);
+					if (deps.aim.setTransferInfo !== undefined) deps.aim.setTransferInfo(plan.apoapsis - level.bodies[0].radius, plan.dv / level.transfer.thrustAcceleration, gi >= 0);
+				}
+				predTimes = [];
+				for (let pi = 0; pi < predPoints.length; pi++) predTimes.push(tNow + pi * core.dt * 4);
 			}
 			deps.trajectory.setPrediction(predPoints, basis);
 			// 2D 用的是**同一批采样点**（硬约束 5）：只换投影，不重跑 simulate
 			deps.plan.setPrediction(predPoints);
-			// 街机模式：预览收集的星尘
+			// 街机：星尘按每个采样点自己的时刻去对（它们在公转）
 			if (core.stars.length > 0) {
-				const stEval = evaluateCollectedStars(predPoints, core.stars, 30);
+				const live = starPositionsNow(core.starOrbits, core.stars, tNow);
+				const stEval = evaluateCollectedStars(predPoints, core.stars, 30, core.starOrbits, predTimes);
 				core.previewStarsCount = stEval.count;
-				deps.plan.setStars(core.stars, stEval.collected);
+				deps.plan.setStars(live, stEval.collected);
 			}
 		}
 		// 探测器停泊轨（B2）：3D 走投影折线（远侧压暗），2D 直接画圆 —— 同一份 (中心, 半径)
@@ -1632,6 +1816,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const rings = goalRingsAt(tWorld, idx);
 		const basis = makeBasis(frame);
 		// 飞行期不再画停泊轨（B2）：它属于"出发前"，留着会冻结在发射那一刻
+		if (deps.trajectory.setBurn !== undefined) deps.trajectory.setBurn(pos, core.aim.velocity, core.phase === 'Flying' && core.flightTime < core.burnDuration, basis);
 		deps.trajectory.clearOrbitRing();
 		deps.plan.clearProbeOrbit();
 		deps.trajectory.setTrail(trail, basis);
@@ -1644,7 +1829,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.aim.setEnabled(false);
 		// S3.17：慢动作判定在 coreUpdate 里做（要 level：天体位置随时间动），
 		// 结果写回 core.slowmo / core.slowmoBody —— 这一帧的取景与日志读它们
+		const wasCompleted = core.missionCompleted;
 		const entered = coreUpdate(core, dt, level);
+		if (!wasCompleted && core.missionCompleted) {
+			print('[escape-velocity] mission completed (continue viewing) t=' + core.flightTime.toFixed(3));
+			if (deps.onMissionCompleted !== undefined) deps.onMissionCompleted(calcFlightTelemetry(core, level));
+		}
 		if (core.flight === undefined) return entered;
 
 		const idx = coreProbeIndex(core);
@@ -1673,11 +1863,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			const total = (core.flight.points.length - 1) * core.dt;
 			print('[escape-velocity] flight t=' + core.flightTime.toFixed(2) + '/' + total.toFixed(1) +
 				' idx=' + idx.toFixed(0) +
-				' speed=' + (core.playback * (core.slowmo ? SlowMoFactor : 1)).toFixed(2) +
+				' speed=' + (core.playback * (level.transfer !== undefined ? transferPlaybackRate(core.flightTime, core.burnDuration, level.transfer, core.flyby, core.dt) : (core.slowmo ? SlowMoFactor : 1))).toFixed(2) +
 				' (playback=' + core.playback.toFixed(0) + 'x slowmo=' + (core.slowmo ? '1' : '0') + ')');
 		}
 
 		deps.scene.syncBodies(tWorld);
+		if (deps.scene.syncStars !== undefined) deps.scene.syncStars(starPositionsNow(level.starOrbits !== undefined ? level.starOrbits : [], core.stars, tWorld));
 		deps.scene.syncProbe(pos);
 		if (idx > 0) {
 			deps.scene.faceVelocity(sub(pos, core.flight.points[idx - 1]));
@@ -1686,7 +1877,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 街机模式：实时检测星尘收集
 		for (let s = 0; s < core.stars.length; s++) {
 			if (!core.collectedStars[s]) {
-				const stPos = core.stars[s];
+				const fromLevel = level.starOrbits;
+				const orbit = fromLevel !== undefined && s < fromLevel.length ? fromLevel[s] : (s < core.starOrbits.length ? core.starOrbits[s] : undefined);
+				const stPos = starPositionAt(orbit, core.stars[s], tWorld);
 				const dx = pos.x - stPos.x;
 				const dy = pos.y - stPos.y;
 				if (dx * dx + dy * dy <= 30 * 30) {
@@ -1722,12 +1915,15 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		} else {
 			fr = framingPoints(pos, tWorld);
 		}
-		const frame = deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii, closeDist);
+		const baseFrame = level.transfer !== undefined && level.transfer.flyby !== undefined ? transferCamera(pos, tWorld, dt) : deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii, closeDist);
+		const frame = level.transfer !== undefined && level.transfer.flyby === undefined ? applyObserve(baseFrame) : baseFrame;
 		deps.rig.apply(deps.camera, frame);
 		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
 
 		// 尾迹 = 已飞过的前缀
+		if (deps.trajectory.setBurn !== undefined) deps.trajectory.setBurn(pos, core.aim.velocity, core.phase === 'Flying' && core.flightTime < core.burnDuration, basis);
+		if (deps.plan.setBurn !== undefined) deps.plan.setBurn(core.aim.velocity, core.phase === 'Flying' && core.flightTime < core.burnDuration);
 		const trail: P2[] = [];
 		for (let i = 0; i <= idx; i++) trail.push(core.flight.points[i]);
 		const rings = goalRingsAt(tWorld, idx);
@@ -1740,6 +1936,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// 2D（玩家手动切过去时看得见自己飞过哪）：同一批采样点、同一个 tWorld
 		deps.plan.syncBodies(level.bodies, deps.visuals, tWorld);
 		deps.plan.syncProbe(pos, core.flight.velocities[idx]);
+		deps.plan.setStars(starPositionsNow(level.starOrbits !== undefined ? level.starOrbits : [], core.stars, tWorld), core.collectedStars);
 		deps.plan.setTrail(trail);
 		deps.plan.clearPrediction();
 		deps.plan.setGoalRings(rings);
@@ -1766,6 +1963,18 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		print('[escape-velocity] date handoff ' + (toT0 ? 'clock->t0' : 't0->clock') + ' t0=' + core.t0.toFixed(1) + ' clock=' + clock.toFixed(1));
 	};
 
+	const finishFlight = (): void => {
+		if (core.result === undefined) return;
+		const toFinale = deps.finale === true && core.result === 'success';
+		if (toFinale) coreEnterFinale(core);
+		deps.onResult(core.result, calcFlightTelemetry(core, level));
+		if (toFinale && core.flight !== undefined && deps.onFinale !== undefined) {
+			const end = core.flight.points.length - 1;
+			deps.onFinale({ distance: distance(core.flight.points[end], level.probeStart), time: core.flightTime, tWorld: core.t0 + core.flightTime });
+		}
+		deps.onPhase(toFinale ? 'Finale' : 'Result');
+	};
+
 	const update = (dt: number): void => {
 		// 视图也必须**状态驱动**（AGENTS 硬约束 5）：每帧按 core.viewMode 对一次节点，
 		// 别只靠"点按钮时切一下" —— 切关/重建/自动回归序列会留下一个对不上的视图。
@@ -1774,23 +1983,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			updateAiming(dt);
 		} else if (core.phase === 'Flying') {
 			const entered = updateFlying(dt);
-			if (entered && core.result !== undefined) {
-				// S3.18：最后一关成功 ⇒ 进终章（不弹普通结算面板；终章要回选关只有那一颗按钮）
-				const toFinale = deps.finale === true && core.result === 'success';
-				if (toFinale) coreEnterFinale(core);
-				// onResult 先走：解锁 / 存档只有这一条路（面板显隐完全交给 onPhase，见 init.ts）
-				const telem = calcFlightTelemetry(core, level);
-				deps.onResult(core.result, telem);
-				if (toFinale && core.flight !== undefined && deps.onFinale !== undefined) {
-					const end = core.flight.points.length - 1;
-					deps.onFinale({
-						distance: distance(core.flight.points[end], level.probeStart),
-						time: core.flightTime,
-						tWorld: core.t0 + core.flightTime,
-					});
-				}
-				deps.onPhase(toFinale ? 'Finale' : 'Result');
-			}
+			if (entered) finishFlight();
 		} else if (core.phase === 'Finale') {
 			updateFinale();
 		}
@@ -1802,7 +1995,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		speedPow: (): number => speedPow,
 		speedMaxPow: (): number => speedMaxPow,
 		isPaused: (): boolean => paused,
-		speedRate: (): number => core.playback,
+		speedRate: (): number => {
+			if (level.transfer !== undefined && (core.phase === 'Flying' || core.phase === 'Result')) return core.playback * transferPlaybackRate(core.flightTime, core.burnDuration, level.transfer, core.flyby, core.dt);
+			return core.playback * (level.transfer !== undefined && level.transfer.flyby !== undefined ? level.transfer.flyby.standbyPlayback : 1);
+		},
 		missionSeconds: (): number => {
 			const w = core.phase === 'Flying' || core.phase === 'Result' ? core.t0 + core.flightTime : core.t0 + clock;
 			return speedUnit > 0 ? w / speedUnit : 0;
@@ -1830,18 +2026,36 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		onAimDrag: (a: AimResult): void => {
 			if (introTourActive) finishIntroTour();
 			core.aim = a;
+			if (level.transfer !== undefined) {
+				const radius = distance(probePos, bodyPositionAt(level.bodies[0], core.t0 + clock));
+				const plan = planTransfer(level.bodies[0].gm, radius, probeVel, a.power, level.transfer.apoapsisMax);
+				core.aim = { power: a.power, velocity: plan.velocity, unit: a.unit };
+				if (deps.aim.setTransferInfo !== undefined) deps.aim.setTransferInfo(plan.apoapsis - level.bodies[0].radius, plan.dv / level.transfer.thrustAcceleration);
+			}
 			aimed = true; // 玩家动过手了 ⇒ 从他拖动的那一刻起，预测线才属于他（S3.12）
 		},
 		aimReady: (): void => {
 			// B1：松手进 Armed 时**强制**重算一次预测线（拖动期间是节流的，最后那一下必须精确）
 			predForce = true;
 			if (!coreArm(core)) return;
+			if (level.transfer !== undefined) print('[escape-velocity] transfer armed dv=' + Math.sqrt(core.aim.velocity.x * core.aim.velocity.x + core.aim.velocity.y * core.aim.velocity.y).toFixed(4));
 			applyView(); // Armed 仍是"瞄准期" ⇒ 留在 2D（除非玩家自己切过）
 			deps.onPhase('Armed');
+		},
+		cancelAim: (): void => {
+			if (!coreCancelArm(core)) return;
+			aimed = false;
+			predForce = true;
+			deps.trajectory.clearPrediction();
+			deps.plan.clearPrediction();
+			applyView();
+			deps.onPhase('Aiming');
+			print('[escape-velocity] aim cancelled');
 		},
 		launchArmed: (): void => {
 			// 状态守卫：只有 Armed 才能打出去（连点/迟到的回调一律无效）
 			if (core.phase !== 'Armed') return;
+			resetCinematic();
 			applyFlightSpeed(); // B 修复④：玩家按的那颗「发射」按钮走的也是这条路，档位必须在这里提
 			handoffDate(true); // ⚠️ 必须在 coreLaunch 之前：飞行/结算只认 core.t0
 			coreLaunch(core, core.aim.velocity, level, probePos, probeVel);
@@ -1856,6 +2070,21 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			// 按钮只表达意图：翻转发生在 core 里（viewMode 是唯一事实来源）
 			coreToggleView(core);
 			applyView();
+		},
+		cameraFocus: (): CameraFocusMode => focusMode,
+		flightStage: (): TransferShot | undefined => level.transfer !== undefined && level.transfer.flyby !== undefined
+			? transferShotAt(core.flightTime, core.burnDuration, core.flyby, level.transfer.flyby, core.dt) : undefined,
+		cycleCameraFocus: (): void => {
+			if (level.transfer === undefined || level.transfer.flyby === undefined || core.phase !== 'Flying') return;
+			focusMode = nextCameraFocus(focusMode);
+			obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
+			print('[escape-velocity] camera focus -> ' + focusMode);
+		},
+		missionCompleted: (): boolean => core.missionCompleted,
+		endViewing: (): void => {
+			if (!coreEndViewing(core)) return;
+			print('[escape-velocity] end viewing (manual) t=' + core.flightTime.toFixed(3));
+			finishFlight();
 		},
 		skipIntroTour: (): void => {
 			finishIntroTour();
@@ -1880,6 +2109,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		launch: (v: P2): void => {
 			applyFlightSpeed(); // 与 launchArmed 共用同一条（B 修复④）
 			if (core.phase !== 'Aiming' && core.phase !== 'Armed') return;
+			resetCinematic();
 			handoffDate(true); // ⚠️ 同上：日期必须在 coreLaunch 之前交给 t0
 			// v 是"点火"；从**此刻**的探测器状态出发（待机时它一直在绕地球走）
 			coreLaunch(core, v, level, probePos, probeVel);
@@ -1889,6 +2119,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			deps.onPhase('Flying');
 		},
 		retry: (): void => {
+			resetCinematic();
 			handoffDate(false); // 把日期从 t0 拿回 clock
 			aimed = false;      // 重新瞄准：预测线回到"还没瞄过"的状态
 			introTourActive = false;
@@ -1921,6 +2152,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			return true;
 		},
 		startLevel: (): void => {
+			resetCinematic();
 			aimed = false;
 			coreRetry(core, level.aimMin);
 			if (deps.scene.resetStars !== undefined) {
@@ -1970,6 +2202,14 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		playbackSpeed: (): number => core.playback,
 		burnNow: (): number => Math.sqrt(core.aim.velocity.x * core.aim.velocity.x + core.aim.velocity.y * core.aim.velocity.y),
+		starsNow: (): number => {
+			if (core.phase === 'Flying' || core.phase === 'Result') {
+				let n = 0;
+				for (let i = 0; i < core.collectedStars.length; i++) if (core.collectedStars[i]) n += 1;
+				return n;
+			}
+			return core.previewStarsCount;
+		},
 		isBrakeWindowActive: (): boolean => isBrakeWindowActive(core, level),
 		applyInFlightBrake: (): boolean => applyInFlightBrake(core, level),
 		hasBraked: (): boolean => core.hasBraked,

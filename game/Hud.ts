@@ -40,6 +40,7 @@ import { ResultKind } from 'game/Game';
 // 只作类型用（TSTL 会省掉这条 require）：视图模式的唯一事实来源在 GameCore 里
 import { PlanViewMode } from 'game/PlanView';
 import { MinButtonHeight, MinButtonWidth, UiButton, createButton, createLabel, createPanel, setLabelCenter, setLabelColor, setLabelText } from 'game/Ui';
+import { CameraFocusMode, TransferShot } from 'game/Transfer';
 
 /** 投影偏移空间中的屏幕点。 */
 export interface ScreenOffset {
@@ -186,6 +187,10 @@ export function offsetToLocal(offset: ScreenOffset, space: TouchSpace): ScreenOf
  * （self-parameter 教程 §3）。
  */
 export interface AimInput {
+	setTransferInfo?: (apoapsis: number, duration: number, reachable?: boolean) => void;
+	onCameraFocus?: (callback: () => void) => void;
+	onEndViewing?: (callback: () => void) => void;
+	setFlightViewing?: (flying: boolean, completed: boolean, mode: CameraFocusMode, is3D: boolean, stage?: TransferShot) => void;
 	/** 注册拖动回调（拖动中每次移动触发）。 */
 	onDrag: (callback: (aim: AimResult) => void) => void;
 	// （S3.10 删掉了 onRelease：松手不再等于发射 —— 改走 onAimReady + 「发射」按钮的 onLaunch）
@@ -239,6 +244,8 @@ export interface AimInput {
 	onZoom: (callback: (deltaDist: number) => void) => void;
 	/** 「发射」按钮被点（右下角，只在 Armed 态出现）。 */
 	onLaunch: (callback: () => void) => void;
+	/** 「取消瞄准」被点（Armed 态，发射按钮左侧）。 */
+	onCancelAim: (callback: () => void) => void;
 	/** 由主循环同步 Armed 状态：按钮显隐 + 触摸开关都跟着它走。 */
 	setArmed: (armed: boolean) => void;
 	/**
@@ -306,7 +313,7 @@ export interface AimInput {
 	/** 暂停 / 继续。 */
 	onTogglePause: (callback: () => void) => void;
 	/** 每帧同步：档位指数、上限、是否暂停、任务时钟（**真实秒**）。 */
-	setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number) => void;
+	setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number) => void;
 	/** 顶部常驻三火箭任务抽屉（S8.4）。 */
 	setMissionDrawer: (levelName: string, challenges: string[], currentRockets: number) => void;
 	setMissionDrawerVisible: (visible: boolean) => void;
@@ -351,6 +358,7 @@ export function createAimInput(
 	minSpeed?: number,
 	/** 三颗倍速按钮的档位（S5 按关卡给：L1 = 0.02/0.05/0.1×，L6 = 8/16/32×）；省略 = 1/2/4 */
 	speedChoices?: number[],
+	transferTutorial: boolean = false,
 ): AimInput {
 	const speedMin = minSpeed !== undefined && minSpeed >= 0 && minSpeed < (maxSpeed !== undefined ? maxSpeed : AimMaxSpeed)
 		? minSpeed : AimMinSpeed;
@@ -516,9 +524,9 @@ export function createAimInput(
 	// ⚠️ S3.12：太阳的光晕会扫过左上角，纯文字在亮底上几乎看不见（截图实测）⇒ 底下垫一块
 	// **半透明暗板**。UI 是 2D 层、画在 3D 之上，所以垫板是"提高对比度"而不是"遮挡"。
 	createPanel(root, 220, 50, 0x0a0e14, { alpha: 0.45 });
-	const dvLabel = createLabel(root, 'Δv — / —', 30, ResultHintHex);
+	const dvLabel = createLabel(root, transferTutorial ? '拖动调整远地点' : 'Δv — / —', transferTutorial ? 22 : 30, ResultHintHex);
 	if (dvLabel !== undefined) {
-		dvLabel.position = Vec2(24, viewH - 44);
+		dvLabel.position = Vec2(24, viewH - (transferTutorial ? 130 : 44));
 		dvLabel.anchor = Vec2(0, 0);
 	}
 
@@ -636,7 +644,9 @@ export function createAimInput(
 	// ---- 街机模式：顶部三星收集状态指示 ----
 	const starPlateW = 180;
 	const starPlateH = 46;
-	createPanel(root, starPlateW, starPlateH, 0x0a0e14, { alpha: 0.55 }).position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22);
+	const starPlate = createPanel(root, starPlateW, starPlateH, 0x0a0e14, { alpha: 0.55 });
+	starPlate.position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22);
+	starPlate.visible = !transferTutorial;
 	const starStatusLabel = createLabel(root, '☆ ☆ ☆', 30, 0xffd700);
 	if (starStatusLabel !== undefined) {
 		starStatusLabel.anchor = Vec2(0.5, 0.5);
@@ -644,6 +654,7 @@ export function createAimInput(
 	}
 	const updateStarsStatus = (count: number): void => {
 		if (starStatusLabel === undefined) return;
+		if (transferTutorial) { starStatusLabel.visible = false; return; }
 		let s = '☆ ☆ ☆';
 		if (count === 1) s = '★ ☆ ☆';
 		else if (count === 2) s = '★ ★ ☆';
@@ -673,6 +684,28 @@ export function createAimInput(
 	launchButton.root.visible = false;
 	launchButton.setEnabled(false); // 隐藏 + 断触摸（硬约束 4）
 
+	// 「取消瞄准」：Armed 时停在发射按钮左边。按下即回到巡航，表继续走。
+	const CancelButtonW = 160;
+	const CancelButtonH = 72;
+	let cancelAimHandler: (() => void) | undefined = undefined;
+	const cancelAimButton = createButton(root, {
+		w: CancelButtonW,
+		h: CancelButtonH,
+		text: '✕ 取消',
+		fontSize: 28,
+		bgHex: ResultButtonAltBgHex,
+		fgHex: ResultButtonFgHex,
+		borderHex: ResultButtonBorderHex,
+		fireOn: 'press',
+		onTap: (): void => {
+			print('[escape-velocity] cancel aim fire (press)');
+			if (cancelAimHandler !== undefined) cancelAimHandler();
+		},
+	});
+	cancelAimButton.root.position = Vec2(viewW - LaunchButtonW - CancelButtonW - 40, 116);
+	cancelAimButton.root.visible = false;
+	cancelAimButton.setEnabled(false);
+
 	// ---- 「2D / 3D」手动切换（S3.15）----
 	// 位置：右下角「发射」按钮正上方
 	const ViewButtonW = 116;
@@ -695,6 +728,25 @@ export function createAimInput(
 	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 12);
 	/** 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。 */
 	let lastViewText = '2D';
+
+	// L1：小状态提示不打断掠月；完成后才开放结束观赏。
+	let cameraFocusHandler: (() => void) | undefined = undefined;
+	let endViewingHandler: (() => void) | undefined = undefined;
+	const cameraFocusButton = transferTutorial ? createButton(root, {
+		w: 260, h: 58, text: '镜头 · 自动', fontSize: 22,
+		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex, fireOn: 'press',
+		onTap: (): void => { if (cameraFocusHandler !== undefined) cameraFocusHandler(); },
+	}) : undefined;
+	const endViewingButton = transferTutorial ? createButton(root, {
+		w: 220, h: LaunchButtonH, text: '结束观赏', fontSize: 26,
+		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex, fireOn: 'press',
+		onTap: (): void => { if (endViewingHandler !== undefined) endViewingHandler(); },
+	}) : undefined;
+	if (cameraFocusButton !== undefined) { cameraFocusButton.root.position = Vec2(24, 266); cameraFocusButton.root.visible = false; cameraFocusButton.setEnabled(false); }
+	if (endViewingButton !== undefined) { endViewingButton.root.position = Vec2(viewW - 244, 96); endViewingButton.root.visible = false; endViewingButton.setEnabled(false); }
+	const viewingLabel = transferTutorial ? createLabel(root, '', 24, ResultHintHex) : undefined;
+	if (viewingLabel !== undefined) { viewingLabel.position = Vec2(24, viewH - 130); viewingLabel.anchor = Vec2(0, 0); viewingLabel.visible = false; }
+	let viewingKey = '';
 
 	// ---- 2D 规划缩放控制组（S8.2，左下角）----
 	const ZoomBtnSize = 58;
@@ -786,11 +838,11 @@ export function createAimInput(
 
 	// 读数：档位 + 任务时钟（垫暗板，理由与 Δv 读数的光晕问题相同）
 	const timePlate = createPanel(root, 300, 50, 0x0a0e14, { alpha: 0.45 });
-	timePlate.position = Vec2(24 + (TimeBtnW + 8) * 3 + 4, TimeRowY + 7);
-	const timeLabel = createLabel(root, '1×（现实）  T+ 0:00', 26, ResultHintHex);
+	timePlate.position = transferTutorial ? Vec2(24, viewH - 190) : Vec2(24 + (TimeBtnW + 8) * 3 + 4, TimeRowY + 7);
+	const timeLabel = createLabel(root, '1×（现实）  T+ 0:00', transferTutorial ? 22 : 26, ResultHintHex);
 	if (timeLabel !== undefined) {
 		timeLabel.anchor = Vec2(0, 0);
-		timeLabel.position = Vec2(24 + (TimeBtnW + 8) * 3 + 16, TimeRowY + 18);
+		timeLabel.position = transferTutorial ? Vec2(36, viewH - 179) : Vec2(24 + (TimeBtnW + 8) * 3 + 16, TimeRowY + 18);
 	}
 	/** 档位文字：pow 0 就是"1×（现实）"，别写成 1e0×。 */
 	const powText = (pow: number): string => (pow <= 0 ? '1×（现实）' : '1e' + pow.toFixed(0) + '×');
@@ -806,8 +858,8 @@ export function createAimInput(
 	};
 	let lastTimeText = '';
 	let lastPaused = false;
-	const setTimeControl = (pow: number, maxPow: number, paused: boolean, missionSeconds: number): void => {
-		const txt = powText(pow) + (paused ? ' ⏸ 暂停' : '') + '  ' + missionText(missionSeconds);
+	const setTimeControl = (pow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number): void => {
+		const txt = (transferTutorial && actualRate !== undefined ? actualRate.toFixed(2) + '×' : powText(pow)) + (paused ? ' ⏸ 暂停' : '') + '  ' + (transferTutorial ? 'T+ ' + missionSeconds.toFixed(1) + 's' : missionText(missionSeconds));
 		if (txt !== lastTimeText) {
 			lastTimeText = txt;
 			if (timeLabel !== undefined) timeLabel.text = txt;
@@ -826,7 +878,7 @@ export function createAimInput(
 	const DrawerW = 380;
 	const DrawerH = 46;
 	const missionDrawerPlate = createPanel(root, DrawerW, DrawerH, 0x0a0e14, { alpha: 0.65, borderHex: 0x46586d });
-	missionDrawerPlate.position = Vec2((viewW - DrawerW) / 2, viewH - 56);
+	missionDrawerPlate.position = Vec2(transferTutorial ? 24 : (viewW - DrawerW) / 2, viewH - 56);
 	const missionTitleLabel = createLabel(missionDrawerPlate, '', 19, 0xccddee);
 	if (missionTitleLabel !== undefined) {
 		missionTitleLabel.anchor = Vec2(0, 0.5);
@@ -851,7 +903,7 @@ export function createAimInput(
 			const r1 = drawerRockets >= 1 ? '★' : '☆';
 			const r2 = (drawerRockets >= 2 || liveFuelBonus) ? '★' : '☆';
 			const r3 = drawerRockets >= 3 ? '★' : '☆';
-			setLabelText(missionRocketsLabel, r1 + '  ' + r2 + '  ' + r3);
+			setLabelText(missionRocketsLabel, transferTutorial ? (drawerRockets >= 1 ? '已完成' : '地月转移练习') : r1 + '  ' + r2 + '  ' + r3);
 		}
 	};
 
@@ -931,8 +983,10 @@ export function createAimInput(
 	}
 
 	const brakeRightX = viewW - BrakeButtonW - 20;
-	makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
-	makeBrakeButton('刹车', true, brakeRightX);
+	if (!transferTutorial) {
+		makeBrakeButton('惯性', false, brakeRightX - BrakeButtonW - brakeGap);
+		makeBrakeButton('刹车', true, brakeRightX);
+	}
 	paintBrake();
 
 	// ---- 飞行实时逆喷制动按钮（L4 伽利略号等轨道器核心机制）----
@@ -1008,12 +1062,38 @@ export function createAimInput(
 		onLaunch: (callback: () => void): void => {
 			launchHandler = callback;
 		},
+		onCancelAim: (callback: () => void): void => {
+			cancelAimHandler = callback;
+		},
 		setArmed: (armed: boolean): void => {
 			launchButton.root.visible = armed;
 			launchButton.setEnabled(armed);
+			cancelAimButton.root.visible = armed;
+			cancelAimButton.setEnabled(armed);
 		},
 		onViewToggle: (callback: () => void): void => {
 			viewHandler = callback;
+		},
+		onCameraFocus: (callback: () => void): void => { cameraFocusHandler = callback; },
+		onEndViewing: (callback: () => void): void => { endViewingHandler = callback; },
+		setFlightViewing: (flying: boolean, completed: boolean, mode: CameraFocusMode, is3D: boolean, stage?: TransferShot): void => {
+			if (!transferTutorial) return;
+			const key = (flying ? '1' : '0') + (completed ? '1' : '0') + mode + (is3D ? '1' : '0') + (stage !== undefined ? stage : '');
+			if (viewingKey === key) return;
+			viewingKey = key;
+			if (dvLabel !== undefined) dvLabel.visible = !flying;
+			if (viewingLabel !== undefined) {
+				viewingLabel.visible = flying;
+				setLabelText(viewingLabel, completed ? '掠月完成 · 继续观察返回' : (stage === 'Launch' ? '顺行点火 · 抬高远地点' : (stage === 'Moon' ? '借月球引力 · 观察轨迹转弯' : '滑行接近月球')));
+				setLabelColor(viewingLabel, completed ? 0x8fe5ba : ResultHintHex);
+			}
+			if (cameraFocusButton !== undefined) {
+				cameraFocusButton.root.visible = flying && is3D;
+				cameraFocusButton.setEnabled(flying && is3D);
+				const title = mode === 'Auto' ? '自动' : (mode === 'Probe' ? '探测器' : (mode === 'Moon' ? '月球' : (mode === 'Earth' ? '地球' : '总览')));
+				cameraFocusButton.setText('镜头 · ' + title);
+			}
+			if (endViewingButton !== undefined) { endViewingButton.root.visible = flying && completed; endViewingButton.setEnabled(flying && completed); }
 		},
 		setViewMode: (mode: PlanViewMode): void => {
 			if (mode === lastViewText) return;
@@ -1069,6 +1149,7 @@ export function createAimInput(
 		},
 		isDragging: (): boolean => dragging,
 		setBurnInfo: (burn: number, budget: number): void => {
+			if (transferTutorial) return;
 			// ⚠️ 预算 < 1 时必须用 2 位小数：L1 的 Δv 预算是 0.35，
 			//    toFixed(0) 会把它打成 0，和 burn 的 0 撞在一起，看起来像"这一关没给预算"
 			//    （用户 2026-09-27 实测：「2D 状态下，德塔 V 怎么给的是 0」）。
@@ -1077,6 +1158,9 @@ export function createAimInput(
 			setLabelText(dvLabel, 'Δv ' + v + ' / ' + b);
 		},
 		current: (): AimResult => aim,
+		setTransferInfo: (apoapsis: number, duration: number, reachable?: boolean): void => {
+			setLabelText(dvLabel, '远地点高度 ' + apoapsis.toFixed(0) + ' · 点火 ' + duration.toFixed(2) + 's' + (reachable !== undefined ? (reachable ? ' · 可减速掠月' : ' · 等待窗口') : ''));
+		},
 		setProbeOffset: (offset: ScreenOffset): void => {
 			probeOffset = offset;
 		},
@@ -1127,8 +1211,8 @@ export function createAimInput(
 		onTogglePause: (callback: () => void): void => {
 			pauseHandler = callback;
 		},
-		setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number): void => {
-			setTimeControl(pow, maxPow, paused, missionSeconds);
+		setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number): void => {
+			setTimeControl(pow, maxPow, paused, missionSeconds, actualRate);
 		},
 		onZoomIn: (callback: () => void): void => {
 			zoomInHandler = callback;
@@ -1264,6 +1348,7 @@ export interface ResultPanelOptions {
 
 /** 结算详情参数（S7 三枚火箭评价）。 */
 export interface ResultDetailParams {
+	completionOnly?: boolean;
 	result: ResultKind;
 	levelName: string;
 	levelIndex: number;
@@ -1418,12 +1503,13 @@ export function createResultPanel(
 			setLabelColor(titleLabel, resultTitleColor(result));
 
 			if (detail !== undefined) {
+				if (detail.completionOnly === true) setLabelText(titleLabel, result === 'success' ? '月球减速掠过完成' : resultTitle(result));
 				const rCount = detail.rocketsGot;
 				let rStr = '☆  ☆  ☆';
 				if (rCount === 1) rStr = '★  ☆  ☆';
 				else if (rCount === 2) rStr = '★  ★  ☆';
 				else if (rCount >= 3) rStr = '★  ★  ★';
-				setLabelText(rocketsLabel, rStr);
+				setLabelText(rocketsLabel, detail.completionOnly === true ? (result === 'success' ? '地月转移完成' : '再试一次') : rStr);
 				setLabelColor(rocketsLabel, rCount > 0 ? 0xffc83b : 0x607894);
 
 				const pct = detail.dvBudget > 0 ? Math.floor((detail.burnDv / detail.dvBudget) * 100) : 0;
@@ -1436,7 +1522,7 @@ export function createResultPanel(
 							const ok = detail.achieved[k];
 							const icon = ok ? '★' : '☆';
 							const rank = k === 0 ? '一星' : (k === 1 ? '二星' : '三星');
-							const text = icon + ' [' + rank + '] ' + detail.challenges[k];
+							const text = detail.completionOnly === true ? (ok ? '安全掠月 · 完成记录已保存' : '尚未完成安全减速掠月') : icon + ' [' + rank + '] ' + detail.challenges[k];
 							setLabelText(challengeLabels[k], text);
 							setLabelColor(challengeLabels[k], ok ? 0xffc83b : 0x607894);
 							challengeLabels[k].visible = true;
@@ -1447,7 +1533,7 @@ export function createResultPanel(
 				}
 
 				setLabelText(totalLabel, '全深空火箭勋章: ' + detail.totalRockets.toFixed(0) + ' / ' + detail.totalPossibleRockets.toFixed(0) + ' ★');
-				if (totalLabel !== undefined) totalLabel.visible = true;
+				if (totalLabel !== undefined) totalLabel.visible = detail.completionOnly !== true;
 			} else {
 				setLabelText(rocketsLabel, result === 'success' ? '★  ☆  ☆' : '☆  ☆  ☆');
 				setLabelColor(rocketsLabel, result === 'success' ? 0xffc83b : 0x607894);

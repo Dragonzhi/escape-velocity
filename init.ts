@@ -18,8 +18,8 @@
  *   LevelSelect --选关--> Aiming（拖动矄准）→ 松手发射 → Flying → Result
  *   Result --重试本关--> Aiming ；Result --返回关卡选择--> LevelSelect
  */
-import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, threadLoop } from 'Dora';
-import { GameSecondsPerRealSecond, evaluateRocketsDetailed, getLevel, goalWaypoints, levelCount, scaledPlanets } from 'game/LevelData';
+import { App, Camera3D, Content, Director, Node, Node3D, Path, Size, Vec2, View, json, threadLoop } from 'Dora';
+import { GameSecondsPerRealSecond, evaluateRocketsDetailed, getLevel, goalWaypoints, installArcadeLevels, levelCount, scaledPlanets, starOrbits } from 'game/LevelData';
 import { buildScene } from 'game/Scene';
 import { createCameraRig, defaultRigOptions } from 'game/CameraRig';
 import { TrajectoryView, createTrajectoryView, defaultOptions as trajectoryOptions } from 'game/Trajectory';
@@ -114,6 +114,7 @@ let debugTriggerBrakePressFn: (() => void) | undefined = undefined;
 let debugTriggerEnterLevelFn: ((levelIndex: number) => void) | undefined = undefined;
 let debugTriggerZoomInFn: (() => void) | undefined = undefined;
 let debugTriggerResetViewFn: (() => void) | undefined = undefined;
+let debugGameStateFn: (() => string) | undefined = undefined;
 let debugForceBrakeWindow = false;
 let debugForceBraked = false;
 let activeResultPanel: ResultPanel | undefined = undefined;
@@ -124,6 +125,17 @@ interface LevelSlot {
 	runtime: LevelRuntime | undefined;
 }
 
+const levelsText = Content.exist('Assets/Levels/levels.json') ? Content.load('Assets/Levels/levels.json') : '';
+const bodiesText = Content.exist('Assets/Levels/bodies.json') ? Content.load('Assets/Levels/bodies.json') : '';
+const decodeLevelJson = (text: string): unknown => {
+	const decoded = json.decode(text);
+	const err = decoded[1];
+	if (err !== undefined) return undefined;
+	return decoded[0];
+};
+if (!installArcadeLevels(levelsText, bodiesText, decodeLevelJson)) {
+	print('[escape-velocity] FATAL: levels.json 没有装上');
+}
 const levelTotal = levelCount();
 
 if (levelTotal <= 0) {
@@ -253,6 +265,7 @@ if (levelTotal <= 0) {
 
 		const bodies = scaledPlanets(def);
 		const level: GameLevel = {
+			transfer: def.transfer,
 			bodies,
 			probeStart: def.probeStart,
 			// S3.9.3：出发时已有的速度（L1 = 绕地球的圆轨道速度）—— 玩家拖出来的是点火 Δv，落在它上面。
@@ -260,8 +273,8 @@ if (levelTotal <= 0) {
 			goal: def.goal,
 			escapeRadius: def.escapeRadius,
 			physicsStep: levelRuntime(index).physicsStep,
-			// B3：playback / aimClockRate 两个字段退役 —— 速率由**档位**决定（pow 0 = 1× = 现实 1 秒）
-			speedUnit: GameSecondsPerRealSecond,
+			// 街机关：pow 0 = 1 游戏秒 / 1 真实秒。太阳系那套 GameSecondsPerRealSecond 会把表冻住。
+			speedUnit: 1,
 			speedDefaultPow: levelRuntime(index).speedDefaultPow,
 			speedMaxPow: levelRuntime(index).speedMaxPow,
 			flightSpeedPow: levelRuntime(index).flightSpeedPow,
@@ -272,6 +285,7 @@ if (levelTotal <= 0) {
 			predictSteps: levelRuntime(index).predictSteps,
 			mission: def.mission,
 			stars: def.stars,
+			starOrbits: starOrbits(index),
 		};
 
 		const world = Node3D();
@@ -281,6 +295,7 @@ if (levelTotal <= 0) {
 		const rtg = def.probeVariant === 'rtg';
 		const scene = buildScene({
 			root: world,
+			backdropRadius: def.transfer !== undefined ? 3000 : undefined,
 			bodies,
 			visuals: def.visuals,
 			probeStart: level.probeStart,
@@ -321,21 +336,40 @@ if (levelTotal <= 0) {
 		// 取景要按真实投影求解，所以必须把当前的视野角与宽高比一起传进去
 		// （竖屏 aspect 0.56 ⇒ 横向可用空间只有纵向一半，这两个值直接决定相机拉多远）
 		// B2：俯仰角按关卡给（L1 = 22° 近平面，"卫星环绕地球"的观感）
-		const rig = createCameraRig(defaultRigOptions(View.fieldOfView, View.aspectRatio, rt.cameraMin, rt.cameraMax, rt.tiltDeg));
-		const trajectory = createTrajectoryView(levelLayers[index], trajectoryOptions());
+		const rigOptions = defaultRigOptions(View.fieldOfView, View.aspectRatio, rt.cameraMin, rt.cameraMax, rt.tiltDeg);
+		if (def.transfer !== undefined) {
+			rigOptions.margin = 0.16;
+			rigOptions.screenMinY = 2 * Math.min(350, viewH * 0.38) / viewH - 1;
+			rigOptions.screenMaxY = 1 - 2 * Math.min(205, viewH * 0.23) / viewH;
+			rigOptions.screenBiasY = 0.14;
+		}
+		const rig = createCameraRig(rigOptions);
+		const trailOptions = trajectoryOptions();
+		if (def.transfer !== undefined) {
+			// 滑行留淡蓝轨迹，橙色短尾焰只代表实际点火。
+			trailOptions.tailPoints = 120;
+			trailOptions.burnLength = 12;
+			trailOptions.trailHeadRadius = 1.2;
+			trailOptions.trailHeadAlpha = 0.45;
+			trailOptions.trailR = 100; trailOptions.trailG = 180; trailOptions.trailB = 230;
+		}
+		const trajectory = createTrajectoryView(levelLayers[index], trailOptions);
 		// 2D 规划视图（S3.15）：与 trajectory 同一个 2D 层。视野 = 「最外圈轨道 + 目标容差」，
 		// 于是整条最外圈与它那个到达圈都装得下（设计稿第 6 条"够不够得着"要能一眼看出来）。
 		// B2：L1 关掉流动光点（见 Tuning.orbitFlowDots）—— 2D 与 3D 一起关
 		const planOpts = defaultPlanOptions();
+		planOpts.transferTutorial = def.transfer !== undefined;
 		if (levelRuntime(index).orbitFlowDots === false) planOpts.flowDotRadius = 0;
 		// B 修复⑤：图钉的"真实大小"那一路也要用**本关**的探测器视觉半径
 		// （全局的 0.0015 在 L1 是 10 倍夸大，60× 放大下会把图钉吹到上限）
 		planOpts.probeVisualRadius = levelRuntime(index).probeVisualRadius;
+		if (def.transfer !== undefined) { planOpts.trailHex = 0x64b4e6; planOpts.trailWidth = 1.5; }
 		const plan = createPlanView(levelLayers[index], viewW, viewH, planOpts, def.planCenter);
-		const planTolerance = arrivalRingRadius(def.goal);
-		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter));
+		const offset = def.goal.offset;
+		const planTolerance = arrivalRingRadius(def.goal) + (offset !== undefined ? Math.sqrt(offset.x * offset.x + offset.y * offset.y) : 0);
+		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter, starOrbits(index)));
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
-		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds);
+		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds, def.transfer !== undefined);
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
 		aim.setBurnInfo(0, def.dvBudget); // 初值；此后由主循环每帧刷新（见 burnNow）
 		// 时间流按钮（S3.9.4）：只有带 timeWindow 的关卡才启用
@@ -365,7 +399,7 @@ if (levelTotal <= 0) {
 			}
 		}
 		const initialRockets = getMissionRockets(progress, index);
-		const drawerTitle = def.mission !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle : levelNames[index];
+		const drawerTitle = def.transfer !== undefined ? 'L1 · 奔向月球' : def.mission !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle : levelNames[index];
 		aim.setMissionDrawer(drawerTitle, challengesList, initialRockets);
 
 		const game = createGame(level, {
@@ -405,6 +439,11 @@ if (levelTotal <= 0) {
 					}
 				}
 			},
+			onMissionCompleted: (): void => {
+				progress = recordMissionResult(progress, index, 1, levelTotal);
+				saveProgress(progress);
+				print('[escape-velocity] flyby completion saved L' + (index + 1).toFixed(0));
+			},
 			onResult: (r: ResultKind, telemetry?: FlightTelemetry): void => {
 				const telem = telemetry !== undefined ? telemetry : {
 					burnDv: 0,
@@ -416,11 +455,14 @@ if (levelTotal <= 0) {
 					closestDist: telem.closestDist,
 					maxSpeed: telem.maxSpeed,
 					eccentricity: telem.eccentricity,
+					starsCollected: telem.starsCollected !== undefined ? telem.starsCollected : 0,
 				});
 
 				// 推进并保存火箭挑战进度
-				progress = recordMissionResult(progress, index, evalInfo.rockets, levelTotal);
-				saveProgress(progress);
+				if (!game.missionCompleted()) {
+					progress = recordMissionResult(progress, index, evalInfo.rockets, levelTotal);
+					saveProgress(progress);
+				}
 				const currentTotal = getTotalRockets(progress, levelTotal);
 
 				print('[escape-velocity] result = ' + r + ' on ' + levelNames[index]
@@ -446,6 +488,7 @@ if (levelTotal <= 0) {
 					levelIndex: index,
 					rocketsGot: evalInfo.rockets,
 					challenges: challengesList,
+					completionOnly: def.transfer !== undefined,
 					achieved: evalInfo.achieved,
 					burnDv: telem.burnDv,
 					dvBudget: def.dvBudget,
@@ -492,6 +535,10 @@ if (levelTotal <= 0) {
 			print('[escape-velocity] launch button tap');
 			game.launchArmed();
 		});
+		aim.onCancelAim((): void => {
+			print('[escape-velocity] cancel aim tap');
+			game.cancelAim();
+		});
 		// 观察：拖动增量 -> 转相机；捏合 -> 远近
 		aim.onObserve((dx: number, dy: number): void => {
 			game.observeDrag(dx, dy);
@@ -509,6 +556,8 @@ if (levelTotal <= 0) {
 			game.toggleViewMode();
 			print('[escape-velocity] view toggle -> ' + game.viewMode() + ' (L' + (index + 1).toFixed(0) + ')');
 		});
+		if (aim.onCameraFocus !== undefined) aim.onCameraFocus((): void => { game.cycleCameraFocus(); });
+		if (aim.onEndViewing !== undefined) aim.onEndViewing((): void => { game.endViewing(); });
 		// 刹车模式（S3.9.2）：按钮只表达意图，状态在 GameCore 里；顺手打一行日志便于回归验证。
 		aim.onBrake((on: boolean): void => {
 			game.setBrakeMode(on);
@@ -950,9 +999,11 @@ if (levelTotal <= 0) {
 			runtime.aim.update(App.deltaTime);
 			// Armed 是状态，按钮显隐跟着状态走（AGENTS 硬约束 5）
 			runtime.aim.setArmed(runtime.game.armed());
+			runtime.aim.setStarsStatus(runtime.game.starsNow());
 			// 视图也是状态：右下角那颗按钮的文字跟着 core.viewMode 走（别自己翻转局部变量）
 			const is2D = runtime.game.viewMode() === '2D';
 			runtime.aim.setViewMode(runtime.game.viewMode());
+			if (runtime.aim.setFlightViewing !== undefined) runtime.aim.setFlightViewing(phaseNow === 'Flying', runtime.game.missionCompleted(), runtime.game.cameraFocus(), !is2D, runtime.game.flightStage());
 			const inAim = (phaseNow === 'Aiming' || phaseNow === 'Armed') && !runtime.game.isIntroTourActive();
 			runtime.aim.setZoomControlsVisible(is2D && inAim);
 			runtime.aim.setMissionDrawerVisible(inAim);
@@ -967,6 +1018,7 @@ if (levelTotal <= 0) {
 				runtime.game.speedMaxPow(),
 				runtime.game.isPaused(),
 				runtime.game.missionSeconds(),
+				runtime.game.speedRate(),
 			);
 			// 实时逆喷制动按钮（L4 伽利略号等轨道器关卡）：只在飞行态且进入捕获窗口时出现
 			const brakeActive = (phaseNow === 'Flying' && runtime.game.isBrakeWindowActive()) || debugForceBrakeWindow;
@@ -1077,6 +1129,14 @@ if (levelTotal <= 0) {
 		if (opening !== undefined) opening.hide();
 		enterLevel(levelIndex);
 	};
+	debugGameStateFn = (): string => {
+		const rt = activeRuntime();
+		if (rt === undefined) return 'phase=LevelSelect';
+		const g = rt.game;
+		return 'phase=' + g.phase() + '\ndate=' + g.dateNow().toFixed(6) + '\nworld=' + g.missionSeconds().toFixed(6)
+			+ '\nrate=' + g.speedRate().toFixed(6) + '\npaused=' + (g.isPaused() ? '1' : '0')
+			+ '\nfocus=' + g.cameraFocus() + '\ncompleted=' + (g.missionCompleted() ? '1' : '0') + '\nview=' + g.viewMode();
+	};
 
 	debugTriggerZoomInFn = (): void => {
 		const rt = activeRuntime();
@@ -1096,6 +1156,11 @@ if (levelTotal <= 0) {
 /** 获取当前处于激活状态的结算面板（调试/截图用）。 */
 export function getActiveResultPanel(): ResultPanel | undefined {
 	return activeResultPanel;
+}
+
+/** GameShot 专用的只读状态；输入验收据此等待实际状态，避免固定延迟猜时机。 */
+export function getDebugGameState(): string {
+	return debugGameStateFn !== undefined ? debugGameStateFn() : 'phase=Loading';
 }
 
 /** 触发一次指定关卡的结算卡片演出（调试/自动化截图用）。 */

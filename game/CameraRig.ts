@@ -2,7 +2,7 @@
  * 相机机架：单一 Camera3D + 动态跟随拉远（决策 D3）。
  *
  * 设计要点（手册 §5.4）：
- * - **不做视角硬切**：不区分“全局视角 / 跟随视角”，只有一个连续计算的 rig。
+ * - 同一套投影求解器；L1 可按分镜切换关键点和方位，其他关仍连续跟随。
  * - 依据是“**所有关键点的包围盒展开程度**”，而不是“探测器到目标的距离”。
  *   （前者在探测器飞过目标时仍然单调；后者会先增后减，导致相机反直觉地拉近。）
  * - 距离与注视点都做**一阶平滑**，避免抖动。
@@ -27,6 +27,12 @@ import { planeToWorld } from 'game/Scene';
 
 /** 机架的可调参数。 */
 export interface RigOptions {
+	/** 水平方位角；省略为旧机位 0°。 */
+	azDeg?: number;
+	/** 可选的 HUD 安全区（NDC，默认 ±(1-margin)）；偏移让主体稍高于画面中心。 */
+	screenMinY?: number;
+	screenMaxY?: number;
+	screenBiasY?: number;
 	/** 俯视倾角（度）。 */
 	tiltDeg: number;
 	/** 距离夹紧范围。 */
@@ -40,6 +46,13 @@ export interface RigOptions {
 	aspect: number;
 	/** 关键点距画面边缘的最小留白（占半屏比例）。0.05 = 四边各留 5%。 */
 	margin: number;
+}
+
+/** L1 分镜对同一机架的局部覆盖。 */
+export interface RigShotOptions {
+	azDeg: number;
+	tiltDeg: number;
+	lerp: number;
 }
 
 /**
@@ -97,7 +110,7 @@ export interface CameraRig {
 	 *        只接受比 `options.minDistance` 小的值（放大镜不许把日常取景也顶进去）；
 	 *        装不下时求解器自己会往后退，相机不会穿进天体。省略 = 用默认下限。
 	 */
-	step(points: P2[], probeRadius?: number, radii?: number[], minDistance?: number): RigFrame;
+	step(points: P2[], probeRadius?: number, radii?: number[], minDistance?: number, shot?: RigShotOptions): RigFrame;
 	/** 纯查询：这组关键点需要多远才能全部装下（不改机架状态）。 */
 	wantDistance(points: P2[], probeRadius?: number, radii?: number[]): number;
 	/** 把机架参数写到真实相机。 */
@@ -164,12 +177,17 @@ export function computeFit(points: P2[]): Fit {
 function frameAt(centerX: number, centerY: number, distance: number, opts: RigOptions): RigFrame {
 	const targetWorld = planeToWorld({ x: centerX, y: centerY }, 0);
 	const tilt = opts.tiltDeg * Math.PI / 180;
+	const az = (opts.azDeg !== undefined ? opts.azDeg : 0) * Math.PI / 180;
+	const shift = distance * Math.tan(opts.fovYDeg * Math.PI / 360) * (opts.screenBiasY !== undefined ? opts.screenBiasY : 0);
+	const sx = -Math.sin(az) * Math.sin(tilt) * shift;
+	const sy = Math.cos(tilt) * shift;
+	const sz = -Math.cos(az) * Math.sin(tilt) * shift;
 	return {
-		target: targetWorld,
+		target: Vec3(targetWorld.x - sx, targetWorld.y - sy, targetWorld.z - sz),
 		eye: Vec3(
-			targetWorld.x,
-			targetWorld.y + Math.sin(tilt) * distance,
-			targetWorld.z + Math.cos(tilt) * distance,
+			targetWorld.x + Math.sin(az) * Math.cos(tilt) * distance - sx,
+			targetWorld.y + Math.sin(tilt) * distance - sy,
+			targetWorld.z + Math.cos(az) * Math.cos(tilt) * distance - sz,
 		),
 	};
 }
@@ -206,6 +224,8 @@ function frameFits(
 	};
 	const basis = prepareCamera(view, HANDEDNESS, FLIP_Y);
 	const limit = 1 - opts.margin;
+	const minY = opts.screenMinY !== undefined ? opts.screenMinY : -limit;
+	const maxY = opts.screenMaxY !== undefined ? opts.screenMaxY : limit;
 
 	for (let i = 0; i < points.length; i++) {
 		const p = projectPrepared(planeToWorld(points[i], 0), basis);
@@ -214,7 +234,7 @@ function frameFits(
 		const ry = r > 0 ? (r / p.vz) * basis.focal : 0;
 		const rx = ry / opts.aspect;
 		if (Math.abs(p.x) + rx > limit) return false;
-		if (Math.abs(p.y) + ry > limit) return false;
+		if (p.y - ry < minY || p.y + ry > maxY) return false;
 	}
 	return true;
 }
@@ -288,16 +308,18 @@ export function createCameraRig(opts?: RigOptions): CameraRig {
 	const state: RigState = { focusX: 0, focusY: 0, distance: options.minDistance, initialized: false };
 
 	return {
-		step: (points: P2[], probeRadius?: number, radii?: number[], minDistance?: number): RigFrame => {
+		step: (points: P2[], probeRadius?: number, radii?: number[], minDistance?: number, shot?: RigShotOptions): RigFrame => {
 			// S3.17：慢动作特写的下限覆盖。只复制要改的那一个字段（TSTL 对对象展开的支持面窄，
 			// 显式列一遍最稳）；传了更大/非法的值就忽略，日常取景的下限不许被顶下去。
 			let opts = options;
-			if (minDistance !== undefined && minDistance > 0 && minDistance < options.minDistance) {
+			if (shot !== undefined || (minDistance !== undefined && minDistance > 0 && minDistance < options.minDistance)) {
 				opts = {
-					tiltDeg: options.tiltDeg,
-					minDistance,
+					azDeg: shot !== undefined ? shot.azDeg : options.azDeg,
+					screenMinY: options.screenMinY, screenMaxY: options.screenMaxY, screenBiasY: options.screenBiasY,
+					tiltDeg: shot !== undefined ? Math.max(CameraTiltMin, Math.min(CameraTiltMax, shot.tiltDeg)) : options.tiltDeg,
+					minDistance: minDistance !== undefined && minDistance > 0 && minDistance < options.minDistance ? minDistance : options.minDistance,
 					maxDistance: options.maxDistance,
-					lerp: options.lerp,
+					lerp: shot !== undefined ? shot.lerp : options.lerp,
 					fovYDeg: options.fovYDeg,
 					aspect: options.aspect,
 					margin: options.margin,

@@ -14,7 +14,8 @@ import { Body, bodyPositionAt } from 'game/Gravity';
 import {
 	FlowDotsPerOrbit, flowDotAngle, flowDotPosition, orbitAngleAt, orbitAngularRate, orbitCenterAt,
 } from 'game/OrbitFlow';
-import { getLevel, levelCount, scaledPlanets } from 'game/LevelData';
+import { getLevel, installArcadeLevels, levelCount, scaledPlanets } from 'game/LevelData';
+import { Content, json } from 'Dora';
 import { SunGm } from 'game/Scale';
 
 interface Failure {
@@ -184,11 +185,12 @@ function testRealLevels(): void {
 		const bodies = scaledPlanets(lv);
 		const movers: Body[] = [];
 		for (const b of bodies) {
-			if (b.orbitRadius > 0 && b.orbitPeriod > 0) movers.push(b);
+			// gm = 0 的陨石周期来自 spin，不服从开普勒，不进这条判据
+			if (b.orbitRadius > 0 && b.orbitPeriod > 0 && b.gm > 0) movers.push(b);
 		}
 		// 街机模式：引力井以同屏固定布局为主，如果有关卡配置了公转天体则验证开普勒定律
 		for (const b of movers) {
-			const mu = b.host !== undefined ? b.host.gm : SunGm;
+			const mu = b.host !== undefined ? b.host.gm : (lv.planets.length > 0 ? lv.planets[0].gm : SunGm);
 			const om = Math.abs(orbitAngularRate(b));
 			const kk = om * om * b.orbitRadius * b.orbitRadius * b.orbitRadius;
 			if (Math.abs(kk - mu) > Math.abs(mu) * 1e-9) keplerOk = false;
@@ -206,6 +208,13 @@ function testRealLevels(): void {
 }
 
 export function runTests(): string {
+	const levelsText = Content.exist('Assets/Levels/levels.json') ? Content.load('Assets/Levels/levels.json') : '';
+	const bodiesText = Content.exist('Assets/Levels/bodies.json') ? Content.load('Assets/Levels/bodies.json') : '';
+	installArcadeLevels(levelsText, bodiesText, (text: string): unknown => {
+		const decoded = json.decode(text);
+		if (decoded[1] !== undefined) return undefined;
+		return decoded[0];
+	});
 	testDotZeroOnPlanet();
 	testDotsOnOrbit();
 	testDirectionFromField();

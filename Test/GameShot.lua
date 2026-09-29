@@ -112,8 +112,17 @@ local last = ""
 local n = 0
 local pendingDelay = 0
 local pendingReq = ""
+local observeFile = Path(outDir, "observe-flight.flag")
+local stateFile = Path(outDir, "flight-state.txt")
 
 threadLoop(function()
+  -- 只读观测由回归脚本显式启用；不驱动日期、输入、通关或暂停。
+  if Content:exist(observeFile) then
+    local initMod = package.loaded["init"]
+    if initMod ~= nil and initMod.getDebugGameState ~= nil then
+      Content:save(stateFile, initMod.getDebugGameState())
+    end
+  end
   if Content:exist(reqFile) then
     local want = Content:load(reqFile)
     if want ~= nil and want ~= "" and want ~= last then

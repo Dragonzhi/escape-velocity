@@ -51,7 +51,7 @@ Get-Process Dora -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 600
 
 # 2) 启动引擎（cwd 必须是引擎目录，见 .DESCRIPTION）
-Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) | Out-Null
+Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -WindowStyle Hidden | Out-Null
 $up = $false
 for ($i = 0; $i -lt 40; $i++) {
   Start-Sleep -Milliseconds 500

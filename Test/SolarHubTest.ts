@@ -6,7 +6,8 @@ import {
 	LEVEL_TO_STATION_INDEX,
 	formatRocketsString,
 } from 'game/SolarHub';
-import { getLevel, levelCount } from 'game/LevelData';
+import { getLevel, installArcadeLevels, levelCount } from 'game/LevelData';
+import { Content, json } from 'Dora';
 
 interface Failure {
 	name: string;
@@ -60,6 +61,13 @@ function testStationMappings(): void {
 }
 
 export function runTests(): string {
+	const levelsText = Content.exist('Assets/Levels/levels.json') ? Content.load('Assets/Levels/levels.json') : '';
+	const bodiesText = Content.exist('Assets/Levels/bodies.json') ? Content.load('Assets/Levels/bodies.json') : '';
+	installArcadeLevels(levelsText, bodiesText, (text: string): unknown => {
+		const decoded = json.decode(text);
+		if (decoded[1] !== undefined) return undefined;
+		return decoded[0];
+	});
 	testFormatRockets();
 	testStationMappings();
 
