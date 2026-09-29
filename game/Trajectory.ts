@@ -98,6 +98,8 @@ export interface TrajectoryView {
 
 /** 一个"到达环"：平面坐标的圆心 + 半径（= 该航点的容差）。 */
 export interface GoalRing {
+	pointAlpha?: number;
+	burstRadius?: number;
 	point?: boolean;
 	showRange?: boolean;
 	pulse?: number;
@@ -441,8 +443,15 @@ export function createTrajectoryView(
 				if (ring.point === true) {
 					const pts = projectPolyline([ring.center], options.y, basis, options.layerOriginX, options.layerOriginY);
 					if (pts.length > 0) {
-						ringDraw.drawDot(pts[0], 10 * (ring.pulse !== undefined ? ring.pulse : 1), Color(70, 220, 190, 45));
-						ringDraw.drawDot(pts[0], 3.5, Color(170, 255, 230, 255));
+						const alpha = ring.pointAlpha !== undefined ? ring.pointAlpha : 1;
+						const scale = ring.pulse !== undefined ? ring.pulse : 1;
+						ringDraw.drawDot(pts[0], 10 * scale, Color(70, 220, 190, Math.floor(45 * alpha * Math.min(2, scale))));
+						ringDraw.drawDot(pts[0], 3.5 * scale, Color(170, 255, 230, Math.floor(255 * alpha)));
+						if (ring.burstRadius !== undefined && ring.burstRadius > 0) {
+							const circle: Vec2.Type[] = [];
+							for (let i = 0; i < 32; i++) { const a = i * Math.PI / 16; circle.push(Vec2(pts[0].x + ring.burstRadius * Math.cos(a), pts[0].y + ring.burstRadius * Math.sin(a))); }
+							ringDraw.drawPolygon(circle, Color(0, 0, 0, 0), 1.5, Color(140, 255, 215, Math.floor(160 * alpha)));
+						}
 					}
 				}
 				if (ring.showRange === false) continue;

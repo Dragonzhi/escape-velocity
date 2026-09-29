@@ -192,10 +192,22 @@ try {
     Capture 'flyby-saturn-periapsis'
     if ((State).completed -ne '0') { throw 'mission completed before target region' }
   }
+  if ($ManualEnd -and $Level -gt 1) { $null = Click-State 154 295 { param($s) $s.focus -eq 'Probe' } }
   $null = Resume
   $completed = Wait-State { param($s) $s.completed -eq '1' -and $s.phase -eq 'Flying' }
+  if ([double]$completed.marker -lt 0 -or [double]$completed.marker -gt 0.25) { throw 'success effect was not triggered at actual completion' }
   $null = Pause
+  $effectPaused = State
   Capture 'flyby-completed-viewing'
+  $null = Wait-State { param($s) [double]$s.marker -ge 0.6 }
+  Capture 'flyby-marker-faded'
+  $null = Click-State ($flybyVW - 82) 252 { param($s) $s.view -eq '2D' }
+  Capture 'flyby-marker-faded-2d'
+  if ([double](State).marker -ne 0.6) { throw 'view toggle replayed success effect' }
+  $null = Click-State ($flybyVW - 82) 252 { param($s) $s.view -eq '3D' }
+  if ((State).world -ne $effectPaused.world) { throw 'effect changed paused physical time' }
+  if (([regex]::Matches((Logs), 'success marker triggered once')).Count -ne 1) { throw 'success effect triggered more than once' }
+  if ($ManualEnd -and $Level -gt 1 -and (State).focus -ne 'Probe') { throw 'completion changed manual focus' }
   if ((Logs) -notmatch "flyby completion saved L$Level") { throw 'completion not saved at milestone' }
   if ($ManualEnd) {
     $null = Click-State ($flybyVW - 134) 152 { param($s) $s.phase -eq 'Result' }
@@ -213,7 +225,7 @@ try {
   Capture 'flyby-result'
   $null = Click-State ($flybyVW - 80) ($flybyVH - 49) { param($s) $s.phase -eq 'Aiming' }
   $retry = State
-  if ($retry.completed -ne '0' -or $retry.focus -ne 'Auto' -or $retry.view -ne '2D') { throw 'retry left stale viewing state' }
+  if ($retry.completed -ne '0' -or $retry.focus -ne 'Auto' -or $retry.view -ne '2D' -or [double]$retry.marker -ne -1) { throw 'retry left stale viewing state' }
   Capture 'flyby-retry'
   $logName = if ($ManualEnd) { 'flyby-manual-input-log.txt' } else { 'flyby-input-log.txt' }
   if ($Level -gt 1) { $logName = "orbital-L$Level-input-log.txt" }

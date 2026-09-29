@@ -1135,7 +1135,7 @@ if (levelTotal <= 0) {
 		const g = rt.game;
 		return 'phase=' + g.phase() + '\ndate=' + g.dateNow().toFixed(6) + '\nworld=' + g.missionSeconds().toFixed(6)
 			+ '\nrate=' + g.speedRate().toFixed(6) + '\npaused=' + (g.isPaused() ? '1' : '0')
-			+ '\nfocus=' + g.cameraFocus() + '\ncompleted=' + (g.missionCompleted() ? '1' : '0') + '\nview=' + g.viewMode();
+			+ '\nfocus=' + g.cameraFocus() + '\ncompleted=' + (g.missionCompleted() ? '1' : '0') + '\nview=' + g.viewMode() + '\nmarker=' + g.markerElapsed().toFixed(6);
 	};
 
 	debugTriggerZoomInFn = (): void => {

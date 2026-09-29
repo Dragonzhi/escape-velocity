@@ -31,7 +31,7 @@ import { CameraRig, RigFrame } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalPositionAt, goalWaypoints, waypointProgress } from 'game/LevelData';
-import { CameraFocusMode, FlybyAnalysis, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeTransfer, nextCameraFocus, orbitalShotAt, planTransfer, transferCinematic, transferPlaybackRate, transferShotAt } from 'game/Transfer';
+import { CameraFocusMode, FlybyAnalysis, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeTransfer, nextCameraFocus, orbitalShotAt, planTransfer, successMarkerFrame, transferCinematic, transferPlaybackRate, transferShotAt } from 'game/Transfer';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
@@ -968,6 +968,8 @@ export interface Game {
 	flightStage: () => TransferShot | undefined;
 	cycleCameraFocus: () => void;
 	missionCompleted: () => boolean;
+	/** 成功光点显示时间，只读验收接口。-1 表示尚未触发。 */
+	markerElapsed: () => number;
 	endViewing: () => void;
 	/** 观察拖动（像素增量）→ 绕目标转。 */
 	observeDrag: (dx: number, dy: number) => void;
@@ -1180,6 +1182,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let obsPitchDeg = 0;
 	let obsZoom = 1;
 	let focusMode: CameraFocusMode = 'Auto';
+	let markerElapsed = -1;
 	let cineKey = '';
 	let cineFrame: RigFrame | undefined = undefined;
 	let cineFrom: RigFrame | undefined = undefined;
@@ -1362,6 +1365,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	/** 当前 t0 下的航点环（S3.7）：已掠过的航点画暗。 */
 	const goalRingsAt = (t: number, upto?: number): GoalRing[] => {
+		const marker = successMarkerFrame(markerElapsed);
+		if (level.transfer !== undefined && !marker.visible) return [];
 		const wps = goalWaypoints(level.goal);
 		if (wps.length === 0) return [];
 		let passed = 0;
@@ -1380,7 +1385,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const orbital = level.transfer !== undefined ? level.transfer.orbital : undefined;
 		const rings: GoalRing[] = [{ center: goalPositionAt(body, t, nextWp.offset), radius: nextWp.tolerance, passed: false,
 			point: level.transfer !== undefined, showRange: level.transfer === undefined || (orbital === undefined && planning),
-			pulse: 1 + 0.1 * Math.sin(t * 4) }];
+			pulse: (1 + 0.1 * Math.sin(t * 4)) * marker.scale, pointAlpha: marker.alpha, burstRadius: marker.ring }];
 		if (orbital !== undefined && planning) {
 			const center = bodyPositionAt(level.bodies[0], t);
 			rings.push({ center, radius: orbital.region.minRadius, passed: false }, { center, radius: orbital.region.maxRadius, passed: false });
@@ -1537,6 +1542,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	};
 
 	const resetCinematic = (): void => {
+		markerElapsed = -1;
 		focusMode = 'Auto'; cineKey = ''; cineFrame = undefined; cineFrom = undefined;
 		obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
 	};
@@ -1893,6 +1899,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		const wasCompleted = core.missionCompleted;
 		const entered = coreUpdate(core, dt, level);
 		if (!wasCompleted && core.missionCompleted) {
+			markerElapsed = 0;
+			print('[escape-velocity] success marker triggered once');
 			print('[escape-velocity] mission completed (continue viewing) t=' + core.flightTime.toFixed(3));
 			if (deps.onMissionCompleted !== undefined) deps.onMissionCompleted(calcFlightTelemetry(core, level));
 		}
@@ -2037,6 +2045,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	};
 
 	const update = (dt: number): void => {
+		if (markerElapsed >= 0 && markerElapsed < 0.6) markerElapsed = Math.min(0.6, markerElapsed + dt);
 		// 视图也必须**状态驱动**（AGENTS 硬约束 5）：每帧按 core.viewMode 对一次节点，
 		// 别只靠"点按钮时切一下" —— 切关/重建/自动回归序列会留下一个对不上的视图。
 		applyView();
@@ -2047,6 +2056,11 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (entered) finishFlight();
 		} else if (core.phase === 'Finale') {
 			updateFinale();
+		} else if (core.phase === 'Result' && core.missionCompleted && level.transfer !== undefined) {
+			// 手动提前结束也让剩余显示特效自然淡出，物理与机位保持冻结。
+			const rings = goalRingsAt(core.t0 + core.flightTime, coreProbeIndex(core));
+			deps.plan.setGoalRings(rings); deps.plan.flush();
+			if (cineFrame !== undefined) deps.trajectory.setGoalRings(rings, makeBasis(cineFrame));
 		}
 		// Result / Finale：画面冻结，等待输入（终章只有一颗「返回关卡选择」）
 	};
@@ -2143,6 +2157,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			print('[escape-velocity] camera focus -> ' + focusMode);
 		},
 		missionCompleted: (): boolean => core.missionCompleted,
+		markerElapsed: (): number => markerElapsed,
 		endViewing: (): void => {
 			if (!coreEndViewing(core)) return;
 			print('[escape-velocity] end viewing (manual) t=' + core.flightTime.toFixed(3));

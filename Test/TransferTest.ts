@@ -2,7 +2,7 @@
 import { Content, json } from 'Dora';
 import { P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { getLevel, goalPositionAt, installArcadeLevels, findGoalIndex, evaluateRocketsDetailed } from 'game/LevelData';
-import { advanceTransferPlayback, analyzeFlyby, nextCameraFocus, planTransfer, transferPlaybackRate, transferShotAt } from 'game/Transfer';
+import { advanceTransferPlayback, analyzeFlyby, nextCameraFocus, planTransfer, successMarkerFrame, transferPlaybackRate, transferShotAt } from 'game/Transfer';
 import { GameLevel, createCore, coreEndViewing, coreLaunch, coreUpdate, coreRetry, selectIdleHost, isBrakeWindowActive, applyInFlightBrake } from 'game/Game';
 
 export function runTests(): string {
@@ -15,6 +15,11 @@ export function runTests(): string {
 	const tr = lv.transfer;
 	const cfg = lv.transfer.flyby;
 	const dt = 0.016;
+	check('marker-idle-visible', successMarkerFrame(-1).visible && successMarkerFrame(-1).alpha === 1);
+	check('marker-bright-pulse', successMarkerFrame(0.10).scale > 1.5 && successMarkerFrame(0.10).ring === 0);
+	check('marker-expands-and-fades', successMarkerFrame(0.3).ring > 8 && successMarkerFrame(0.3).alpha < 1);
+	check('marker-hidden-at-0.6', !successMarkerFrame(0.6).visible && successMarkerFrame(0.6).alpha === 0);
+	check('marker-stays-hidden', !successMarkerFrame(10).visible);
 	const radius = distance(lv.probeStart, bodyPositionAt(lv.planets[0], 0));
 	const date = 1, power = 0.875;
 	const startAt = (t: number): { pos: P2; vel: P2 } => {

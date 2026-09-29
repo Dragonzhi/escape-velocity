@@ -1160,7 +1160,7 @@ else -- 142
 			return "phase=LevelSelect" -- 1134
 		end -- 1134
 		local g = rt.game -- 1135
-		return (((((((((((((("phase=" .. g:phase()) .. "\ndate=") .. __TS__NumberToFixed( -- 1136
+		return (((((((((((((((("phase=" .. g:phase()) .. "\ndate=") .. __TS__NumberToFixed( -- 1136
 			g:dateNow(), -- 1136
 			6 -- 1136
 		)) .. "\nworld=") .. __TS__NumberToFixed( -- 1136
@@ -1169,7 +1169,10 @@ else -- 142
 		)) .. "\nrate=") .. __TS__NumberToFixed( -- 1136
 			g:speedRate(), -- 1137
 			6 -- 1137
-		)) .. "\npaused=") .. (g:isPaused() and "1" or "0")) .. "\nfocus=") .. g:cameraFocus()) .. "\ncompleted=") .. (g:missionCompleted() and "1" or "0")) .. "\nview=") .. g:viewMode() -- 1137
+		)) .. "\npaused=") .. (g:isPaused() and "1" or "0")) .. "\nfocus=") .. g:cameraFocus()) .. "\ncompleted=") .. (g:missionCompleted() and "1" or "0")) .. "\nview=") .. g:viewMode()) .. "\nmarker=") .. __TS__NumberToFixed( -- 1137
+			g:markerElapsed(), -- 1138
+			6 -- 1138
+		) -- 1138
 	end -- 1132
 	debugTriggerZoomInFn = function() -- 1141
 		local rt = activeRuntime() -- 1142

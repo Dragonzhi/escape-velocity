@@ -545,8 +545,11 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 		for (const ring of rings) {
 			const s = planeToScreen(ring.center, map);
 			if (ring.point === true) {
-				ringDraw.drawDot(Vec2(s.x, s.y), 10 * (ring.pulse !== undefined ? ring.pulse : 1), Color(70, 220, 190, 45));
-				ringDraw.drawDot(Vec2(s.x, s.y), 3.5, Color(170, 255, 230, 255));
+				const alpha = ring.pointAlpha !== undefined ? ring.pointAlpha : 1;
+				const scale = ring.pulse !== undefined ? ring.pulse : 1;
+				ringDraw.drawDot(Vec2(s.x, s.y), 10 * scale, Color(70, 220, 190, Math.floor(45 * alpha * Math.min(2, scale))));
+				ringDraw.drawDot(Vec2(s.x, s.y), 3.5 * scale, Color(170, 255, 230, Math.floor(255 * alpha)));
+				if (ring.burstRadius !== undefined && ring.burstRadius > 0) ringDraw.drawPolygon(circleVerts(s.x, s.y, ring.burstRadius, 32), noFill, 1.5, Color(140, 255, 215, Math.floor(160 * alpha)));
 			}
 			if (ring.showRange === false) continue;
 			const rPx = ring.radius * map.scale;
