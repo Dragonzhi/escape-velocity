@@ -5,7 +5,7 @@
  *   const m = requireProjectModule("Test.HudTest"); print(m.runTests())
  */
 import { AimMaxSpeed, AimMinSpeed } from 'game/Config';
-import { computeAim, screenToPlane, defaultMaxDragPx, localToOffset, offsetToLocal, TouchSpace } from 'game/Hud';
+import { computeAim, screenToPlane, defaultMaxDragPx, localToOffset, offsetToLocal, resultPanelLayout, TouchSpace } from 'game/Hud';
 import { HANDEDNESS, FLIP_Y, prepareCamera, project } from 'game/Projection';
 
 interface Failure {
@@ -149,12 +149,25 @@ function testSpaceConversion(): void {
 	check('space-roundtrip', allExact, 'localToOffset / offsetToLocal 不互逆');
 }
 
+/** 6) 结算卡与操作按钮始终落在竖屏视口内。 */
+function testResultPanelLayout(): void {
+	for (const size of [{ w: 280, h: 400 }, { w: 320, h: 568 }, { w: 360, h: 640 }, { w: 390, h: 844 }, { w: 430, h: 932 }]) {
+		const layout = resultPanelLayout(size.w, size.h);
+		check(`result-card-inside-${size.w}`, layout.cardX >= 0 && layout.cardX + layout.cardW <= size.w, `x=${layout.cardX} w=${layout.cardW} view=${size.w}`);
+		check(`result-card-height-${size.h}`, layout.cardY >= 0 && layout.cardY + layout.cardH <= size.h, `y=${layout.cardY} h=${layout.cardH} view=${size.h}`);
+		const buttonX = layout.cardX + (layout.cardW - layout.buttonW) / 2;
+		check(`result-buttons-inside-${size.w}`, buttonX >= 0 && buttonX + layout.buttonW <= size.w, `x=${buttonX} w=${layout.buttonW} view=${size.w}`);
+		check(`result-button-target-${size.h}`, layout.buttonH >= 48, `buttonH=${layout.buttonH}`);
+	}
+}
+
 export function runTests(): string {
 	testNoDrag();
 	testDirection();
 	testPower();
 	testRoundTrip();
 	testSpaceConversion();
+	testResultPanelLayout();
 
 	const lines: string[] = [];
 	lines.push(failures.length === 0 ? 'passed' : 'failed');

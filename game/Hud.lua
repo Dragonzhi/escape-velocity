@@ -20,7 +20,6 @@ local TimeWarpStep = ____Config.TimeWarpStep -- 37
 local WarpHoldDelaySec = ____Config.WarpHoldDelaySec -- 37
 local ____Ui = require("game.Ui") -- 42
 local MinButtonHeight = ____Ui.MinButtonHeight -- 42
-local MinButtonWidth = ____Ui.MinButtonWidth -- 42
 local createButton = ____Ui.createButton -- 42
 local createLabel = ____Ui.createLabel -- 42
 local createPanel = ____Ui.createPanel -- 42
@@ -777,7 +776,10 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		fastButton:setEnabled(pow < maxPow) -- 877
 		slowButton:setEnabled(pow > minPow) -- 878
 	end -- 864
-	local DrawerW = 380 -- 882
+	local DrawerW = math.max( -- 882
+		1, -- 882
+		math.min(380, viewW - 24) -- 882
+	) -- 882
 	local DrawerH = 46 -- 883
 	local missionDrawerPlate = createPanel( -- 884
 		root, -- 884
@@ -1239,6 +1241,41 @@ local function resultHint(result) -- 1281
 	end -- 1282
 	return "可重试本关，或返回关卡选择" -- 1283
 end -- 1281
+--- 结算卡按可用视口收缩，避免窄屏/短屏时卡片与按钮超出画布。
+function ____exports.resultPanelLayout(viewW, viewH) -- 1328
+	local cardW = math.max( -- 1329
+		1, -- 1329
+		math.min( -- 1329
+			viewW - 24, -- 1329
+			clampNumber(viewW * 0.9, 280, 560) -- 1329
+		) -- 1329
+	) -- 1329
+	local buttonW = math.min( -- 1330
+		144, -- 1330
+		math.max(120, cardW - 24) -- 1330
+	) -- 1330
+	local buttonH = math.min( -- 1331
+		72, -- 1331
+		math.max( -- 1331
+			48, -- 1331
+			math.floor(viewH * 0.12) -- 1331
+		) -- 1331
+	) -- 1331
+	local contentScale = math.min( -- 1332
+		1, -- 1332
+		math.max(0.2, (viewH - 24 - buttonH * 2) / 396) -- 1332
+	) -- 1332
+	local cardH = math.ceil(396 * contentScale + buttonH * 2) -- 1333
+	return { -- 1334
+		cardX = (viewW - cardW) / 2, -- 1335
+		cardY = (viewH - cardH) / 2, -- 1336
+		cardW = cardW, -- 1337
+		cardH = cardH, -- 1338
+		buttonW = buttonW, -- 1339
+		buttonH = buttonH, -- 1340
+		contentScale = contentScale -- 1341
+	} -- 1341
+end -- 1328
 --- 建结算面板：半透明全屏底 + 居中工业级卡片 + 三枚火箭挑战清单 + 遥测数据 + 2 个按钮。
 -- 
 -- ⚠️ 全屏底**不能**设 `touch: true`（真机验收踩到的坑）：
@@ -1249,212 +1286,225 @@ end -- 1281
 -- 
 -- @param viewW 视图逻辑宽（`View.size.width`）
 -- @param viewH 视图逻辑高
-function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1329
-	local root = createPanel( -- 1335
-		parent, -- 1335
-		viewW, -- 1335
-		viewH, -- 1335
-		ResultBackdropHex, -- 1335
-		{alpha = 0.78} -- 1335
-	) -- 1335
-	local cardW = clampNumber(viewW * 0.9, 360, 560) -- 1337
-	local btnW = 72 -- 1338
-	local btnH = 72 -- 1339
-	local padX = (cardW - btnW) / 2 -- 1340
-	local padY = 28 -- 1341
-	local fontLevel = 24 -- 1343
-	local fontRockets = 38 -- 1344
-	local fontTitle = 30 -- 1345
-	local fontTelemetry = 19 -- 1346
-	local fontChallenge = 18 -- 1347
-	local fontTotal = 20 -- 1348
-	local btnFont = 24 -- 1349
-	local rowGap = 12 -- 1350
-	local hLevel = 28 -- 1352
-	local hRockets = 42 -- 1353
-	local hTitle = 34 -- 1354
-	local hTelemetry = 24 -- 1355
-	local hChallengeRow = 30 -- 1356
-	local hChallenges = hChallengeRow * 3 -- 1357
-	local hTotal = 24 -- 1358
-	local cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7 -- 1360
-	if cardH > viewH - 24 then -- 1360
-		btnH = math.max(MinButtonHeight, btnH - (cardH - (viewH - 24)) / 2) -- 1362
-		cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7 -- 1363
-	end -- 1363
-	local card = createPanel( -- 1366
-		root, -- 1366
-		cardW, -- 1366
-		cardH, -- 1366
-		ResultCardHex, -- 1366
-		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 1366
-	) -- 1366
-	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2) -- 1371
-	local cursor = cardH - padY -- 1374
-	cursor = cursor - hLevel -- 1376
-	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 1377
-	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 1378
-	cursor = cursor - (rowGap + hRockets) -- 1380
-	local rocketsLabel = createLabel(card, "", fontRockets, 16762939) -- 1381
-	setLabelCenter(rocketsLabel, cardW / 2, cursor + hRockets / 2) -- 1382
-	cursor = cursor - (rowGap + hTitle) -- 1384
-	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 1385
-	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 1386
-	cursor = cursor - (rowGap + hTelemetry) -- 1388
-	local telemetryLabel = createLabel(card, "", fontTelemetry, ResultHintHex) -- 1389
-	setLabelCenter(telemetryLabel, cardW / 2, cursor + hTelemetry / 2) -- 1390
-	cursor = cursor - rowGap -- 1392
-	local challengeLabels = {} -- 1393
-	do -- 1393
-		local k = 0 -- 1394
-		while k < 3 do -- 1394
-			cursor = cursor - hChallengeRow -- 1395
-			local cl = createLabel(card, "", fontChallenge, 10405355) -- 1396
-			if cl ~= nil then -- 1396
-				cl.textWidth = cardW - 60 -- 1398
-				setLabelCenter(cl, cardW / 2, cursor + hChallengeRow / 2) -- 1399
-				challengeLabels[#challengeLabels + 1] = cl -- 1400
-			end -- 1400
-			k = k + 1 -- 1394
-		end -- 1394
-	end -- 1394
-	cursor = cursor - (rowGap + hTotal) -- 1404
-	local totalLabel = createLabel(card, "", fontTotal, 16766073) -- 1405
-	setLabelCenter(totalLabel, cardW / 2, cursor + hTotal / 2) -- 1406
-	cursor = cursor - (rowGap + btnH) -- 1408
-	local retryButton = createButton(card, { -- 1409
-		w = btnW, -- 1410
-		h = btnH, -- 1411
-		text = "", -- 1412
-		icon = "retry", -- 1412
-		fontSize = btnFont, -- 1413
-		bgHex = ResultButtonBgHex, -- 1414
-		fgHex = ResultButtonFgHex, -- 1415
-		borderHex = ResultButtonBorderHex, -- 1416
-		fireOn = "press", -- 1417
-		onTap = opts.onRetry -- 1418
-	}) -- 1418
-	retryButton.root.position = Vec2(padX, cursor) -- 1420
-	cursor = cursor - (8 + btnH) -- 1422
-	local backButton = createButton(card, { -- 1423
-		w = btnW, -- 1424
-		h = btnH, -- 1425
-		text = "", -- 1426
-		icon = "back", -- 1426
-		fontSize = btnFont, -- 1427
-		bgHex = ResultButtonAltBgHex, -- 1428
-		fgHex = ResultButtonFgHex, -- 1429
-		borderHex = ResultButtonBorderHex, -- 1430
-		fireOn = "press", -- 1431
-		onTap = opts.onBackToSelect -- 1432
-	}) -- 1432
-	backButton.root.position = Vec2(padX, cursor) -- 1434
-	root.visible = false -- 1436
-	retryButton:setEnabled(false) -- 1437
-	backButton:setEnabled(false) -- 1438
-	return { -- 1440
-		root = root, -- 1441
-		show = function(____, result, levelName, detail) -- 1442
-			retryButton:setEnabled(true) -- 1443
-			backButton:setEnabled(true) -- 1444
-			setLabelText(levelLabel, levelName) -- 1445
-			setLabelText( -- 1446
-				titleLabel, -- 1446
-				resultTitle(result) -- 1446
-			) -- 1446
-			setLabelColor( -- 1447
-				titleLabel, -- 1447
-				resultTitleColor(result) -- 1447
-			) -- 1447
-			if detail ~= nil then -- 1447
-				if detail.completionOnly == true then -- 1447
-					setLabelText( -- 1450
-						titleLabel, -- 1450
-						result == "success" and "引力借力完成" or resultTitle(result) -- 1450
-					) -- 1450
-				end -- 1450
-				local rCount = detail.rocketsGot -- 1451
-				local rStr = "☆  ☆  ☆" -- 1452
-				if rCount == 1 then -- 1452
-					rStr = "★  ☆  ☆" -- 1453
-				elseif rCount == 2 then -- 1453
-					rStr = "★  ★  ☆" -- 1454
-				elseif rCount >= 3 then -- 1454
-					rStr = "★  ★  ★" -- 1455
-				end -- 1455
-				setLabelText( -- 1456
-					rocketsLabel, -- 1456
-					detail.completionOnly == true and (result == "success" and "目标已完成" or "再试一次") or (detail.bonusPointCount ~= nil and (("火箭得分 " .. __TS__NumberToFixed(rCount, 0)) .. " / ") .. __TS__NumberToFixed(detail.bonusPointCount, 0) or rStr) -- 1456
-				) -- 1456
-				setLabelColor(rocketsLabel, rCount > 0 and 16762939 or 6322324) -- 1457
-				local pct = detail.dvBudget > 0 and math.floor(detail.burnDv / detail.dvBudget * 100) or 0 -- 1459
-				local telemText = ((((((("点火消耗 Δv: " .. __TS__NumberToFixed(detail.burnDv, 2)) .. " / ") .. __TS__NumberToFixed(detail.dvBudget, 2)) .. " (") .. __TS__NumberToFixed(pct, 0)) .. "%) · 用时: ") .. __TS__NumberToFixed(detail.flightTime, 1)) .. "s" -- 1460
-				setLabelText(telemetryLabel, telemText) -- 1461
-				do -- 1461
-					local k = 0 -- 1463
-					while k < 3 do -- 1463
-						if challengeLabels[k + 1] ~= nil then -- 1463
-							if k < #detail.challenges then -- 1463
-								local ok = detail.achieved[k + 1] -- 1466
-								local icon = ok and "★" or "☆" -- 1467
-								local rank = k == 0 and "一星" or (k == 1 and "二星" or "三星") -- 1468
-								local text = detail.completionOnly == true and (ok and "目标完成 · 记录已保存" or "尚未完成目标") or (((icon .. " [") .. rank) .. "] ") .. detail.challenges[k + 1] -- 1469
-								setLabelText(challengeLabels[k + 1], text) -- 1470
-								setLabelColor(challengeLabels[k + 1], ok and 16762939 or 6322324) -- 1471
-								challengeLabels[k + 1].visible = true -- 1472
-							else -- 1472
-								challengeLabels[k + 1].visible = false -- 1474
-							end -- 1474
-						end -- 1474
-						k = k + 1 -- 1463
-					end -- 1463
-				end -- 1463
-				setLabelText( -- 1479
-					totalLabel, -- 1479
-					((("全深空火箭勋章: " .. __TS__NumberToFixed(detail.totalRockets, 0)) .. " / ") .. __TS__NumberToFixed(detail.totalPossibleRockets, 0)) .. " ★" -- 1479
-				) -- 1479
-				if totalLabel ~= nil then -- 1479
-					totalLabel.visible = detail.completionOnly ~= true -- 1480
-				end -- 1480
-			else -- 1480
-				setLabelText(rocketsLabel, result == "success" and "★  ☆  ☆" or "☆  ☆  ☆") -- 1482
-				setLabelColor(rocketsLabel, result == "success" and 16762939 or 6322324) -- 1483
-				setLabelText( -- 1484
-					telemetryLabel, -- 1484
-					resultBody(result) -- 1484
-				) -- 1484
-				do -- 1484
-					local k = 0 -- 1485
-					while k < #challengeLabels do -- 1485
-						challengeLabels[k + 1].visible = false -- 1485
-						k = k + 1 -- 1485
-					end -- 1485
-				end -- 1485
-				if totalLabel ~= nil then -- 1485
-					totalLabel.visible = false -- 1486
-				end -- 1486
-			end -- 1486
-			root.visible = true -- 1488
-		end, -- 1442
-		hide = function() -- 1490
-			root.visible = false -- 1491
-			retryButton:setEnabled(false) -- 1492
-			backButton:setEnabled(false) -- 1493
-		end -- 1490
-	} -- 1490
-end -- 1329
-local FinaleBackdropHex = 329484 -- 1508
-local FinaleMainHex = 15398143 -- 1509
-local FinaleSubHex = 10470632 -- 1510
+function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1357
+	local root = createPanel( -- 1363
+		parent, -- 1363
+		viewW, -- 1363
+		viewH, -- 1363
+		ResultBackdropHex, -- 1363
+		{alpha = 0.78} -- 1363
+	) -- 1363
+	local layout = ____exports.resultPanelLayout(viewW, viewH) -- 1364
+	local cardW = layout.cardW -- 1364
+	local cardH = layout.cardH -- 1364
+	local btnW = layout.buttonW -- 1364
+	local btnH = layout.buttonH -- 1364
+	local contentScale = layout.contentScale -- 1364
+	local padX = (cardW - btnW) / 2 -- 1366
+	local padY = 28 * contentScale -- 1367
+	local function scaled(value) -- 1368
+		return math.max( -- 1368
+			1, -- 1368
+			math.floor(value * contentScale + 0.5) -- 1368
+		) -- 1368
+	end -- 1368
+	local fontLevel = scaled(24) -- 1370
+	local fontRockets = scaled(38) -- 1371
+	local fontTitle = scaled(30) -- 1372
+	local fontTelemetry = scaled(19) -- 1373
+	local fontChallenge = scaled(18) -- 1374
+	local fontTotal = scaled(20) -- 1375
+	local btnFont = scaled(20) -- 1376
+	local rowGap = 12 * contentScale -- 1377
+	local hLevel = scaled(28) -- 1379
+	local hRockets = scaled(42) -- 1380
+	local hTitle = scaled(34) -- 1381
+	local hTelemetry = scaled(24) -- 1382
+	local hChallengeRow = scaled(30) -- 1383
+	local hChallenges = hChallengeRow * 3 -- 1384
+	local hTotal = scaled(24) -- 1385
+	local card = createPanel( -- 1387
+		root, -- 1387
+		cardW, -- 1387
+		cardH, -- 1387
+		ResultCardHex, -- 1387
+		{alpha = 0.97, borderHex = ResultCardBorderHex, borderWidth = 3} -- 1387
+	) -- 1387
+	card.position = Vec2(layout.cardX, layout.cardY) -- 1392
+	local cursor = cardH - padY -- 1395
+	cursor = cursor - hLevel -- 1397
+	local levelLabel = createLabel(card, "", fontLevel, ResultLevelHex) -- 1398
+	if levelLabel ~= nil then -- 1398
+		levelLabel.textWidth = cardW - 24 -- 1399
+	end -- 1399
+	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2) -- 1400
+	cursor = cursor - (rowGap + hRockets) -- 1402
+	local rocketsLabel = createLabel(card, "", fontRockets, 16762939) -- 1403
+	setLabelCenter(rocketsLabel, cardW / 2, cursor + hRockets / 2) -- 1404
+	cursor = cursor - (rowGap + hTitle) -- 1406
+	local titleLabel = createLabel(card, "", fontTitle, TitleSuccessHex) -- 1407
+	setLabelCenter(titleLabel, cardW / 2, cursor + hTitle / 2) -- 1408
+	cursor = cursor - (rowGap + hTelemetry) -- 1410
+	local telemetryLabel = createLabel(card, "", fontTelemetry, ResultHintHex) -- 1411
+	if telemetryLabel ~= nil then -- 1411
+		telemetryLabel.textWidth = cardW - 32 -- 1412
+	end -- 1412
+	setLabelCenter(telemetryLabel, cardW / 2, cursor + hTelemetry / 2) -- 1413
+	cursor = cursor - rowGap -- 1415
+	local challengeLabels = {} -- 1416
+	do -- 1416
+		local k = 0 -- 1417
+		while k < 3 do -- 1417
+			cursor = cursor - hChallengeRow -- 1418
+			local cl = createLabel(card, "", fontChallenge, 10405355) -- 1419
+			if cl ~= nil then -- 1419
+				cl.textWidth = cardW - 60 -- 1421
+				setLabelCenter(cl, cardW / 2, cursor + hChallengeRow / 2) -- 1422
+				challengeLabels[#challengeLabels + 1] = cl -- 1423
+			end -- 1423
+			k = k + 1 -- 1417
+		end -- 1417
+	end -- 1417
+	cursor = cursor - (rowGap + hTotal) -- 1427
+	local totalLabel = createLabel(card, "", fontTotal, 16766073) -- 1428
+	if totalLabel ~= nil then -- 1428
+		totalLabel.textWidth = cardW - 24 -- 1429
+	end -- 1429
+	setLabelCenter(totalLabel, cardW / 2, cursor + hTotal / 2) -- 1430
+	cursor = cursor - (rowGap + btnH) -- 1432
+	local retryButton = createButton(card, { -- 1433
+		w = btnW, -- 1434
+		h = btnH, -- 1435
+		text = "重试", -- 1436
+		icon = "retry", -- 1436
+		fontSize = btnFont, -- 1437
+		bgHex = ResultButtonBgHex, -- 1438
+		fgHex = ResultButtonFgHex, -- 1439
+		borderHex = ResultButtonBorderHex, -- 1440
+		fireOn = "press", -- 1441
+		onTap = opts.onRetry -- 1442
+	}) -- 1442
+	retryButton.root.position = Vec2(padX, cursor) -- 1444
+	cursor = cursor - (8 + btnH) -- 1446
+	local backButton = createButton(card, { -- 1447
+		w = btnW, -- 1448
+		h = btnH, -- 1449
+		text = "选关", -- 1450
+		icon = "back", -- 1450
+		fontSize = btnFont, -- 1451
+		bgHex = ResultButtonAltBgHex, -- 1452
+		fgHex = ResultButtonFgHex, -- 1453
+		borderHex = ResultButtonBorderHex, -- 1454
+		fireOn = "press", -- 1455
+		onTap = opts.onBackToSelect -- 1456
+	}) -- 1456
+	backButton.root.position = Vec2(padX, cursor) -- 1458
+	root.visible = false -- 1460
+	retryButton:setEnabled(false) -- 1461
+	backButton:setEnabled(false) -- 1462
+	return { -- 1464
+		root = root, -- 1465
+		show = function(____, result, levelName, detail) -- 1466
+			retryButton:setEnabled(true) -- 1467
+			backButton:setEnabled(true) -- 1468
+			setLabelText(levelLabel, levelName) -- 1469
+			setLabelText( -- 1470
+				titleLabel, -- 1470
+				resultTitle(result) -- 1470
+			) -- 1470
+			setLabelColor( -- 1471
+				titleLabel, -- 1471
+				resultTitleColor(result) -- 1471
+			) -- 1471
+			if detail ~= nil then -- 1471
+				if detail.completionOnly == true then -- 1471
+					setLabelText( -- 1474
+						titleLabel, -- 1474
+						result == "success" and "引力借力完成" or resultTitle(result) -- 1474
+					) -- 1474
+				end -- 1474
+				local rCount = detail.rocketsGot -- 1475
+				local rStr = "☆  ☆  ☆" -- 1476
+				if rCount == 1 then -- 1476
+					rStr = "★  ☆  ☆" -- 1477
+				elseif rCount == 2 then -- 1477
+					rStr = "★  ★  ☆" -- 1478
+				elseif rCount >= 3 then -- 1478
+					rStr = "★  ★  ★" -- 1479
+				end -- 1479
+				setLabelText( -- 1480
+					rocketsLabel, -- 1480
+					detail.completionOnly == true and (result == "success" and "目标已完成" or "再试一次") or (detail.bonusPointCount ~= nil and (("火箭得分 " .. __TS__NumberToFixed(rCount, 0)) .. " / ") .. __TS__NumberToFixed(detail.bonusPointCount, 0) or rStr) -- 1480
+				) -- 1480
+				setLabelColor(rocketsLabel, rCount > 0 and 16762939 or 6322324) -- 1481
+				local pct = detail.dvBudget > 0 and math.floor(detail.burnDv / detail.dvBudget * 100) or 0 -- 1483
+				local telemText = ((((((("点火消耗 Δv: " .. __TS__NumberToFixed(detail.burnDv, 2)) .. " / ") .. __TS__NumberToFixed(detail.dvBudget, 2)) .. " (") .. __TS__NumberToFixed(pct, 0)) .. "%) · 用时: ") .. __TS__NumberToFixed(detail.flightTime, 1)) .. "s" -- 1484
+				setLabelText(telemetryLabel, telemText) -- 1485
+				do -- 1485
+					local k = 0 -- 1487
+					while k < 3 do -- 1487
+						if challengeLabels[k + 1] ~= nil then -- 1487
+							if k < #detail.challenges then -- 1487
+								local ok = detail.achieved[k + 1] -- 1490
+								local icon = ok and "★" or "☆" -- 1491
+								local rank = k == 0 and "一星" or (k == 1 and "二星" or "三星") -- 1492
+								local text = detail.completionOnly == true and (ok and "目标完成 · 记录已保存" or "尚未完成目标") or (((icon .. " [") .. rank) .. "] ") .. detail.challenges[k + 1] -- 1493
+								setLabelText(challengeLabels[k + 1], text) -- 1494
+								setLabelColor(challengeLabels[k + 1], ok and 16762939 or 6322324) -- 1495
+								challengeLabels[k + 1].visible = true -- 1496
+							else -- 1496
+								challengeLabels[k + 1].visible = false -- 1498
+							end -- 1498
+						end -- 1498
+						k = k + 1 -- 1487
+					end -- 1487
+				end -- 1487
+				setLabelText( -- 1503
+					totalLabel, -- 1503
+					((("全深空火箭勋章: " .. __TS__NumberToFixed(detail.totalRockets, 0)) .. " / ") .. __TS__NumberToFixed(detail.totalPossibleRockets, 0)) .. " ★" -- 1503
+				) -- 1503
+				if totalLabel ~= nil then -- 1503
+					totalLabel.visible = detail.completionOnly ~= true -- 1504
+				end -- 1504
+			else -- 1504
+				setLabelText(rocketsLabel, result == "success" and "★  ☆  ☆" or "☆  ☆  ☆") -- 1506
+				setLabelColor(rocketsLabel, result == "success" and 16762939 or 6322324) -- 1507
+				setLabelText( -- 1508
+					telemetryLabel, -- 1508
+					resultBody(result) -- 1508
+				) -- 1508
+				do -- 1508
+					local k = 0 -- 1509
+					while k < #challengeLabels do -- 1509
+						challengeLabels[k + 1].visible = false -- 1509
+						k = k + 1 -- 1509
+					end -- 1509
+				end -- 1509
+				if totalLabel ~= nil then -- 1509
+					totalLabel.visible = false -- 1510
+				end -- 1510
+			end -- 1510
+			root.visible = true -- 1512
+		end, -- 1466
+		hide = function() -- 1514
+			root.visible = false -- 1515
+			retryButton:setEnabled(false) -- 1516
+			backButton:setEnabled(false) -- 1517
+		end -- 1514
+	} -- 1514
+end -- 1357
+local FinaleBackdropHex = 329484 -- 1532
+local FinaleMainHex = 15398143 -- 1533
+local FinaleSubHex = 10470632 -- 1534
 --- 终章主文案（逐字；改之前先改 PLAN S3.18 与 docs/开发手册.md）。
-____exports.FinaleMainText = "这就是我们整颗星球的样子 —— 而你已经从那里飞到了这里。" -- 1515
+____exports.FinaleMainText = "这就是我们整颗星球的样子 —— 而你已经从那里飞到了这里。" -- 1539
 --- 终章小字：飞行距离 / 用时（纯函数，可单测）。
 -- 
 -- 距离是**平面单位**（关卡尺度，不是公里）—— 别在这里换算成天文单位，
 -- 那一换就得把整条注释重写一遍，而玩家要的只是「飞了多远、花了多久」。
-function ____exports.finaleSubtitle(distance, time) -- 1523
-	return ((("飞行 " .. __TS__NumberToFixed(distance, 0)) .. " 单位 · 用时 ") .. __TS__NumberToFixed(time, 1)) .. " 秒" -- 1524
-end -- 1523
+function ____exports.finaleSubtitle(distance, time) -- 1547
+	return ((("飞行 " .. __TS__NumberToFixed(distance, 0)) .. " 单位 · 用时 ") .. __TS__NumberToFixed(time, 1)) .. " 秒" -- 1548
+end -- 1547
 --- 建终章面板：半透明全屏底 + 主文案 + 小字 + 「返回关卡选择」。
 -- 
 -- ⚠️ 全屏底**不设** `touch: true`（与结算面板同一条规矩）：全屏 + swallowTouches
@@ -1467,57 +1517,57 @@ end -- 1523
 -- 
 -- @param viewW 视图逻辑宽（`View.size.width`）
 -- @param viewH 视图逻辑高
-function ____exports.createFinalePanel(parent, viewW, viewH, opts) -- 1554
-	local root = createPanel( -- 1560
-		parent, -- 1560
-		viewW, -- 1560
-		viewH, -- 1560
-		FinaleBackdropHex, -- 1560
-		{alpha = 0.55} -- 1560
-	) -- 1560
-	local fontMain = 34 -- 1562
-	local fontSub = 30 -- 1563
-	local btnFont = 40 -- 1564
-	local mainLabel = createLabel(root, ____exports.FinaleMainText, fontMain, FinaleMainHex) -- 1566
-	if mainLabel ~= nil then -- 1566
-		mainLabel.textWidth = viewW * 0.88 -- 1569
-		setLabelCenter(mainLabel, viewW / 2, viewH * 0.8) -- 1570
-	end -- 1570
-	local subLabel = createLabel(root, "", fontSub, FinaleSubHex) -- 1573
-	if subLabel ~= nil then -- 1573
-		setLabelCenter(subLabel, viewW / 2, viewH * 0.71) -- 1574
-	end -- 1574
-	local btnW = 72 -- 1576
-	local btnH = 72 -- 1577
-	local backButton = createButton(root, { -- 1578
-		w = btnW, -- 1579
-		h = btnH, -- 1580
-		text = "", -- 1581
-		icon = "back", -- 1581
-		fontSize = btnFont, -- 1582
-		bgHex = ResultButtonBgHex, -- 1583
-		fgHex = ResultButtonFgHex, -- 1584
-		borderHex = ResultButtonBorderHex, -- 1585
-		fireOn = "press", -- 1587
-		onTap = opts.onBackToSelect -- 1588
-	}) -- 1588
-	backButton.root.position = Vec2((viewW - btnW) / 2, 110) -- 1590
-	root.visible = false -- 1592
-	backButton:setEnabled(false) -- 1594
-	return { -- 1596
-		root = root, -- 1597
-		show = function(____, main, sub) -- 1598
-			setLabelText(mainLabel, main) -- 1599
-			setLabelText(subLabel, sub) -- 1600
-			backButton:setEnabled(true) -- 1601
-			root.visible = true -- 1602
-		end, -- 1598
-		hide = function() -- 1604
-			root.visible = false -- 1605
-			backButton:setEnabled(false) -- 1607
-		end -- 1604
-	} -- 1604
-end -- 1554
+function ____exports.createFinalePanel(parent, viewW, viewH, opts) -- 1578
+	local root = createPanel( -- 1584
+		parent, -- 1584
+		viewW, -- 1584
+		viewH, -- 1584
+		FinaleBackdropHex, -- 1584
+		{alpha = 0.55} -- 1584
+	) -- 1584
+	local fontMain = 34 -- 1586
+	local fontSub = 30 -- 1587
+	local btnFont = 40 -- 1588
+	local mainLabel = createLabel(root, ____exports.FinaleMainText, fontMain, FinaleMainHex) -- 1590
+	if mainLabel ~= nil then -- 1590
+		mainLabel.textWidth = viewW * 0.88 -- 1593
+		setLabelCenter(mainLabel, viewW / 2, viewH * 0.8) -- 1594
+	end -- 1594
+	local subLabel = createLabel(root, "", fontSub, FinaleSubHex) -- 1597
+	if subLabel ~= nil then -- 1597
+		setLabelCenter(subLabel, viewW / 2, viewH * 0.71) -- 1598
+	end -- 1598
+	local btnW = 72 -- 1600
+	local btnH = 72 -- 1601
+	local backButton = createButton(root, { -- 1602
+		w = btnW, -- 1603
+		h = btnH, -- 1604
+		text = "", -- 1605
+		icon = "back", -- 1605
+		fontSize = btnFont, -- 1606
+		bgHex = ResultButtonBgHex, -- 1607
+		fgHex = ResultButtonFgHex, -- 1608
+		borderHex = ResultButtonBorderHex, -- 1609
+		fireOn = "press", -- 1611
+		onTap = opts.onBackToSelect -- 1612
+	}) -- 1612
+	backButton.root.position = Vec2((viewW - btnW) / 2, 110) -- 1614
+	root.visible = false -- 1616
+	backButton:setEnabled(false) -- 1618
+	return { -- 1620
+		root = root, -- 1621
+		show = function(____, main, sub) -- 1622
+			setLabelText(mainLabel, main) -- 1623
+			setLabelText(subLabel, sub) -- 1624
+			backButton:setEnabled(true) -- 1625
+			root.visible = true -- 1626
+		end, -- 1622
+		hide = function() -- 1628
+			root.visible = false -- 1629
+			backButton:setEnabled(false) -- 1631
+		end -- 1628
+	} -- 1628
+end -- 1578
 --- 建关卡选择：标题 + 副标题 + 六关竖排按钮 + 底部提示。
 -- 
 -- 未解锁的按钮**整块不可点**（`setEnabled(false)` 会关掉 `touchEnabled`）——
@@ -1531,151 +1581,163 @@ end -- 1554
 -- 
 -- @param viewW 视图逻辑宽
 -- @param viewH 视图逻辑高
-function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 1646
-	local root = createPanel( -- 1652
-		parent, -- 1652
-		viewW, -- 1652
-		viewH, -- 1652
-		SelectBackdropHex, -- 1652
-		{alpha = 0.9} -- 1652
-	) -- 1652
-	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 1654
-	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 1655
-	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 1657
-	setLabelCenter( -- 1658
-		subtitleLabel, -- 1658
-		viewW / 2, -- 1658
-		viewH - clampNumber(viewH * 0.13, 110, 260) -- 1658
-	) -- 1658
-	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 1660
-	setLabelCenter( -- 1661
-		hintLabel, -- 1661
-		viewW / 2, -- 1661
-		clampNumber(viewH * 0.045, 36, 90) -- 1661
-	) -- 1661
-	local count = #opts.levels -- 1663
-	local cols = viewH > viewW and 2 or 1 -- 1666
-	local rows = math.max( -- 1667
-		1, -- 1667
-		math.ceil(count / cols) -- 1667
-	) -- 1667
-	local gap = 18 -- 1668
-	local headerH = clampNumber(viewH * 0.16, 120, 320) -- 1669
-	local footerH = clampNumber(viewH * 0.1, 80, 200) -- 1670
-	local availW = viewW * 0.84 -- 1671
-	local availH = viewH - headerH - footerH - gap * (rows - 1) -- 1672
-	local btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820) -- 1673
-	local btnH = clampNumber(rows > 0 and availH / rows or MinButtonHeight, MinButtonHeight, 190) -- 1674
-	local gridW = cols * btnW + gap * (cols - 1) -- 1675
-	local topY = viewH - headerH -- 1676
-	local buttons = {} -- 1678
-	do -- 1678
-		local i = 0 -- 1679
-		while i < count do -- 1679
-			local index = i -- 1681
-			local button = createButton( -- 1682
-				root, -- 1682
-				{ -- 1682
-					w = btnW, -- 1683
-					h = btnH, -- 1684
-					text = opts.levels[index + 1].name, -- 1685
-					fontSize = 38, -- 1686
-					bgHex = SelectLockedBgHex, -- 1687
-					fgHex = SelectLockedFgHex, -- 1688
-					borderHex = SelectBorderHex, -- 1689
-					fireOn = "press", -- 1691
-					onTap = function() return opts:onPick(index) end -- 1692
-				} -- 1692
-			) -- 1692
-			local col = index % cols -- 1694
-			local rowIndex = math.floor(index / cols) -- 1695
-			button.root.position = Vec2((viewW - gridW) / 2 + col * (btnW + gap), topY - (rowIndex + 1) * btnH - rowIndex * gap) -- 1696
-			buttons[#buttons + 1] = button -- 1700
-			i = i + 1 -- 1679
-		end -- 1679
-	end -- 1679
-	local replayButton = opts.onReplayIntro ~= nil and createButton( -- 1706
-		root, -- 1707
-		{ -- 1707
-			w = 144, -- 1708
-			h = MinButtonHeight, -- 1709
-			text = "重看开场", -- 1710
-			fontSize = 30, -- 1711
-			bgHex = SelectLockedBgHex, -- 1712
-			fgHex = SelectSubtitleHex, -- 1713
-			borderHex = SelectBorderHex, -- 1714
-			fireOn = "press", -- 1715
-			onTap = function() -- 1716
-				if opts.onReplayIntro ~= nil then -- 1716
-					opts:onReplayIntro() -- 1717
-				end -- 1717
-			end -- 1716
-		} -- 1716
-	) or nil -- 1716
-	if replayButton ~= nil then -- 1716
-		local gridBottom = topY - rows * btnH - (rows - 1) * gap -- 1722
-		local by = clampNumber(gridBottom - MinButtonHeight - 20, 8, viewH) -- 1723
-		replayButton.root.position = Vec2( -- 1724
-			(viewW - clampNumber(viewW * 0.36, 180, 300)) / 2, -- 1724
-			by -- 1724
-		) -- 1724
-	end -- 1724
-	root.visible = false -- 1727
-	do -- 1727
-		local i = 0 -- 1728
-		while i < count do -- 1728
-			buttons[i + 1]:setEnabled(false) -- 1728
-			i = i + 1 -- 1728
-		end -- 1728
-	end -- 1728
-	if replayButton ~= nil then -- 1728
-		replayButton:setEnabled(false) -- 1729
-	end -- 1729
-	return { -- 1731
-		root = root, -- 1732
-		show = function(____, unlocked) -- 1733
-			local maxUnlocked = clampNumber( -- 1734
-				math.floor(unlocked), -- 1734
-				0, -- 1734
-				count - 1 -- 1734
-			) -- 1734
-			setLabelText( -- 1735
-				subtitleLabel, -- 1735
-				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 1735
-			) -- 1735
-			do -- 1735
-				local i = 0 -- 1736
-				while i < count do -- 1736
-					local button = buttons[i + 1] -- 1737
-					local open = i <= maxUnlocked -- 1738
-					button:setEnabled(open) -- 1739
-					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 1740
-					if open then -- 1740
-						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 1741
-					else -- 1741
-						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 1742
-					end -- 1742
-					i = i + 1 -- 1736
-				end -- 1736
-			end -- 1736
-			root.visible = true -- 1744
-			if replayButton ~= nil then -- 1744
-				replayButton:setEnabled(true) -- 1745
-			end -- 1745
-		end, -- 1733
-		hide = function() -- 1747
-			root.visible = false -- 1748
-			do -- 1748
-				local i = 0 -- 1750
-				while i < count do -- 1750
-					buttons[i + 1]:setEnabled(false) -- 1750
-					i = i + 1 -- 1750
-				end -- 1750
-			end -- 1750
-			if replayButton ~= nil then -- 1750
-				replayButton:setEnabled(false) -- 1751
-			end -- 1751
-		end -- 1747
-	} -- 1747
-end -- 1646
-return ____exports -- 1646
+function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 1670
+	local root = createPanel( -- 1676
+		parent, -- 1676
+		viewW, -- 1676
+		viewH, -- 1676
+		SelectBackdropHex, -- 1676
+		{alpha = 0.9} -- 1676
+	) -- 1676
+	local titleLabel = createLabel(root, "选择任务", 60, SelectTitleHex) -- 1678
+	setLabelCenter(titleLabel, viewW / 2, viewH - 96) -- 1679
+	local subtitleLabel = createLabel(root, "", 34, SelectSubtitleHex) -- 1681
+	setLabelCenter( -- 1682
+		subtitleLabel, -- 1682
+		viewW / 2, -- 1682
+		viewH - clampNumber(viewH * 0.13, 110, 260) -- 1682
+	) -- 1682
+	local hintLabel = createLabel(root, "完成一关即解锁下一关", 30, SelectHintHex) -- 1684
+	setLabelCenter( -- 1685
+		hintLabel, -- 1685
+		viewW / 2, -- 1685
+		clampNumber(viewH * 0.045, 36, 90) -- 1685
+	) -- 1685
+	local count = #opts.levels -- 1687
+	local cols = viewH > viewW and 2 or 1 -- 1690
+	local rows = math.max( -- 1691
+		1, -- 1691
+		math.ceil(count / cols) -- 1691
+	) -- 1691
+	local gap = 18 -- 1692
+	local headerH = clampNumber(viewH * 0.16, 120, 320) -- 1693
+	local footerH = clampNumber(viewH * 0.1, 80, 200) -- 1694
+	local availW = viewW * 0.84 -- 1695
+	local availH = viewH - headerH - footerH - gap * (rows - 1) -- 1696
+	local btnW = math.max(1, (availW - gap * (cols - 1)) / cols) -- 1697
+	local btnH = clampNumber( -- 1698
+		rows > 0 and availH / rows or MinButtonHeight, -- 1698
+		math.min( -- 1698
+			MinButtonHeight, -- 1698
+			math.max(48, availH / rows) -- 1698
+		), -- 1698
+		190 -- 1698
+	) -- 1698
+	local gridW = cols * btnW + gap * (cols - 1) -- 1699
+	local topY = viewH - headerH -- 1700
+	local buttons = {} -- 1702
+	do -- 1702
+		local i = 0 -- 1703
+		while i < count do -- 1703
+			local index = i -- 1705
+			local button = createButton( -- 1706
+				root, -- 1706
+				{ -- 1706
+					w = btnW, -- 1707
+					h = btnH, -- 1708
+					text = opts.levels[index + 1].name, -- 1709
+					fontSize = 38, -- 1710
+					bgHex = SelectLockedBgHex, -- 1711
+					fgHex = SelectLockedFgHex, -- 1712
+					borderHex = SelectBorderHex, -- 1713
+					fireOn = "press", -- 1715
+					onTap = function() return opts:onPick(index) end -- 1716
+				} -- 1716
+			) -- 1716
+			local col = index % cols -- 1718
+			local rowIndex = math.floor(index / cols) -- 1719
+			button.root.position = Vec2((viewW - gridW) / 2 + col * (btnW + gap), topY - (rowIndex + 1) * btnH - rowIndex * gap) -- 1720
+			buttons[#buttons + 1] = button -- 1724
+			i = i + 1 -- 1703
+		end -- 1703
+	end -- 1703
+	local replayW = math.min( -- 1730
+		144, -- 1730
+		math.max(120, viewW - 24) -- 1730
+	) -- 1730
+	local replayButton = opts.onReplayIntro ~= nil and createButton( -- 1731
+		root, -- 1732
+		{ -- 1732
+			w = replayW, -- 1733
+			h = MinButtonHeight, -- 1734
+			text = "重看开场", -- 1735
+			fontSize = 30, -- 1736
+			bgHex = SelectLockedBgHex, -- 1737
+			fgHex = SelectSubtitleHex, -- 1738
+			borderHex = SelectBorderHex, -- 1739
+			fireOn = "press", -- 1740
+			onTap = function() -- 1741
+				if opts.onReplayIntro ~= nil then -- 1741
+					opts:onReplayIntro() -- 1742
+				end -- 1742
+			end -- 1741
+		} -- 1741
+	) or nil -- 1741
+	if replayButton ~= nil then -- 1741
+		local gridBottom = topY - rows * btnH - (rows - 1) * gap -- 1747
+		local by = clampNumber( -- 1748
+			gridBottom - MinButtonHeight - 20, -- 1748
+			8, -- 1748
+			math.max(8, viewH - MinButtonHeight - 8) -- 1748
+		) -- 1748
+		replayButton.root.position = Vec2((viewW - replayW) / 2, by) -- 1749
+	end -- 1749
+	root.visible = false -- 1752
+	do -- 1752
+		local i = 0 -- 1753
+		while i < count do -- 1753
+			buttons[i + 1]:setEnabled(false) -- 1753
+			i = i + 1 -- 1753
+		end -- 1753
+	end -- 1753
+	if replayButton ~= nil then -- 1753
+		replayButton:setEnabled(false) -- 1754
+	end -- 1754
+	return { -- 1756
+		root = root, -- 1757
+		show = function(____, unlocked) -- 1758
+			local maxUnlocked = clampNumber( -- 1759
+				math.floor(unlocked), -- 1759
+				0, -- 1759
+				count - 1 -- 1759
+			) -- 1759
+			setLabelText( -- 1760
+				subtitleLabel, -- 1760
+				(("已解锁 " .. __TS__NumberToFixed(maxUnlocked + 1, 0)) .. " / ") .. __TS__NumberToFixed(count, 0) -- 1760
+			) -- 1760
+			do -- 1760
+				local i = 0 -- 1761
+				while i < count do -- 1761
+					local button = buttons[i + 1] -- 1762
+					local open = i <= maxUnlocked -- 1763
+					button:setEnabled(open) -- 1764
+					button:setText(open and opts.levels[i + 1].name or opts.levels[i + 1].name .. " 未解锁") -- 1765
+					if open then -- 1765
+						button:setColors(SelectOpenBgHex, SelectOpenFgHex) -- 1766
+					else -- 1766
+						button:setColors(SelectLockedBgHex, SelectLockedFgHex) -- 1767
+					end -- 1767
+					i = i + 1 -- 1761
+				end -- 1761
+			end -- 1761
+			root.visible = true -- 1769
+			if replayButton ~= nil then -- 1769
+				replayButton:setEnabled(true) -- 1770
+			end -- 1770
+		end, -- 1758
+		hide = function() -- 1772
+			root.visible = false -- 1773
+			do -- 1773
+				local i = 0 -- 1775
+				while i < count do -- 1775
+					buttons[i + 1]:setEnabled(false) -- 1775
+					i = i + 1 -- 1775
+				end -- 1775
+			end -- 1775
+			if replayButton ~= nil then -- 1775
+				replayButton:setEnabled(false) -- 1776
+			end -- 1776
+		end -- 1772
+	} -- 1772
+end -- 1670
+return ____exports -- 1670

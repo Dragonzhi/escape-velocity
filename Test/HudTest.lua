@@ -11,6 +11,7 @@ local screenToPlane = ____Hud.screenToPlane -- 8
 local defaultMaxDragPx = ____Hud.defaultMaxDragPx -- 8
 local localToOffset = ____Hud.localToOffset -- 8
 local offsetToLocal = ____Hud.offsetToLocal -- 8
+local resultPanelLayout = ____Hud.resultPanelLayout -- 8
 local ____Projection = require("game.Projection") -- 9
 local HANDEDNESS = ____Projection.HANDEDNESS -- 9
 local FLIP_Y = ____Projection.FLIP_Y -- 9
@@ -195,23 +196,57 @@ local function testSpaceConversion() -- 128
 	end -- 147
 	check("space-roundtrip", allExact, "localToOffset / offsetToLocal 不互逆") -- 149
 end -- 128
-function ____exports.runTests() -- 152
-	testNoDrag() -- 153
-	testDirection() -- 154
-	testPower() -- 155
-	testRoundTrip() -- 156
-	testSpaceConversion() -- 157
-	local lines = {} -- 159
-	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 160
-	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 161
-	local limit = #failures < 12 and #failures or 12 -- 162
-	do -- 162
-		local i = 0 -- 163
-		while i < limit do -- 163
-			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 164
-			i = i + 1 -- 163
-		end -- 163
-	end -- 163
-	return table.concat(lines, "\n") -- 166
-end -- 152
-return ____exports -- 152
+--- 6) 结算卡与操作按钮始终落在竖屏视口内。
+local function testResultPanelLayout() -- 153
+	for ____, size in ipairs({ -- 154
+		{w = 280, h = 400}, -- 154
+		{w = 320, h = 568}, -- 154
+		{w = 360, h = 640}, -- 154
+		{w = 390, h = 844}, -- 154
+		{w = 430, h = 932} -- 154
+	}) do -- 154
+		local layout = resultPanelLayout(size.w, size.h) -- 155
+		check( -- 156
+			"result-card-inside-" .. tostring(size.w), -- 156
+			layout.cardX >= 0 and layout.cardX + layout.cardW <= size.w, -- 156
+			(((("x=" .. tostring(layout.cardX)) .. " w=") .. tostring(layout.cardW)) .. " view=") .. tostring(size.w) -- 156
+		) -- 156
+		check( -- 157
+			"result-card-height-" .. tostring(size.h), -- 157
+			layout.cardY >= 0 and layout.cardY + layout.cardH <= size.h, -- 157
+			(((("y=" .. tostring(layout.cardY)) .. " h=") .. tostring(layout.cardH)) .. " view=") .. tostring(size.h) -- 157
+		) -- 157
+		local buttonX = layout.cardX + (layout.cardW - layout.buttonW) / 2 -- 158
+		check( -- 159
+			"result-buttons-inside-" .. tostring(size.w), -- 159
+			buttonX >= 0 and buttonX + layout.buttonW <= size.w, -- 159
+			(((("x=" .. tostring(buttonX)) .. " w=") .. tostring(layout.buttonW)) .. " view=") .. tostring(size.w) -- 159
+		) -- 159
+		check( -- 160
+			"result-button-target-" .. tostring(size.h), -- 160
+			layout.buttonH >= 48, -- 160
+			"buttonH=" .. tostring(layout.buttonH) -- 160
+		) -- 160
+	end -- 160
+end -- 153
+function ____exports.runTests() -- 164
+	testNoDrag() -- 165
+	testDirection() -- 166
+	testPower() -- 167
+	testRoundTrip() -- 168
+	testSpaceConversion() -- 169
+	testResultPanelLayout() -- 170
+	local lines = {} -- 172
+	lines[#lines + 1] = #failures == 0 and "passed" or "failed" -- 173
+	lines[#lines + 1] = (("checks=" .. tostring(checks)) .. " failures=") .. tostring(#failures) -- 174
+	local limit = #failures < 12 and #failures or 12 -- 175
+	do -- 175
+		local i = 0 -- 176
+		while i < limit do -- 176
+			lines[#lines + 1] = (("FAIL " .. failures[i + 1].name) .. ": ") .. failures[i + 1].detail -- 177
+			i = i + 1 -- 176
+		end -- 176
+	end -- 176
+	return table.concat(lines, "\n") -- 179
+end -- 164
+return ____exports -- 164

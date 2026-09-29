@@ -39,7 +39,7 @@ import {
 import { ResultKind } from 'game/Game';
 // 只作类型用（TSTL 会省掉这条 require）：视图模式的唯一事实来源在 GameCore 里
 import { PlanViewMode } from 'game/PlanView';
-import { ButtonOptions, MinButtonHeight, MinButtonWidth, UiButton, createButton, createLabel, createPanel, setLabelCenter, setLabelColor, setLabelText } from 'game/Ui';
+import { ButtonOptions, MinButtonHeight, UiButton, createButton, createLabel, createPanel, setLabelCenter, setLabelColor, setLabelText } from 'game/Ui';
 import { CameraFocusMode, TransferShot } from 'game/Transfer';
 
 /** 投影偏移空间中的屏幕点。 */
@@ -879,7 +879,7 @@ export function createAimInput(
 	};
 
 	// ---- 顶部常驻三火箭任务抽屉（S8.4）----
-	const DrawerW = 380;
+	const DrawerW = Math.max(1, Math.min(380, viewW - 24));
 	const DrawerH = 46;
 	const missionDrawerPlate = createPanel(root, DrawerW, DrawerH, 0x0a0e14, { alpha: 0.65, borderHex: 0x46586d });
 	missionDrawerPlate.position = Vec2(transferTutorial ? 24 : (viewW - DrawerW) / 2, viewH - 56);
@@ -1314,6 +1314,34 @@ export interface ResultPanel {
 	hide: () => void;
 }
 
+export interface ResultPanelLayout {
+	cardX: number;
+	cardY: number;
+	cardW: number;
+	cardH: number;
+	buttonW: number;
+	buttonH: number;
+	contentScale: number;
+}
+
+/** 结算卡按可用视口收缩，避免窄屏/短屏时卡片与按钮超出画布。 */
+export function resultPanelLayout(viewW: number, viewH: number): ResultPanelLayout {
+	const cardW = Math.max(1, Math.min(viewW - 24, clampNumber(viewW * 0.9, 280, 560)));
+	const buttonW = Math.min(144, Math.max(120, cardW - 24));
+	const buttonH = Math.min(72, Math.max(48, Math.floor(viewH * 0.12)));
+	const contentScale = Math.min(1, Math.max(0.2, (viewH - 24 - buttonH * 2) / 396));
+	const cardH = Math.ceil(396 * contentScale + buttonH * 2);
+	return {
+		cardX: (viewW - cardW) / 2,
+		cardY: (viewH - cardH) / 2,
+		cardW,
+		cardH,
+		buttonW,
+		buttonH,
+		contentScale,
+	};
+}
+
 /**
  * 建结算面板：半透明全屏底 + 居中工业级卡片 + 三枚火箭挑战清单 + 遥测数据 + 2 个按钮。
  *
@@ -1333,48 +1361,42 @@ export function createResultPanel(
 	opts: ResultPanelOptions,
 ): ResultPanel {
 	const root = createPanel(parent, viewW, viewH, ResultBackdropHex, { alpha: 0.78 });
-
-	const cardW = clampNumber(viewW * 0.90, 360, 560);
-	const btnW = 72;
-	let btnH = 72;
+	const layout = resultPanelLayout(viewW, viewH);
+	const { cardW, cardH, buttonW: btnW, buttonH: btnH, contentScale } = layout;
 	const padX = (cardW - btnW) / 2;
-	const padY = 28;
+	const padY = 28 * contentScale;
+	const scaled = (value: number): number => Math.max(1, Math.round(value * contentScale));
 
-	const fontLevel = 24;
-	const fontRockets = 38;
-	const fontTitle = 30;
-	const fontTelemetry = 19;
-	const fontChallenge = 18;
-	const fontTotal = 20;
-	const btnFont = 24;
-	const rowGap = 12;
+	const fontLevel = scaled(24);
+	const fontRockets = scaled(38);
+	const fontTitle = scaled(30);
+	const fontTelemetry = scaled(19);
+	const fontChallenge = scaled(18);
+	const fontTotal = scaled(20);
+	const btnFont = scaled(20);
+	const rowGap = 12 * contentScale;
 
-	const hLevel = 28;
-	const hRockets = 42;
-	const hTitle = 34;
-	const hTelemetry = 24;
-	const hChallengeRow = 30;
+	const hLevel = scaled(28);
+	const hRockets = scaled(42);
+	const hTitle = scaled(34);
+	const hTelemetry = scaled(24);
+	const hChallengeRow = scaled(30);
 	const hChallenges = hChallengeRow * 3;
-	const hTotal = 24;
-
-	let cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7;
-	if (cardH > viewH - 24) {
-		btnH = Math.max(MinButtonHeight, btnH - (cardH - (viewH - 24)) / 2);
-		cardH = padY * 2 + hLevel + hRockets + hTitle + hTelemetry + hChallenges + hTotal + btnH * 2 + 14 + rowGap * 7;
-	}
+	const hTotal = scaled(24);
 
 	const card = createPanel(root, cardW, cardH, ResultCardHex, {
 		alpha: 0.97,
 		borderHex: ResultCardBorderHex,
 		borderWidth: 3,
 	});
-	card.position = Vec2((viewW - cardW) / 2, (viewH - cardH) / 2);
+	card.position = Vec2(layout.cardX, layout.cardY);
 
 	// 垂直排版：从顶部往下累减
 	let cursor = cardH - padY;
 
 	cursor -= hLevel;
 	const levelLabel = createLabel(card, '', fontLevel, ResultLevelHex);
+	if (levelLabel !== undefined) levelLabel.textWidth = cardW - 24;
 	setLabelCenter(levelLabel, cardW / 2, cursor + hLevel / 2);
 
 	cursor -= rowGap + hRockets;
@@ -1387,6 +1409,7 @@ export function createResultPanel(
 
 	cursor -= rowGap + hTelemetry;
 	const telemetryLabel = createLabel(card, '', fontTelemetry, ResultHintHex);
+	if (telemetryLabel !== undefined) telemetryLabel.textWidth = cardW - 32;
 	setLabelCenter(telemetryLabel, cardW / 2, cursor + hTelemetry / 2);
 
 	cursor -= rowGap;
@@ -1403,13 +1426,14 @@ export function createResultPanel(
 
 	cursor -= rowGap + hTotal;
 	const totalLabel = createLabel(card, '', fontTotal, 0xffd479);
+	if (totalLabel !== undefined) totalLabel.textWidth = cardW - 24;
 	setLabelCenter(totalLabel, cardW / 2, cursor + hTotal / 2);
 
 	cursor -= rowGap + btnH;
 	const retryButton = createButton(card, {
 		w: btnW,
 		h: btnH,
-		text: '', icon: 'retry',
+		text: '重试', icon: 'retry',
 		fontSize: btnFont,
 		bgHex: ResultButtonBgHex,
 		fgHex: ResultButtonFgHex,
@@ -1423,7 +1447,7 @@ export function createResultPanel(
 	const backButton = createButton(card, {
 		w: btnW,
 		h: btnH,
-		text: '', icon: 'back',
+		text: '选关', icon: 'back',
 		fontSize: btnFont,
 		bgHex: ResultButtonAltBgHex,
 		fgHex: ResultButtonFgHex,
@@ -1670,8 +1694,8 @@ export function createLevelSelect(
 	const footerH = clampNumber(viewH * 0.10, 80, 200);
 	const availW = viewW * 0.84;
 	const availH = viewH - headerH - footerH - gap * (rows - 1);
-	const btnW = clampNumber((availW - gap * (cols - 1)) / cols, MinButtonWidth, 820);
-	const btnH = clampNumber(rows > 0 ? availH / rows : MinButtonHeight, MinButtonHeight, 190);
+	const btnW = Math.max(1, (availW - gap * (cols - 1)) / cols);
+	const btnH = clampNumber(rows > 0 ? availH / rows : MinButtonHeight, Math.min(MinButtonHeight, Math.max(48, availH / rows)), 190);
 	const gridW = cols * btnW + gap * (cols - 1);
 	const topY = viewH - headerH;
 
@@ -1703,9 +1727,10 @@ export function createLevelSelect(
 	// ---- 「重看开场」（S3.3）----
 	// 开场只在**首次启动**播（存档标记）；想再看一遍又不方便删标记文件，就在这里给个入口。
 	// 位置：网格下沿与页脚提示之间的空档（竖屏 601×1066 实测有 180 px 余量），网格算完才定得下来。
+	const replayW = Math.min(144, Math.max(120, viewW - 24));
 	const replayButton = opts.onReplayIntro !== undefined
 		? createButton(root, {
-			w: 144,
+			w: replayW,
 			h: MinButtonHeight,
 			text: '重看开场',
 			fontSize: 30,
@@ -1720,8 +1745,8 @@ export function createLevelSelect(
 		: undefined;
 	if (replayButton !== undefined) {
 		const gridBottom = topY - rows * btnH - (rows - 1) * gap;
-		const by = clampNumber(gridBottom - MinButtonHeight - 20, 8, viewH);
-		replayButton.root.position = Vec2((viewW - clampNumber(viewW * 0.36, 180, 300)) / 2, by);
+		const by = clampNumber(gridBottom - MinButtonHeight - 20, 8, Math.max(8, viewH - MinButtonHeight - 8));
+		replayButton.root.position = Vec2((viewW - replayW) / 2, by);
 	}
 
 	root.visible = false;

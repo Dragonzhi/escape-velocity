@@ -444,14 +444,12 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	const dockNode = Node();
 	dockNode.size = Size(viewW, 64);
 	dockNode.anchor = Vec2(0, 0);
-	dockNode.position = Vec2(0, 76);
 	ui.addChild(dockNode);
 
 	const dockButtons: UiButton[] = [];
 	const dockBtnW = 144;
 	const dockBtnH = 72;
 	const dockTotalW = dockBtnW * LEVEL_TO_STATION_INDEX.length + 8 * (LEVEL_TO_STATION_INDEX.length - 1);
-	const dockStartX = (viewW - dockTotalW) / 2;
 
 	for (let i = 0; i < LEVEL_TO_STATION_INDEX.length; i++) {
 		const lvIndex = i;
@@ -469,12 +467,18 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 				focusMission(lvIndex);
 			},
 		});
-		btn.root.position = Vec2(dockStartX + lvIndex * (dockBtnW + 8), 0);
+		btn.root.position = Vec2(lvIndex * (dockBtnW + 8), 0);
 		dockButtons.push(btn);
 	}
+	const layoutDock = (): void => {
+		const scaleX = Math.min(1, Math.max(0.35, (viewW - 24) / dockTotalW));
+		dockNode.scaleX = scaleX;
+		dockNode.position = Vec2((viewW - dockTotalW * scaleX) / 2, 76);
+	};
+	layoutDock();
 
 	// ---- 任务简报抽屉卡 (Mission Briefing Card) ----
-	const cardW = clampNumber(viewW * 0.92, 340, 540);
+	const cardW = Math.max(1, Math.min(viewW - 24, clampNumber(viewW * 0.92, 280, 540)));
 	const cardH = clampNumber(viewH * 0.44, 380, 500);
 
 	const briefCard = createPanel(ui, cardW, cardH, CardBgHex, {
@@ -483,7 +487,13 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 		borderWidth: 2,
 	});
 	briefCard.anchor = Vec2(0, 0);
-	briefCard.position = Vec2((viewW - cardW) / 2, 40);
+	const layoutBriefCard = (): void => {
+		const scale = Math.max(0.35, Math.min(1, (viewW - 24) / cardW, (viewH - 80) / cardH));
+		briefCard.scaleX = scale;
+		briefCard.scaleY = scale;
+		briefCard.position = Vec2((viewW - cardW * scale) / 2, 40);
+	};
+	layoutBriefCard();
 	briefCard.visible = false;
 
 	const bTitleLabel = createLabel(briefCard, '', 22, 0xffffff);
@@ -509,8 +519,9 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 
 	// 按钮组
 	const btnRowY = 22;
-	const backBtnW = 72;
-	const launchBtnW = 144;
+	const actionW = Math.max(1, cardW - 40);
+	const backBtnW = Math.min(72, actionW * 0.32);
+	const launchBtnW = Math.min(144, Math.max(1, actionW - backBtnW - 8));
 	const btnH = 72;
 
 	const backBtn = createButton(briefCard, {
@@ -829,8 +840,8 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 			if (replayIntroBtn !== undefined) {
 				replayIntroBtn.root.position = Vec2(viewW - 160, 44);
 			}
-			dockNode.position = Vec2(0, 76);
-			briefCard.position = Vec2((viewW - cardW) / 2, 40);
+			layoutDock();
+			layoutBriefCard();
 		},
 
 		visible: (): boolean => isVisible,
