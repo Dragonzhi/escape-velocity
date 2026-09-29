@@ -13,8 +13,8 @@
 
 项目发布于 AtomGit，并在 [GitHub](https://github.com/Dragonzhi/escape-velocity) 保留同步镜像；当前仓库配置的 Git 远端为 GitHub。
 
-**发布与展示平台：[原子派](https://atompie.osgame.org/)<br>
-**活动页面：[社区小游戏征集活动](https://atompie.osgame.org/events/minigame-2026?view=rules)**
+**发布与展示平台：[原子派](https://atompie.osgame.org/)**  
+**活动页面：[社区小游戏征集活动](https://atompie.osgame.org/events/minigame-2026)**
 
 ## 游戏介绍
 
@@ -92,7 +92,7 @@ You should have received a copy of the GNU Affero General Public License along w
 
 ---
 
-使用 Dora SSR 创作 · 在原子派分享<br>
+使用 Dora SSR 创作 · 在原子派分享
 [Dora SSR](https://dora-ssr.net/) · [原子派](https://atompie.osgame.org/)
 
 原子派为活动及展示平台；上述平台署名不改变作品实际作者及著作权归属。
