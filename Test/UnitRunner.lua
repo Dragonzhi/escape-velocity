@@ -84,6 +84,7 @@ local modules = {
   "Test.HudTest",
   "Test.TrajectoryTest",
   "Test.CameraRigTest",
+  "Test.ObserveCameraTest",
   "Test.ProgressTest",
   "Test.OpeningTest",
   "Test.PlanViewTest",

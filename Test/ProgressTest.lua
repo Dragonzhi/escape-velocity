@@ -155,7 +155,7 @@ local function testPersistence() -- 77
 	local before = loadProgress(levelCountForSave) -- 81
 	saveProgress({unlocked = 3}) -- 84
 	local raw = Content:exist(file) and Content:load(file) or "" -- 85
-	check("save-format", raw == "unlocked=3", ("文件内容应为单行 unlocked=3，实际 \"" .. raw) .. "\"") -- 86
+	check("save-format", raw == "unlocked=3\nversion=2", ("文件内容应含解锁记录和版本2，实际 \"" .. raw) .. "\"") -- 86
 	check( -- 87
 		"load-roundtrip", -- 87
 		loadProgress(levelCountForSave).unlocked == 3, -- 87

@@ -39,7 +39,7 @@ import {
 import { ResultKind } from 'game/Game';
 // 只作类型用（TSTL 会省掉这条 require）：视图模式的唯一事实来源在 GameCore 里
 import { PlanViewMode } from 'game/PlanView';
-import { MinButtonHeight, MinButtonWidth, UiButton, createButton, createLabel, createPanel, setLabelCenter, setLabelColor, setLabelText } from 'game/Ui';
+import { ButtonOptions, MinButtonHeight, MinButtonWidth, UiButton, createButton, createLabel, createPanel, setLabelCenter, setLabelColor, setLabelText } from 'game/Ui';
 import { CameraFocusMode, TransferShot } from 'game/Transfer';
 
 /** 投影偏移空间中的屏幕点。 */
@@ -187,6 +187,8 @@ export function offsetToLocal(offset: ScreenOffset, space: TouchSpace): ScreenOf
  * （self-parameter 教程 §3）。
  */
 export interface AimInput {
+	/** Flight observation is separate from planning; false disables all gestures. */
+	setObserveEnabled: (value: boolean) => void;
 	setTransferInfo?: (apoapsis: number, duration: number, reachable?: boolean) => void;
 	onCameraFocus?: (callback: () => void) => void;
 	onEndViewing?: (callback: () => void) => void;
@@ -363,6 +365,12 @@ export function createAimInput(
 	// 正好等于整屏 [0,W]×[0,H]，且 touch.location 与 localToOffset 的假设一致。
 	root.anchor = Vec2(0, 0);
 	root.position = Vec2(0, 0);
+	const controls: UiButton[] = [];
+	const makeHudButton = (parent: Node.Type, opts: ButtonOptions): UiButton => {
+		const button = createButton(parent, opts);
+		controls.push(button);
+		return button;
+	};
 
 	// 一个不可见的全屏层，只用来接收触摸。
 	const touchLayer = Node();
@@ -382,6 +390,7 @@ export function createAimInput(
 	const TimeRowY = 170;
 
 	let enabled = false;
+	let observing = false;
 	let dragging = false;
 	/** 整屏瞄准（2D 模式）；由 Game 按视图状态同步。 */
 	let fullScreenAim = false;
@@ -427,11 +436,19 @@ export function createAimInput(
 		const right = 24 + (TimeBtnW + 8) * 2 + TimeBtnW + 8;
 		return local.x >= left && local.x <= right && local.y >= TimeRowY - 8 && local.y <= TimeRowY + TimeBtnH + 8;
 	};
+	const hitsHudControls = (local: ScreenOffset): boolean => {
+		for (const b of controls) {
+			const n = b.root;
+			if (!n.visible) continue;
+			if (local.x >= n.position.x - 4 && local.x <= n.position.x + n.width + 4 && local.y >= n.position.y - 4 && local.y <= n.position.y + n.height + 4) return true;
+		}
+		return false;
+	};
 	touchLayer.onTapBegan((touch) => {
 		if (!enabled) return;
 		// Defense in depth: even if touch dispatch order changes, a tap over the
 		// time-control strip must never start aiming or camera observation.
-		if (hitsTimeControls({ x: touch.location.x, y: touch.location.y })) {
+		if (hitsTimeControls({ x: touch.location.x, y: touch.location.y }) || hitsHudControls({ x: touch.location.x, y: touch.location.y })) {
 			mode = 'none';
 			dragging = false;
 			return;
@@ -443,7 +460,7 @@ export function createAimInput(
 		const at = localToOffset({ x: touch.location.x, y: touch.location.y }, space);
 		const dx = at.x - probeOffset.x;
 		const dy = at.y - probeOffset.y;
-		if (fullScreenAim || Math.sqrt(dx * dx + dy * dy) <= aimRadius) {
+		if (!observing && (fullScreenAim || Math.sqrt(dx * dx + dy * dy) <= aimRadius)) {
 			mode = 'aim';
 			dragging = true;
 			pressOffset = at;
@@ -482,7 +499,11 @@ export function createAimInput(
 	// 捏合缩放：引擎自带的多点手势（d.ts: onGesture(center, numFingers, deltaDist, deltaAngle)）
 	touchLayer.onGesture((_center: Vec2.Type, numFingers: number, deltaDist: number, _deltaAngle: number): void => {
 		if (!enabled || numFingers < 2) return;
+		if (mode === 'aim') return;
 		if (zoomHandler !== undefined) zoomHandler(deltaDist);
+	});
+	touchLayer.onMouseWheel((delta: Vec2.Type): void => {
+		if (enabled && observing && zoomHandler !== undefined) zoomHandler(delta.y * 60);
 	});
 
 	// ⚠️ 必须在**注册完触摸回调之后**再关掉触摸：onTapBegan/onTapMoved/onTapEnded
@@ -547,7 +568,7 @@ export function createAimInput(
 		datePlate.visible = vis;
 	};
 	const makeWarpButton = (text: string, dir: number, x: number): void => {
-		const btn = createButton(root, {
+		const btn = makeHudButton(root, {
 			w: WarpButtonW,
 			h: WarpButtonH,
 			text,
@@ -599,7 +620,7 @@ export function createAimInput(
 	const QuickRetryW = 110;
 	const QuickRetryH = 50;
 	let quickRetryHandler: (() => void) | undefined = undefined;
-	const quickRetryBtn = createButton(root, {
+	const quickRetryBtn = makeHudButton(root, {
 		w: QuickRetryW,
 		h: QuickRetryH,
 		text: '↺ 重试',
@@ -648,7 +669,7 @@ export function createAimInput(
 	// 命中区 220×112，`fireOn: 'press'` 按下即发射
 	const LaunchButtonW = 220;
 	const LaunchButtonH = 112;
-	const launchButton = createButton(root, {
+	const launchButton = makeHudButton(root, {
 		w: LaunchButtonW,
 		h: LaunchButtonH,
 		text: '▲ 发射 ▲',
@@ -670,7 +691,7 @@ export function createAimInput(
 	const CancelButtonW = 160;
 	const CancelButtonH = 72;
 	let cancelAimHandler: (() => void) | undefined = undefined;
-	const cancelAimButton = createButton(root, {
+	const cancelAimButton = makeHudButton(root, {
 		w: CancelButtonW,
 		h: CancelButtonH,
 		text: '✕ 取消',
@@ -693,7 +714,7 @@ export function createAimInput(
 	const ViewButtonW = 116;
 	const ViewButtonH = 64;
 	let viewHandler: (() => void) | undefined = undefined;
-	const viewButton = createButton(root, {
+	const viewButton = makeHudButton(root, {
 		w: ViewButtonW,
 		h: ViewButtonH,
 		text: '[ 3D ]',
@@ -714,12 +735,12 @@ export function createAimInput(
 	// L1：小状态提示不打断掠月；完成后才开放结束观赏。
 	let cameraFocusHandler: (() => void) | undefined = undefined;
 	let endViewingHandler: (() => void) | undefined = undefined;
-	const cameraFocusButton = transferTutorial ? createButton(root, {
+	const cameraFocusButton = transferTutorial ? makeHudButton(root, {
 		w: 260, h: 58, text: '镜头 · 自动', fontSize: 22,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex, fireOn: 'press',
 		onTap: (): void => { if (cameraFocusHandler !== undefined) cameraFocusHandler(); },
 	}) : undefined;
-	const endViewingButton = transferTutorial ? createButton(root, {
+	const endViewingButton = transferTutorial ? makeHudButton(root, {
 		w: 220, h: LaunchButtonH, text: '结束观赏', fontSize: 26,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex, fireOn: 'press',
 		onTap: (): void => { if (endViewingHandler !== undefined) endViewingHandler(); },
@@ -739,7 +760,7 @@ export function createAimInput(
 	let fitViewHandler: (() => void) | undefined = undefined;
 
 	const makeZoomButton = (text: string, x: number, fontSize: number, onClick: () => void): UiButton => {
-		const btn = createButton(root, {
+		const btn = makeHudButton(root, {
 			w: ZoomBtnSize,
 			h: ZoomBtnSize,
 			text,
@@ -787,7 +808,7 @@ export function createAimInput(
 	let speedDownHandler: (() => void) | undefined = undefined;
 	let pauseHandler: (() => void) | undefined = undefined;
 
-	const slowButton = createButton(root, {
+	const slowButton = makeHudButton(root, {
 		w: TimeBtnW, h: TimeBtnH, text: '◀ 慢', fontSize: 26,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
 		onTap: (): void => {
@@ -797,7 +818,7 @@ export function createAimInput(
 	});
 	slowButton.root.position = Vec2(24, TimeRowY);
 	slowButton.root.order = 100;
-	const pauseButton = createButton(root, {
+	const pauseButton = makeHudButton(root, {
 		w: TimeBtnW, h: TimeBtnH, text: '⏸', fontSize: 30,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
 		onTap: (): void => {
@@ -807,7 +828,7 @@ export function createAimInput(
 	});
 	pauseButton.root.position = Vec2(24 + TimeBtnW + 8, TimeRowY);
 	pauseButton.root.order = 100;
-	const fastButton = createButton(root, {
+	const fastButton = makeHudButton(root, {
 		w: TimeBtnW, h: TimeBtnH, text: '快 ▶', fontSize: 26,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
 		onTap: (): void => {
@@ -934,7 +955,7 @@ export function createAimInput(
 		}
 	};
 	const makePlaybackButton = (speed: number, x: number): void => {
-		const btn = createButton(root, {
+		const btn = makeHudButton(root, {
 			w: PlaybackButtonW,
 			h: PlaybackButtonH,
 			text: playbackLabel(speed),
@@ -969,10 +990,16 @@ export function createAimInput(
 	parent.addChild(root);
 
 	return {
+		setObserveEnabled: (value: boolean): void => {
+			if (enabled !== value || observing !== value) { mode = 'none'; dragging = false; }
+			enabled = value; observing = value; touchLayer.touchEnabled = value;
+		},
 		onDrag: (callback: (a: AimResult) => void): void => {
 			dragHandler = callback;
 		},
 		setEnabled: (value: boolean): void => {
+			if (enabled !== value || observing) mode = 'none';
+			observing = false;
 			enabled = value;
 			// 触摸开关必须跟着走：swallowTouches 的层只要开着，就会把点击独占，
 			// 底下的关卡层永远收不到（多关并存时这是致命的）

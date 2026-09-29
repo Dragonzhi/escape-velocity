@@ -83,7 +83,7 @@ function testPersistence(): void {
 	// 正常写入 → 读出同样的值
 	saveProgress({ unlocked: 3 });
 	const raw = Content.exist(file) ? Content.load(file) : '';
-	check('save-format', raw === 'unlocked=3', `文件内容应为单行 unlocked=3，实际 "${raw}"`);
+	check('save-format', raw === 'unlocked=3\nversion=2', `文件内容应含解锁记录和版本2，实际 "${raw}"`);
 	check('load-roundtrip', loadProgress(levelCountForSave).unlocked === 3, '存 3 读回来应是 3');
 
 	// 越界值读回时夹紧

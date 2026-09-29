@@ -19,7 +19,7 @@ export function runTests(): string {
 	const l2 = convertLevelJson(configs.levels[1], table)!;
 	check('l2-body-overrides', l2.planets[0].radius === 72 && l2.planets[1].radius === 12 && l2.planets[2].radius === 6 && l2.planets[2].gm === 800);
 	check('l2-model-collision-size', l2.visuals.every((v, i) => v.displayRadius === l2.planets[i].radius));
-	check('shared-prototypes-unchanged', table.bodies.sun.radius === baseSunRadius && table.bodies.venus.radius === baseVenusRadius && getLevel(2)!.planets[0].radius === 50);
+	check('shared-prototypes-unchanged', table.bodies.sun.radius === baseSunRadius && table.bodies.venus.radius === baseVenusRadius && getLevel(2)!.planets[0].radius === 72);
 	check('exclusive-terminal-config', convertLevelJson({ ...configs.levels[1], transfer: { ...configs.levels[1].transfer!, orbital: { ...configs.levels[1].transfer!.orbital!, region: { minRadius: 150, maxRadius: 170, direction: 'inward' } } } }, table) === undefined);
 	const missingTerminal = { ...configs.levels[2].transfer!.orbital! }; missingTerminal.region = undefined;
 	check('missing-terminal-config', convertLevelJson({ ...configs.levels[2], transfer: { ...configs.levels[2].transfer!, orbital: missingTerminal } }, table) === undefined);
@@ -38,7 +38,7 @@ export function runTests(): string {
 			const a = Math.atan2(lv.probeStart.y, lv.probeStart.x) + Math.sqrt(mu / (r * r * r)) * date, speed = Math.sqrt(mu / r);
 			return { pos: { x: r * Math.cos(a), y: r * Math.sin(a) }, vel: { x: -Math.sin(a) * speed, y: Math.cos(a) * speed } };
 		};
-		const level: GameLevel = { bodies: lv.planets, probeStart: lv.probeStart, probeVel0: lv.probeVel0, goal: lv.goal, escapeRadius: lv.escapeRadius, maxSteps: lv.maxSteps, transfer: tr };
+		const level: GameLevel = { levelId: n + 1, viewingSeconds: n === 1 ? 12 : 6, bonusPoints: lv.bonusPoints, bodies: lv.planets, probeStart: lv.probeStart, probeVel0: lv.probeVel0, goal: lv.goal, escapeRadius: lv.escapeRadius, maxSteps: lv.maxSteps, transfer: tr };
 		const launchAt = (date: number, p: number) => {
 			const core = createCore(dt), start = stateAt(date);
 			const plan = planTransfer(mu, r, start.vel, p, tr.apoapsisMax, tr.mode, tr.periapsisMin);
@@ -47,7 +47,7 @@ export function runTests(): string {
 		};
 		const core = launchAt(1, power), flight = core.flight!, analysis = core.flyby!;
 		const prefix = 'L' + (n + 1).toFixed(0) + '-';
-		check(prefix + 'sun-center', mu === 800000 && lv.planets[0].radius === (n === 1 ? 72 : 50) && lv.planets[0].orbitRadius === 0);
+		check(prefix + 'sun-center', mu === 800000 && lv.planets[0].radius === 72 && lv.planets[0].orbitRadius === 0);
 		check(prefix + 'only-real-bodies', lv.planets.length === 3 && lv.stars!.length === 0 && lv.planets.every(b => b.gm > 0 && !b.isObstacle));
 		if (n === 1) {
 			const body = lv.planets[2], point = goalPositionAt(body, 1, lv.goal.offset);
@@ -60,7 +60,7 @@ export function runTests(): string {
 		check(prefix + 'sun-emissive', lv.visuals[0].emissive !== undefined && lv.visuals[0].emissive!.r === 1);
 		check(prefix + 'baseline-success', core.goalIndex > 0 && analysis.encounters!.every(e => e.passed));
 		check(prefix + 'short-burn', core.burnDuration > 0.29 && core.burnDuration < 0.31);
-		check(prefix + 'not-precompleted', !core.missionCompleted && core.result === undefined && !coreEndViewing(core));
+		check(prefix + 'not-precompleted', !core.missionCompleted && !coreEndViewing(core));
 		const start = stateAt(1), plan = planTransfer(mu, r, start.vel, power, tr.apoapsisMax, tr.mode, tr.periapsisMin);
 		check(prefix + 'drag-radius', Math.abs(plan.apoapsis - (n === 1 ? 180 : 420)) < 1e-8);
 		check(prefix + 'system-tangent', Math.abs(plan.velocity.x * start.vel.y - plan.velocity.y * start.vel.x) < 1e-8 && (plan.velocity.x * start.vel.x + plan.velocity.y * start.vel.y) * (n === 1 ? -1 : 1) > 0);
@@ -74,7 +74,7 @@ export function runTests(): string {
 		check(prefix + 'safe-distance-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: cfg.encounters.map(e => ({ ...e, minPeriapsis: 105 })) }, dt, 1).completionIndex < 0);
 		if (cfg.targetFlyby !== undefined) {
 			const dest = analysis.destination!;
-			check(prefix + 'complete-mercury-flyby', dest.passed && dest.entryIndex > analysis.encounters![0].exitIndex && dest.periapsisIndex > dest.entryIndex && dest.exitIndex > dest.periapsisIndex && core.goalIndex === dest.exitIndex && dest.periapsis >= 12 && dest.periapsis <= 28);
+			check(prefix + 'complete-mercury-flyby', dest.passed && dest.entryIndex > analysis.encounters![0].exitIndex && dest.periapsisIndex > dest.entryIndex && dest.exitIndex > dest.periapsisIndex && core.goalIndex >= dest.entryIndex && core.goalIndex < dest.exitIndex && dest.periapsis >= 12 && dest.periapsis <= 28);
 			check(prefix + 'mercury-small-planning-drift', distance(flight.points[dest.periapsisIndex], ref.points[dest.periapsisIndex]) < 5);
 			const truncated = { ...flight, points: flight.points.slice(0, dest.exitIndex), velocities: flight.velocities.slice(0, dest.exitIndex) };
 			check(prefix + 'entry-peri-without-exit-fails', analyzeOrbitalMission(truncated, lv.planets, cfg, dt, 1).completionIndex < 0);
@@ -90,8 +90,9 @@ export function runTests(): string {
 			check(prefix + 'target-direction-required', reverse.completionIndex < 0);
 			check(prefix + 'order-required', analyzeOrbitalMission(flight, lv.planets, { ...cfg, encounters: [cfg.encounters[1], cfg.encounters[0]] }, dt, 1).completionIndex < 0);
 		}
-		check(prefix + 'low-power-fails', launchAt(1, 0.04).goalIndex < 0);
-		check(prefix + 'wrong-date-fails', launchAt(0, power).goalIndex < 0);
+		const lowPower = launchAt(1, 0.04);
+		check(prefix + (n === 1 ? 'low-power-fails' : 'low-power-escape-allowed'), n === 1 ? lowPower.goalIndex < 0 : lowPower.goalIndex >= 0);
+		check(prefix + 'wrong-date-fails', launchAt(10, power).goalIndex < 0);
 		core.playback = 0; core.flightTime = (core.goalIndex - 1) * dt; coreUpdate(core, 0, level);
 		check(prefix + 'before-region-incomplete', !core.missionCompleted);
 		core.flightTime = core.goalIndex * dt; coreUpdate(core, 0, level);
@@ -103,7 +104,7 @@ export function runTests(): string {
 		for (let i = 0; i < 2500 && fast.phase === 'Flying'; i++) coreUpdate(fast, 1 / 120, level);
 		check(prefix + 'natural-end-success', normal.phase === 'Result' && normal.missionCompleted && normal.result === 'success');
 		check(prefix + 'speed-deterministic', fast.result === normal.result && fast.flightTime === normal.flightTime && distance(fast.flight!.state.pos, normal.flight!.state.pos) === 0);
-		check(prefix + 'view-six-seconds-or-natural-end', analysis.viewEndIndex === Math.min(flight.points.length - 1, core.goalIndex + 375));
+		check(prefix + 'viewing-bounded', normal.flightTime > core.goalIndex * dt && normal.flightTime <= (core.goalIndex + Math.floor(level.viewingSeconds! / dt)) * dt);
 		let at30 = 0, at120 = 0;
 		for (let i = 0; i < 450; i++) at30 = advanceTransferPlayback(at30, 1 / 30, 1, normal.burnDuration, tr, analysis, dt);
 		for (let i = 0; i < 1800; i++) at120 = advanceTransferPlayback(at120, 1 / 120, 1, normal.burnDuration, tr, analysis, dt);

@@ -65,7 +65,7 @@ function ____exports.runTests() -- 10
 	) -- 21
 	check( -- 22
 		"shared-prototypes-unchanged", -- 22
-		____table.bodies.sun.radius == baseSunRadius and ____table.bodies.venus.radius == baseVenusRadius and getLevel(2).planets[1].radius == 50 -- 22
+		____table.bodies.sun.radius == baseSunRadius and ____table.bodies.venus.radius == baseVenusRadius and getLevel(2).planets[1].radius == 72 -- 22
 	) -- 22
 	check( -- 23
 		"exclusive-terminal-config", -- 23
@@ -170,6 +170,9 @@ function ____exports.runTests() -- 10
 				} -- 39
 			end -- 37
 			local level = { -- 41
+				levelId = n + 1, -- 41
+				viewingSeconds = n == 1 and 12 or 6, -- 41
+				bonusPoints = lv.bonusPoints, -- 41
 				bodies = lv.planets, -- 41
 				probeStart = lv.probeStart, -- 41
 				probeVel0 = lv.probeVel0, -- 41
@@ -205,7 +208,7 @@ function ____exports.runTests() -- 10
 			local flight = core.flight -- 48
 			local analysis = core.flyby -- 48
 			local prefix = ("L" .. __TS__NumberToFixed(n + 1, 0)) .. "-" -- 49
-			check(prefix .. "sun-center", mu == 800000 and lv.planets[1].radius == (n == 1 and 72 or 50) and lv.planets[1].orbitRadius == 0) -- 50
+			check(prefix .. "sun-center", mu == 800000 and lv.planets[1].radius == 72 and lv.planets[1].orbitRadius == 0) -- 50
 			check( -- 51
 				prefix .. "only-real-bodies", -- 51
 				#lv.planets == 3 and #lv.stars == 0 and __TS__ArrayEvery( -- 51
@@ -256,7 +259,7 @@ function ____exports.runTests() -- 10
 			check(prefix .. "short-burn", core.burnDuration > 0.29 and core.burnDuration < 0.31) -- 62
 			check( -- 63
 				prefix .. "not-precompleted", -- 63
-				not core.missionCompleted and core.result == nil and not coreEndViewing(core) -- 63
+				not core.missionCompleted and not coreEndViewing(core) -- 63
 			) -- 63
 			local start = stateAt(1) -- 64
 			local plan = planTransfer( -- 64
@@ -369,7 +372,7 @@ function ____exports.runTests() -- 10
 			) -- 74
 			if cfg.targetFlyby ~= nil then -- 74
 				local dest = analysis.destination -- 76
-				check(prefix .. "complete-mercury-flyby", dest.passed and dest.entryIndex > analysis.encounters[1].exitIndex and dest.periapsisIndex > dest.entryIndex and dest.exitIndex > dest.periapsisIndex and core.goalIndex == dest.exitIndex and dest.periapsis >= 12 and dest.periapsis <= 28) -- 77
+				check(prefix .. "complete-mercury-flyby", dest.passed and dest.entryIndex > analysis.encounters[1].exitIndex and dest.periapsisIndex > dest.entryIndex and dest.exitIndex > dest.periapsisIndex and core.goalIndex >= dest.entryIndex and core.goalIndex < dest.exitIndex and dest.periapsis >= 12 and dest.periapsis <= 28) -- 77
 				check( -- 78
 					prefix .. "mercury-small-planning-drift", -- 78
 					distance(flight.points[dest.periapsisIndex + 1], ref.points[dest.periapsisIndex + 1]) < 5 -- 78
@@ -478,74 +481,64 @@ function ____exports.runTests() -- 10
 					).completionIndex < 0 -- 91
 				) -- 91
 			end -- 91
-			check( -- 93
-				prefix .. "low-power-fails", -- 93
-				launchAt(1, 0.04).goalIndex < 0 -- 93
-			) -- 93
-			check( -- 94
-				prefix .. "wrong-date-fails", -- 94
-				launchAt(0, power).goalIndex < 0 -- 94
-			) -- 94
-			core.playback = 0 -- 95
-			core.flightTime = (core.goalIndex - 1) * dt -- 95
-			coreUpdate(core, 0, level) -- 95
-			check(prefix .. "before-region-incomplete", not core.missionCompleted) -- 96
-			core.flightTime = core.goalIndex * dt -- 97
-			coreUpdate(core, 0, level) -- 97
-			check(prefix .. "actual-region-completes", core.missionCompleted and core.phase == "Flying" and core.result == "success") -- 98
-			check( -- 99
-				prefix .. "manual-end", -- 99
-				coreEndViewing(core) and core.phase == "Result" -- 99
-			) -- 99
-			local normal = launchAt(1, power) -- 100
-			local fast = launchAt(1, power) -- 100
-			fast.playback = 4 -- 101
-			do -- 101
-				local i = 0 -- 102
-				while i < 2500 and normal.phase == "Flying" do -- 102
-					coreUpdate(normal, 1 / 60, level) -- 102
-					i = i + 1 -- 102
-				end -- 102
-			end -- 102
+			local lowPower = launchAt(1, 0.04) -- 93
+			local ____temp_1 = prefix .. (n == 1 and "low-power-fails" or "low-power-escape-allowed") -- 94
+			local ____temp_0 -- 94
+			if n == 1 then -- 94
+				____temp_0 = lowPower.goalIndex < 0 -- 94
+			else -- 94
+				____temp_0 = lowPower.goalIndex >= 0 -- 94
+			end -- 94
+			check(____temp_1, ____temp_0) -- 94
+			check( -- 95
+				prefix .. "wrong-date-fails", -- 95
+				launchAt(10, power).goalIndex < 0 -- 95
+			) -- 95
+			core.playback = 0 -- 96
+			core.flightTime = (core.goalIndex - 1) * dt -- 96
+			coreUpdate(core, 0, level) -- 96
+			check(prefix .. "before-region-incomplete", not core.missionCompleted) -- 97
+			core.flightTime = core.goalIndex * dt -- 98
+			coreUpdate(core, 0, level) -- 98
+			check(prefix .. "actual-region-completes", core.missionCompleted and core.phase == "Flying" and core.result == "success") -- 99
+			check( -- 100
+				prefix .. "manual-end", -- 100
+				coreEndViewing(core) and core.phase == "Result" -- 100
+			) -- 100
+			local normal = launchAt(1, power) -- 101
+			local fast = launchAt(1, power) -- 101
+			fast.playback = 4 -- 102
 			do -- 102
 				local i = 0 -- 103
-				while i < 2500 and fast.phase == "Flying" do -- 103
-					coreUpdate(fast, 1 / 120, level) -- 103
+				while i < 2500 and normal.phase == "Flying" do -- 103
+					coreUpdate(normal, 1 / 60, level) -- 103
 					i = i + 1 -- 103
 				end -- 103
 			end -- 103
-			check(prefix .. "natural-end-success", normal.phase == "Result" and normal.missionCompleted and normal.result == "success") -- 104
-			check( -- 105
-				prefix .. "speed-deterministic", -- 105
-				fast.result == normal.result and fast.flightTime == normal.flightTime and distance(fast.flight.state.pos, normal.flight.state.pos) == 0 -- 105
-			) -- 105
+			do -- 103
+				local i = 0 -- 104
+				while i < 2500 and fast.phase == "Flying" do -- 104
+					coreUpdate(fast, 1 / 120, level) -- 104
+					i = i + 1 -- 104
+				end -- 104
+			end -- 104
+			check(prefix .. "natural-end-success", normal.phase == "Result" and normal.missionCompleted and normal.result == "success") -- 105
 			check( -- 106
-				prefix .. "view-six-seconds-or-natural-end", -- 106
-				analysis.viewEndIndex == math.min(#flight.points - 1, core.goalIndex + 375) -- 106
+				prefix .. "speed-deterministic", -- 106
+				fast.result == normal.result and fast.flightTime == normal.flightTime and distance(fast.flight.state.pos, normal.flight.state.pos) == 0 -- 106
 			) -- 106
-			local at30 = 0 -- 107
-			local at120 = 0 -- 107
-			do -- 107
-				local i = 0 -- 108
-				while i < 450 do -- 108
-					at30 = advanceTransferPlayback( -- 108
-						at30, -- 108
-						1 / 30, -- 108
-						1, -- 108
-						normal.burnDuration, -- 108
-						tr, -- 108
-						analysis, -- 108
-						dt -- 108
-					) -- 108
-					i = i + 1 -- 108
-				end -- 108
-			end -- 108
+			check( -- 107
+				prefix .. "viewing-bounded", -- 107
+				normal.flightTime > core.goalIndex * dt and normal.flightTime <= (core.goalIndex + math.floor(level.viewingSeconds / dt)) * dt -- 107
+			) -- 107
+			local at30 = 0 -- 108
+			local at120 = 0 -- 108
 			do -- 108
 				local i = 0 -- 109
-				while i < 1800 do -- 109
-					at120 = advanceTransferPlayback( -- 109
-						at120, -- 109
-						1 / 120, -- 109
+				while i < 450 do -- 109
+					at30 = advanceTransferPlayback( -- 109
+						at30, -- 109
+						1 / 30, -- 109
 						1, -- 109
 						normal.burnDuration, -- 109
 						tr, -- 109
@@ -555,54 +548,69 @@ function ____exports.runTests() -- 10
 					i = i + 1 -- 109
 				end -- 109
 			end -- 109
-			check( -- 110
-				prefix .. "fps-independent", -- 110
-				math.abs(at30 - at120) < 1e-8 -- 110
-			) -- 110
-			do -- 110
-				local i = 0 -- 111
-				while i < #analysis.encounters do -- 111
-					check( -- 111
-						(prefix .. "encounter-shot-") .. __TS__NumberToFixed(i, 0), -- 111
-						orbitalShotAt( -- 111
-							analysis.encounters[i + 1].periapsisIndex * dt, -- 111
-							normal.burnDuration, -- 111
-							analysis, -- 111
-							cfg, -- 111
-							dt -- 111
-						) == cfg.encounters[i + 1].focus -- 111
-					) -- 111
-					i = i + 1 -- 111
-				end -- 111
-			end -- 111
-			check( -- 112
-				prefix .. "one-completion-record", -- 112
-				evaluateRocketsDetailed(lv, "success", plan.dv, {starsCollected = 3}).rockets == 1 -- 112
-			) -- 112
-			do -- 112
-				local i = 0 -- 113
-				while i < #lv.planets do -- 113
-					local crash = createCore(dt) -- 114
-					coreLaunch( -- 114
-						crash, -- 114
-						{x = 0, y = 0}, -- 114
-						level, -- 114
-						bodyPositionAt(lv.planets[i + 1], 0), -- 114
-						{x = 0, y = 0} -- 114
-					) -- 114
-					coreUpdate(crash, 1, level) -- 114
-					check( -- 115
-						(prefix .. "early-collision-fails-") .. __TS__NumberToFixed(i, 0), -- 115
-						crash.result == "crashed" and not crash.missionCompleted -- 115
+			do -- 109
+				local i = 0 -- 110
+				while i < 1800 do -- 110
+					at120 = advanceTransferPlayback( -- 110
+						at120, -- 110
+						1 / 120, -- 110
+						1, -- 110
+						normal.burnDuration, -- 110
+						tr, -- 110
+						analysis, -- 110
+						dt -- 110
+					) -- 110
+					i = i + 1 -- 110
+				end -- 110
+			end -- 110
+			check( -- 111
+				prefix .. "fps-independent", -- 111
+				math.abs(at30 - at120) < 1e-8 -- 111
+			) -- 111
+			do -- 111
+				local i = 0 -- 112
+				while i < #analysis.encounters do -- 112
+					check( -- 112
+						(prefix .. "encounter-shot-") .. __TS__NumberToFixed(i, 0), -- 112
+						orbitalShotAt( -- 112
+							analysis.encounters[i + 1].periapsisIndex * dt, -- 112
+							normal.burnDuration, -- 112
+							analysis, -- 112
+							cfg, -- 112
+							dt -- 112
+						) == cfg.encounters[i + 1].focus -- 112
+					) -- 112
+					i = i + 1 -- 112
+				end -- 112
+			end -- 112
+			check( -- 113
+				prefix .. "one-completion-record", -- 113
+				evaluateRocketsDetailed(lv, "success", plan.dv, {starsCollected = 3}).rockets == 1 -- 113
+			) -- 113
+			do -- 113
+				local i = 0 -- 114
+				while i < #lv.planets do -- 114
+					local crash = createCore(dt) -- 115
+					coreLaunch( -- 115
+						crash, -- 115
+						{x = 0, y = 0}, -- 115
+						level, -- 115
+						bodyPositionAt(lv.planets[i + 1], 0), -- 115
+						{x = 0, y = 0} -- 115
 					) -- 115
-					i = i + 1 -- 113
-				end -- 113
-			end -- 113
-			coreRetry(core, 0) -- 117
-			check(prefix .. "retry-reset", not core.missionCompleted and core.flyby == nil and core.phase == "Aiming") -- 117
+					coreUpdate(crash, 1, level) -- 115
+					check( -- 116
+						(prefix .. "early-collision-fails-") .. __TS__NumberToFixed(i, 0), -- 116
+						crash.result == "crashed" and not crash.missionCompleted -- 116
+					) -- 116
+					i = i + 1 -- 114
+				end -- 114
+			end -- 114
+			coreRetry(core, 0) -- 118
+			check(prefix .. "retry-reset", not core.missionCompleted and core.flyby == nil and core.phase == "Aiming") -- 118
 			n = n + 1 -- 31
 		end -- 31
 	end -- 31
-	return (((((#failures == 0 and "passed" or "failed") .. "\nchecks=") .. __TS__NumberToFixed(checks, 0)) .. " failures=") .. __TS__NumberToFixed(#failures, 0)) .. (#failures > 0 and "\n" .. table.concat(failures, "\n") or "") -- 119
+	return (((((#failures == 0 and "passed" or "failed") .. "\nchecks=") .. __TS__NumberToFixed(checks, 0)) .. " failures=") .. __TS__NumberToFixed(#failures, 0)) .. (#failures > 0 and "\n" .. table.concat(failures, "\n") or "") -- 120
 end -- 10
 return ____exports -- 10

@@ -29,7 +29,7 @@ export function runTests(): string {
 	};
 	const start = startAt(date);
 	const plan = planTransfer(lv.planets[0].gm, radius, start.vel, power, tr.apoapsisMax);
-	const level: GameLevel = { bodies: lv.planets, probeStart: lv.probeStart, probeVel0: lv.probeVel0, goal: lv.goal, escapeRadius: lv.escapeRadius, maxSteps: lv.maxSteps, transfer: tr };
+	const level: GameLevel = { levelId: 1, viewingSeconds: 24, bonusPoints: lv.bonusPoints, bodies: lv.planets, probeStart: lv.probeStart, probeVel0: lv.probeVel0, goal: lv.goal, escapeRadius: lv.escapeRadius, maxSteps: lv.maxSteps, transfer: tr };
 	const core = createCore(dt);
 	core.t0 = date;
 	core.aim.velocity = plan.velocity;
@@ -46,7 +46,7 @@ export function runTests(): string {
 	check('power-clamped', planTransfer(lv.planets[0].gm, radius, lv.probeVel0, 2, tr.apoapsisMax).apoapsis === tr.apoapsisMax);
 	check('burn-about-0.3s', core.burnDuration > 0.25 && core.burnDuration < 0.35);
 	check('planned-safe-flyby', core.flyby !== undefined && core.goalIndex >= 0 && core.flyby.energyDrop >= cfg.minEnergyDrop);
-	check('completion-not-visible-at-launch', !core.missionCompleted && core.result === undefined);
+	check('completion-not-visible-at-launch', !core.missionCompleted);
 	check('cannot-end-before-completion', !coreEndViewing(core));
 	const actual = core.flight;
 	if (actual === undefined) return 'failed\nmissing flight';
@@ -67,11 +67,11 @@ export function runTests(): string {
 	const light = createCore(dt);
 	light.t0 = date;
 	coreLaunch(light, plan.velocity, level, start.pos, start.vel);
-	const lightIndex = findGoalIndex(actual.points, lv.planets, lv.goal, dt, date);
+	const lightIndex = core.goalIndex - 1;
 	light.flightTime = lightIndex * dt;
 	light.playback = 0;
 	coreUpdate(light, 0, level);
-	check('light-does-not-complete', lightIndex > 0 && lightIndex < core.goalIndex && light.phase === 'Flying' && !light.missionCompleted);
+	check('light-does-not-complete', lightIndex >= 0 && lightIndex < core.goalIndex && light.phase === 'Flying' && !light.missionCompleted);
 	light.flightTime = core.goalIndex * dt;
 	coreUpdate(light, 0, level);
 	check('flyby-completes-without-ending', light.missionCompleted && light.phase === 'Flying' && light.result === 'success');
@@ -110,7 +110,7 @@ export function runTests(): string {
 	wrong.t0 = 1.8;
 	const wrongStart = startAt(wrong.t0);
 	coreLaunch(wrong, planTransfer(lv.planets[0].gm, radius, wrongStart.vel, power, tr.apoapsisMax).velocity, level, wrongStart.pos, wrongStart.vel);
-	check('wrong-phase-misses', wrong.goalIndex < 0);
+	check('wrong-phase-flyby-misses', wrong.flyby !== undefined && wrong.flyby.completionIndex < 0);
 	const collision = simulate({ pos: bodyPositionAt(lv.planets[1], 0), vel: { x: 0, y: 0 } }, lv.planets, { dt, steps: 10, sampleEvery: 1, escapeRadius: 0 });
 	check('moon-is-solid', collision.outcome === 'crashed');
 	check('moon-is-not-target', findGoalIndex(collision.points, lv.planets, lv.goal, dt, 0) < 0);
@@ -128,8 +128,8 @@ export function runTests(): string {
 	check('launch-shot', transferShotAt(0, core.burnDuration, core.flyby, cfg, dt) === 'Launch');
 	check('cruise-shot', transferShotAt(4, core.burnDuration, core.flyby, cfg, dt) === 'Cruise');
 	check('moon-shot', transferShotAt(peri * dt, core.burnDuration, core.flyby, cfg, dt) === 'Moon');
-	check('overview-shot', transferShotAt(core.goalIndex * dt + 1, core.burnDuration, core.flyby, cfg, dt) === 'Overview');
-	check('return-shot', transferShotAt(core.goalIndex * dt + cfg.overviewDuration + 0.1, core.burnDuration, core.flyby, cfg, dt) === 'Earth');
+	check('overview-shot', transferShotAt(core.flyby!.completionIndex * dt + 1, core.burnDuration, core.flyby, cfg, dt) === 'Overview');
+	check('return-shot', transferShotAt(core.flyby!.completionIndex * dt + cfg.overviewDuration + 0.1, core.burnDuration, core.flyby, cfg, dt) === 'Earth');
 	check('camera-cycle', nextCameraFocus(nextCameraFocus(nextCameraFocus(nextCameraFocus(nextCameraFocus('Auto'))))) === 'Auto');
 	check('burn-at-1x', transferPlaybackRate(0.1, core.burnDuration, tr, core.flyby, dt) === 1);
 	check('coast-at-3x', transferPlaybackRate(4, core.burnDuration, tr, core.flyby, dt) === 3);

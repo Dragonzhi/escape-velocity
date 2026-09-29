@@ -98,6 +98,7 @@ interface RigState {
  * @noSelf
  */
 export interface CameraRig {
+	distanceBounds: () => { min: number; max: number };
 	/**
 	 * 推进一帧，返回新的相机参数（纯计算）。
 	 *
@@ -328,6 +329,7 @@ export function createCameraRig(opts?: RigOptions): CameraRig {
 			return computeRigStep(state, points, opts, probeRadius, radii);
 		},
 		// 纯查询：**不改机架状态**地算出"这组关键点需要多远"（取景预算判断用，S3.12）
+		distanceBounds: (): { min: number; max: number } => ({ min: options.minDistance, max: options.maxDistance }),
 		wantDistance: (points: P2[], probeRadius?: number, radii?: number[]): number => {
 			const fit = computeFit(points);
 			return fitDistance(points, fit.centerX, fit.centerY, probeRadius !== undefined ? probeRadius : 0, options, radii);

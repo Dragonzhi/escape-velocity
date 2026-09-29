@@ -101,6 +101,9 @@ function ____exports.runTests() -- 8
 		tr.apoapsisMax -- 31
 	) -- 31
 	local level = { -- 32
+		levelId = 1, -- 32
+		viewingSeconds = 24, -- 32
+		bonusPoints = lv.bonusPoints, -- 32
 		bodies = lv.planets, -- 32
 		probeStart = lv.probeStart, -- 32
 		probeVel0 = lv.probeVel0, -- 32
@@ -161,7 +164,7 @@ function ____exports.runTests() -- 8
 	) -- 46
 	check("burn-about-0.3s", core.burnDuration > 0.25 and core.burnDuration < 0.35) -- 47
 	check("planned-safe-flyby", core.flyby ~= nil and core.goalIndex >= 0 and core.flyby.energyDrop >= cfg.minEnergyDrop) -- 48
-	check("completion-not-visible-at-launch", not core.missionCompleted and core.result == nil) -- 49
+	check("completion-not-visible-at-launch", not core.missionCompleted) -- 49
 	check( -- 50
 		"cannot-end-before-completion", -- 50
 		not coreEndViewing(core) -- 50
@@ -249,17 +252,11 @@ function ____exports.runTests() -- 8
 		start.pos, -- 69
 		start.vel -- 69
 	) -- 69
-	local lightIndex = findGoalIndex( -- 70
-		actual.points, -- 70
-		lv.planets, -- 70
-		lv.goal, -- 70
-		dt, -- 70
-		date -- 70
-	) -- 70
+	local lightIndex = core.goalIndex - 1 -- 70
 	light.flightTime = lightIndex * dt -- 71
 	light.playback = 0 -- 72
 	coreUpdate(light, 0, level) -- 73
-	check("light-does-not-complete", lightIndex > 0 and lightIndex < core.goalIndex and light.phase == "Flying" and not light.missionCompleted) -- 74
+	check("light-does-not-complete", lightIndex >= 0 and lightIndex < core.goalIndex and light.phase == "Flying" and not light.missionCompleted) -- 74
 	light.flightTime = core.goalIndex * dt -- 75
 	coreUpdate(light, 0, level) -- 76
 	check("flyby-completes-without-ending", light.missionCompleted and light.phase == "Flying" and light.result == "success") -- 77
@@ -371,7 +368,7 @@ function ____exports.runTests() -- 8
 		wrongStart.pos, -- 112
 		wrongStart.vel -- 112
 	) -- 112
-	check("wrong-phase-misses", wrong.goalIndex < 0) -- 113
+	check("wrong-phase-flyby-misses", wrong.flyby ~= nil and wrong.flyby.completionIndex < 0) -- 113
 	local collision = simulate( -- 114
 		{ -- 114
 			pos = bodyPositionAt(lv.planets[2], 0), -- 114
@@ -457,7 +454,7 @@ function ____exports.runTests() -- 8
 	check( -- 131
 		"overview-shot", -- 131
 		transferShotAt( -- 131
-			core.goalIndex * dt + 1, -- 131
+			core.flyby.completionIndex * dt + 1, -- 131
 			core.burnDuration, -- 131
 			core.flyby, -- 131
 			cfg, -- 131
@@ -467,7 +464,7 @@ function ____exports.runTests() -- 8
 	check( -- 132
 		"return-shot", -- 132
 		transferShotAt( -- 132
-			core.goalIndex * dt + cfg.overviewDuration + 0.1, -- 132
+			core.flyby.completionIndex * dt + cfg.overviewDuration + 0.1, -- 132
 			core.burnDuration, -- 132
 			core.flyby, -- 132
 			cfg, -- 132

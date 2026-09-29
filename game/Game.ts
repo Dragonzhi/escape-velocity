@@ -28,6 +28,7 @@ import { AimInput, AimResult } from 'game/Hud';
 import { Body, Outcome, P2, SimResult, bodyPositionAt, distance, evaluateCollectedStars, simulate, starPositionAt, sub } from 'game/Gravity';
 import { GameScene, planeToWorld } from 'game/Scene';
 import { CameraRig, RigFrame } from 'game/CameraRig';
+import { ObservePose, captureObserve, rotateObserve, stepObserve, zoomObserve } from 'game/ObserveCamera';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { BonusPointSpec, GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalPositionAt, goalWaypoints, waypointProgress } from 'game/LevelData';
@@ -1076,6 +1077,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let cineFrame: RigFrame | undefined = undefined;
 	let cineFrom: RigFrame | undefined = undefined;
 	let cineTransition = 0;
+	let playerPose: ObservePose | undefined = undefined;
 	/** 时间流量程（秒）：世界时钟夹在 [0, span]；0 = 不限制。 */
 	let warpSpan = 0;
 	// 待机轨道的解析模型（B1，见 prepareIdle）：宿主索引 + 相对圆轨的半径/初相/角速度。
@@ -1354,8 +1356,52 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		return cruiseAzimuth;
 	};
 
+	const playerAnchor = (pos: P2, t: number): Vec3.Type => {
+		if (focusMode === 'Probe') return planeToWorld(pos, 0);
+		if (focusMode === 'Overview') {
+			const points = [pos, ...level.bodies.map(b => bodyPositionAt(b, t))];
+			let x = 0, y = 0;
+			for (const p of points) { x += p.x; y += p.y; }
+			return planeToWorld({ x: x / points.length, y: y / points.length }, 0);
+		}
+		let index = 0;
+		if (focusMode === 'Moon') index = level.goal.planetIndex;
+		const cfg = level.transfer !== undefined ? level.transfer.orbital : undefined;
+		if (cfg !== undefined) {
+			for (const e of cfg.encounters) if (e.focus === focusMode) index = e.planetIndex;
+			if (cfg.targetFlyby !== undefined && cfg.targetFlyby.focus === focusMode) index = cfg.targetFlyby.planetIndex;
+		}
+		return planeToWorld(bodyPositionAt(level.bodies[index], t), 0);
+	};
+	const playerCamera = (pos: P2, t: number, wallDt: number): RigFrame | undefined => {
+		if (focusMode === 'Auto' || playerPose === undefined) return undefined;
+		const f = stepObserve(playerPose, playerAnchor(pos, t), wallDt);
+		cineFrame = { eye: Vec3(f.eye.x, f.eye.y, f.eye.z), target: Vec3(f.target.x, f.target.y, f.target.z) };
+		return cineFrame;
+	};
+	const playerMinDistance = (): number => {
+		if (focusMode === 'Probe') return level.levelId === 2 ? 65 : 100;
+		if (focusMode === 'Overview') return deps.rig.distanceBounds().min;
+		let index = focusMode === 'Moon' ? level.goal.planetIndex : 0;
+		const cfg = level.transfer !== undefined ? level.transfer.orbital : undefined;
+		if (cfg !== undefined) {
+			for (const e of cfg.encounters) if (e.focus === focusMode) index = e.planetIndex;
+			if (cfg.targetFlyby !== undefined && cfg.targetFlyby.focus === focusMode) index = cfg.targetFlyby.planetIndex;
+		}
+		return Math.max(40, level.bodies[index].radius * 6);
+	};
+	const capturePlayerCamera = (refocus: boolean = false): void => {
+		if (cineFrame === undefined || core.flight === undefined) return;
+		const pos = core.flight.points[coreProbeIndex(core)];
+		const t = core.t0 + core.flightTime;
+		let desired = playerMinDistance();
+		if (focusMode === 'Overview') desired = deps.rig.wantDistance([pos, ...level.bodies.map(b => bodyPositionAt(b, t))], deps.scene.probeRadius, [deps.scene.probeRadius, ...level.bodies.map(b => b.radius)]);
+		playerPose = captureObserve(cineFrame, playerAnchor(pos, t), refocus ? desired : undefined);
+	};
 	/** 五个具体机位，沿用 CameraRig 的真实投影拟合；近景只包含当下的主体。 */
 	const transferCamera = (pos: P2, t: number, wallDt: number): RigFrame => {
+		const manual = playerCamera(pos, t, wallDt);
+		if (manual !== undefined) return manual;
 		const cfg = level.transfer!.flyby!;
 		const autoShot = transferShotAt(core.flightTime, core.burnDuration, core.flyby, cfg, core.dt);
 		const shot: TransferShot = focusMode === 'Auto' ? autoShot : (focusMode === 'Probe' ? 'Cruise' : focusMode);
@@ -1421,6 +1467,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	/** 日心关卡按配置逐站取景，手动选择保持到回到自动。 */
 	const orbitalCamera = (pos: P2, t: number, wallDt: number): RigFrame => {
+		const manual = playerCamera(pos, t, wallDt);
+		if (manual !== undefined) return manual;
 		const cfg = level.transfer!.orbital!;
 		let autoShot = orbitalShotAt(core.flightTime, core.burnDuration, core.flyby, cfg, core.dt);
 		if (level.levelId === 3 && core.missionCompleted) autoShot = core.flightTime - core.goalIndex * core.dt < 2 ? 'Cruise' : 'Overview';
@@ -1480,6 +1528,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	const resetCinematic = (): void => {
 		markerElapsed = -1;
 		focusMode = 'Auto'; cineKey = ''; cineFrame = undefined; cineFrom = undefined;
+		playerPose = undefined;
 		obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
 		cruiseAzimuthReady = false;
 		flybySounded = {};
@@ -1831,7 +1880,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		deps.plan.flush();
 	};
 	const updateFlying = (dt: number): boolean => {
-		deps.aim.setEnabled(false);
+		deps.aim.setObserveEnabled(core.viewMode === '3D');
 		// S3.17：慢动作判定在 coreUpdate 里做（要 level：天体位置随时间动），
 		// 结果写回 core.slowmo / core.slowmoBody —— 这一帧的取景与日志读它们
 		const wasCompleted = core.missionCompleted;
@@ -2110,6 +2159,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (!transferCinematic(level.transfer) || core.phase !== 'Flying') return;
 			const modes: CameraFocusMode[] | undefined = level.transfer !== undefined && level.transfer.orbital !== undefined ? ['Auto', 'Probe', ...level.transfer.orbital.encounters.map(e => e.focus), ...(level.transfer.orbital.targetFlyby !== undefined ? [level.transfer.orbital.targetFlyby.focus] : []), 'Sun', 'Overview'] : undefined;
 			focusMode = nextCameraFocus(focusMode, modes);
+			playerPose = undefined;
+			if (focusMode !== 'Auto') capturePlayerCamera(true);
+			else { cineKey = 'Manual'; cineFrom = cineFrame; }
 			obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
 			print('[escape-velocity] camera focus -> ' + focusMode);
 		},
@@ -2125,6 +2177,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		},
 		isIntroTourActive: (): boolean => introTourActive,
 		observeDrag: (dx: number, dy: number): void => {
+			if (core.phase === 'Flying' && core.viewMode === '3D' && transferCinematic(level.transfer)) {
+				if (dx === 0 && dy === 0) return;
+				if (focusMode === 'Auto') { focusMode = 'Probe'; capturePlayerCamera(); print('[escape-velocity] camera takeover -> Probe'); }
+				if (playerPose !== undefined) rotateObserve(playerPose, dx, dy);
+				return;
+			}
 			if (introTourActive) {
 				finishIntroTour();
 				return;
@@ -2136,6 +2194,11 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			if (obsPitchDeg < -40) obsPitchDeg = -40;
 		},
 		observeZoom: (deltaDist: number): void => {
+			if (core.phase === 'Flying' && core.viewMode === '3D' && transferCinematic(level.transfer)) {
+				if (focusMode === 'Auto') { focusMode = 'Probe'; capturePlayerCamera(); }
+				if (playerPose !== undefined) zoomObserve(playerPose, deltaDist, playerMinDistance(), deps.rig.distanceBounds().max);
+				return;
+			}
 			obsZoom *= 1 + deltaDist * 0.002;
 			if (obsZoom < 0.4) obsZoom = 0.4;
 			if (obsZoom > 1.8) obsZoom = 1.8;
