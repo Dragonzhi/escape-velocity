@@ -32,52 +32,61 @@
       "id": 2,
       "title": "第 2 关 · 金星逆向",
       "subtitle": "迎面借力减速",
-      "brief": "从外圈顺行出发，迎面切进金星，借它的引力把速度抹掉，再滑进内圈星门。",
+      "brief": "拖动降低近日点，逆行点火后滑向金星。安全掠过金星减速，再向内进入目标轨道区域。",
       "centerBody": "sun",
+      "transfer": {
+        "mode": "lowerPeriapsis", "apoapsisMax": 400, "periapsisMin": 120, "thrustAcceleration": 32, "coastPlayback": 3,
+        "orbital": {
+          "standbyPlayback": 0.25, "slowWindow": 2, "maxViewingTime": 6,
+          "encounters": [{ "planetIndex": 1, "focus": "Venus", "encounterRadius": 110, "minPeriapsis": 52, "maxPeriapsis": 90, "energyDirection": "loss", "minEnergyChange": 75, "minWork": 75 }],
+          "region": { "minRadius": 150, "maxRadius": 170, "direction": "inward" }
+        }
+      },
+      "marker": { "orbitRadius": 160, "angleDeg": 39.44137827425129, "tolerance": 15 },
       "probe": {
         "orbitRadius": 400,
         "startAngleDeg": 90,
-        "minSpeed": 40,
-        "maxSpeed": 280,
-        "dvBudget": 280
+        "minSpeed": 0,
+        "maxSpeed": 12,
+        "dvBudget": 12
       },
       "orbiters": [
-        { "body": "venus", "orbitRadius": 220, "angleDeg": 180, "direction": 1 },
-        { "body": "asteroid", "orbitRadius": 310, "angleDeg": 200, "direction": -1, "spin": 0.7 },
-        { "body": "target_gate", "type": "target", "orbitRadius": 150, "angleDeg": 300, "direction": 1, "tolerance": 68 }
+        { "body": "venus", "orbitRadius": 220, "angleDeg": 312, "direction": 1 }
       ],
-      "stars": [
-        { "orbitRadius": 280, "angleDeg": 69 },
-        { "orbitRadius": 180, "angleDeg": 350.4 },
-        { "orbitRadius": 240, "angleDeg": 285.5 }
-      ],
-      "environment": { "escapeRadius": 1400, "maxSteps": 900 }
+      "stars": [],
+      "environment": { "escapeRadius": 1400, "maxSteps": 3600 }
     },
     {
       "id": 3,
       "title": "第 3 关 · 双星甩尾",
       "subtitle": "木星交棒土星",
-      "brief": "先贴木星甩一个弯，再交给土星加速，从两颗星之间的缝里冲进外圈星门。",
+      "brief": "拖动抬高远日点，顺行点火后依次安全掠过木星、土星，连续借力加速进入外圈目标区域。",
       "centerBody": "sun",
+      "transfer": {
+        "mode": "raiseApoapsis", "apoapsisMax": 560, "thrustAcceleration": 17, "coastPlayback": 3,
+        "orbital": {
+          "standbyPlayback": 0.25, "slowWindow": 2, "maxViewingTime": 6,
+          "encounters": [
+            { "planetIndex": 1, "focus": "Jupiter", "encounterRadius": 120, "minPeriapsis": 60, "maxPeriapsis": 100, "energyDirection": "gain", "minEnergyChange": 75, "minWork": 75 },
+            { "planetIndex": 2, "focus": "Saturn", "encounterRadius": 120, "minPeriapsis": 55, "maxPeriapsis": 95, "energyDirection": "gain", "minEnergyChange": 75, "minWork": 75 }
+          ],
+          "region": { "minRadius": 900, "maxRadius": 960, "direction": "outward" }
+        }
+      },
+      "marker": { "orbitRadius": 930, "angleDeg": 341.7162941770894, "tolerance": 15 },
       "probe": {
         "orbitRadius": 280,
         "startAngleDeg": 200,
-        "minSpeed": 40,
-        "maxSpeed": 320,
-        "dvBudget": 320
+        "minSpeed": 0,
+        "maxSpeed": 10,
+        "dvBudget": 10
       },
       "orbiters": [
-        { "body": "jupiter", "orbitRadius": 350, "angleDeg": 120, "direction": 1 },
-        { "body": "saturn", "orbitRadius": 500, "angleDeg": 20, "direction": 1 },
-        { "body": "asteroid", "orbitRadius": 420, "angleDeg": 300, "direction": 1, "spin": 0.5 },
-        { "body": "target_gate", "type": "target", "orbitRadius": 600, "angleDeg": 80, "direction": 1, "tolerance": 72 }
+        { "body": "jupiter", "orbitRadius": 350, "angleDeg": 244, "direction": 1 },
+        { "body": "saturn", "orbitRadius": 650, "angleDeg": 316, "direction": 1 }
       ],
-      "stars": [
-        { "orbitRadius": 320, "angleDeg": 169.9 },
-        { "orbitRadius": 400, "angleDeg": 102.6 },
-        { "orbitRadius": 540, "angleDeg": 78.2 }
-      ],
-      "environment": { "escapeRadius": 1600, "maxSteps": 1000 }
+      "stars": [],
+      "environment": { "escapeRadius": 1600, "maxSteps": 3600 }
     }
   ]
 }

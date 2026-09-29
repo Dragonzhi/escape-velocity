@@ -19,6 +19,7 @@ import type { TransferTutorial } from 'game/Transfer';
 const DEFAULT_SPIN = 0.6;
 
 export interface BodyProtoJson {
+	emissive?: [number, number, number];
 	name: string;
 	gm: number;
 	radius: number;
@@ -71,6 +72,7 @@ export interface StarJson {
 }
 
 export interface LevelJson {
+	marker?: { orbitRadius: number; angleDeg: number; tolerance: number };
 	transfer?: TransferTutorial;
 	id: number;
 	title: string;
@@ -132,6 +134,7 @@ function protoOf(table: BodiesConfigJson, key: string): BodyProtoJson | undefine
 
 function visualOf(proto: BodyProtoJson): PlanetVisualDef {
 	return {
+		emissive: proto.emissive !== undefined ? { r: proto.emissive[0], g: proto.emissive[1], b: proto.emissive[2] } : undefined,
 		r: proto.color[0],
 		g: proto.color[1],
 		b: proto.color[2],
@@ -211,6 +214,12 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 			if (o.tolerance !== undefined && o.tolerance > 0) tolerance = o.tolerance;
 		}
 	}
+	let marker: Body | undefined = undefined;
+	if (json.marker !== undefined && json.transfer !== undefined && json.transfer.orbital !== undefined) {
+		marker = orbitBody({ name: '目标光点', gm: 0, radius: 0, model: '', color: [0, 1, 1] }, json.marker.orbitRadius, json.marker.angleDeg, 1, center.gm, undefined);
+		targetIndex = 0; tolerance = json.marker.tolerance;
+		for (const e of json.transfer.orbital.encounters) if (e.planetIndex < 1 || e.planetIndex >= planets.length) return undefined;
+	}
 	if (targetIndex < 0) return undefined;
 
 	const stars: P2[] = [];
@@ -249,7 +258,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 		stars,
 		planets,
 		visuals,
-		goal: { kind: 'planet', planetIndex: targetIndex, tolerance, offset: goalOffset },
+		goal: { kind: 'planet', planetIndex: targetIndex, tolerance, offset: goalOffset, marker },
 		dvBudget: json.probe.dvBudget,
 		escapeRadius,
 		maxSteps,
@@ -259,7 +268,7 @@ export function convertLevelJson(json: LevelJson, table: BodiesConfigJson): Leve
 			historicalRef: '街机引力弹弓',
 			subtitle: json.subtitle !== undefined ? json.subtitle : json.title,
 			vehicle: 'flyby',
-			challenges: json.transfer !== undefined ? [{ desc: json.transfer.flyby !== undefined ? '安全完成月球减速掠过' : '抵达月球旁的目标光点', type: 'success' }] : [
+			challenges: json.transfer !== undefined ? [{ desc: json.transfer.orbital !== undefined ? '依次借力后进入目标轨道区域' : (json.transfer.flyby !== undefined ? '安全完成月球减速掠过' : '抵达月球旁的目标光点'), type: 'success' }] : [
 				{ desc: '穿透星门', type: 'success' },
 				{ desc: '收集至少 2 颗星尘', type: 'stars', threshold: 2 },
 				{ desc: '收集全部 3 颗星尘', type: 'stars', threshold: 3 },

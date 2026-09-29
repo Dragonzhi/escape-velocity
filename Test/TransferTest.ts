@@ -139,7 +139,7 @@ export function runTests(): string {
 	check('no-phantom-stars', score.rockets === 1 && !score.achieved[1] && !score.achieved[2]);
 	coreRetry(core, 0);
 	check('retry-aiming', core.phase === 'Aiming' && core.flight === undefined && !core.missionCompleted && core.flyby === undefined);
-	check('l2-compatible', getLevel(1) !== undefined && getLevel(1)!.transfer === undefined && getLevel(1)!.stars!.length === 3);
-	check('l3-compatible', getLevel(2) !== undefined && getLevel(2)!.transfer === undefined && getLevel(2)!.stars!.length === 3);
+	check('l2-configured', getLevel(1) !== undefined && getLevel(1)!.transfer!.orbital !== undefined && getLevel(1)!.stars!.length === 0);
+	check('l3-configured', getLevel(2) !== undefined && getLevel(2)!.transfer!.orbital !== undefined && getLevel(2)!.stars!.length === 0);
 	return (failures.length === 0 ? 'passed' : 'failed') + '\nchecks=' + checks.toFixed(0) + ' failures=' + failures.length.toFixed(0) + (failures.length > 0 ? '\n' + failures.join('\n') : '');
 }

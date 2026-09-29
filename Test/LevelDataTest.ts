@@ -13,7 +13,7 @@ import { Content, json } from 'Dora';
 import { AimMaxSpeed, AimMinSpeed, BrakeShare, PhysicsStep } from 'game/Config';
 import { levelRuntime } from 'game/Tuning';
 import { resolveResult } from 'game/Game';
-import { analyzeFlyby, planTransfer } from 'game/Transfer';
+import { analyzeTransfer, planTransfer } from 'game/Transfer';
 import { goalPositionAt } from 'game/LevelData';
 
 interface Failure {
@@ -68,7 +68,7 @@ function testValidity(): void {
 			const gp = lv.planets[goal.planetIndex];
 			check(`lv${lv.id}-goal-index`, gp !== undefined, `planetIndex=${goal.planetIndex} 越界`);
 			if (gp !== undefined) {
-				check(`lv${lv.id}-tolerance>radius`, goal.offset !== undefined ? distance(goalPositionAt(gp, 0, goal.offset), bodyPositionAt(gp, 0)) > goal.tolerance + gp.radius : goal.tolerance > gp.radius,
+				check(`lv${lv.id}-tolerance>radius`, goal.marker !== undefined ? goal.marker.gm === 0 && goal.marker.radius === 0 && goal.marker.orbitRadius > gp.radius : (goal.offset !== undefined ? distance(goalPositionAt(gp, 0, goal.offset), bodyPositionAt(gp, 0)) > goal.tolerance + gp.radius : goal.tolerance > gp.radius),
 					`tolerance=${goal.tolerance} radius=${gp.radius}（容差必须大于半径，否则不可达）`);
 			}
 		}
@@ -339,16 +339,18 @@ function testReachability(): SweepStat[] {
 			const bodies = scaledPlanets(lv);
 			const radius = distance(lv.probeStart, bodyPositionAt(bodies[0], 0));
 			const ra = distance(goalPositionAt(bodies[lv.goal.planetIndex], 0, lv.goal.offset), bodyPositionAt(bodies[0], 0));
-			const t0 = lv.transfer.flyby !== undefined ? 1 : 0;
+			const t0 = 1;
 			const a = Math.atan2(lv.probeStart.y, lv.probeStart.x) + Math.sqrt(bodies[0].gm / (radius * radius * radius)) * t0;
 			const pos = { x: radius * Math.cos(a), y: radius * Math.sin(a) };
 			const vel = { x: -Math.sin(a) * Math.sqrt(bodies[0].gm / radius), y: Math.cos(a) * Math.sqrt(bodies[0].gm / radius) };
-			const plan = planTransfer(bodies[0].gm, radius, vel, lv.transfer.flyby !== undefined ? 0.875 : (ra - radius) / (lv.transfer.apoapsisMax - radius), lv.transfer.apoapsisMax);
+			const power = lv.transfer.orbital !== undefined ? (lv.transfer.mode === 'lowerPeriapsis' ? 11 / 14 : 0.5) : (lv.transfer.flyby !== undefined ? 0.875 : (ra - radius) / (lv.transfer.apoapsisMax - radius));
+			const plan = planTransfer(bodies[0].gm, radius, vel, power, lv.transfer.apoapsisMax, lv.transfer.mode, lv.transfer.periapsisMin);
 			const duration = plan.dv / lv.transfer.thrustAcceleration;
 			const flight = simulate({ pos, vel }, bodies, { dt: levelRuntime(i).physicsStep, steps: lv.maxSteps, sampleEvery: 1, escapeRadius: lv.escapeRadius, t0,
 				initialBurn: { duration, acceleration: { x: plan.velocity.x / duration, y: plan.velocity.y / duration } } });
-			const gi = lv.transfer.flyby !== undefined ? analyzeFlyby(flight, bodies[0], bodies[lv.goal.planetIndex], lv.transfer.flyby, levelRuntime(i).physicsStep, t0).completionIndex : findGoalIndex(flight.points, bodies, lv.goal, levelRuntime(i).physicsStep, t0, flight.velocities);
-			check(`lv${lv.id}-reachable`, gi >= 0, '顺行有限燃烧基准解必须安全完成掠月');
+			const analysis = analyzeTransfer(flight, bodies, lv.goal.planetIndex, lv.transfer, levelRuntime(i).physicsStep, t0);
+			const gi = analysis !== undefined ? analysis.completionIndex : findGoalIndex(flight.points, bodies, lv.goal, levelRuntime(i).physicsStep, t0, flight.velocities);
+			check(`lv${lv.id}-reachable`, gi >= 0, '有限燃烧基准解必须完成当前关卡任务');
 			out.push({ solutions: gi >= 0 ? 1 : 0, total: 1, perT0: [], t0s: [], best: '有限燃烧地月转移' });
 			continue;
 		}
@@ -444,7 +446,12 @@ function testMissionMeta(): void {
 
 /** 7) 火箭星级评价逻辑（S7 纯函数判定）。 */
 function testEvaluateRockets(): void {
-	const l1 = getLevel(1);
+	const fixture = getLevel(1);
+	// 保留旧收集关兼容测试；三关现行配置只展示完成状态。
+	const l1 = fixture !== undefined ? { ...fixture, mission: { ...fixture.mission!, challenges: [
+		{ desc: '目标', type: 'success' as const }, { desc: '两颗星尘', type: 'stars' as const, threshold: 2 }, { desc: '三颗星尘', type: 'stars' as const, threshold: 3 },
+	] } } : undefined;
+	if (l1 !== undefined) l1.transfer = undefined; // Lua 的 ObjectAssign 不会复制值为 nil 的属性。
 	if (l1 !== undefined) {
 		check('rockets-fail-0', evaluateRockets(l1, 'crash', 0.1) === 0, '失败应为 0 枚火箭');
 		check('rockets-escaped-0', evaluateRockets(l1, 'escaped', 0.1) === 0, '逃逸应为 0 枚火箭');
@@ -467,7 +474,7 @@ function testEvaluateRockets(): void {
 
 	const l3 = getLevel(2);
 	if (l3 !== undefined) {
-		check('rockets-l3-stars-3', evaluateRockets(l3, 'success', l3.dvBudget, { starsCollected: 3 }) === 3, '三颗星尘应为 3 星');
+		check('rockets-l3-completion-only', evaluateRockets(l3, 'success', l3.dvBudget, { starsCollected: 3 }) === 1, '日心任务只记录完成');
 	}
 }
 

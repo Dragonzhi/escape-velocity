@@ -291,7 +291,7 @@ else -- 142
 		local rtg = def.probeVariant == "rtg" -- 295
 		local scene = buildScene({ -- 296
 			root = world, -- 297
-			backdropRadius = def.transfer ~= nil and 3000 or nil, -- 298
+			backdropRadius = def.transfer ~= nil and (def.transfer.orbital ~= nil and 6000 or 3000) or nil, -- 298
 			bodies = bodies, -- 299
 			visuals = def.visuals, -- 300
 			probeStart = level.probeStart, -- 301
@@ -358,13 +358,16 @@ else -- 142
 		) -- 367
 		local offset = def.goal.offset -- 368
 		local planTolerance = arrivalRingRadius(def.goal) + (offset ~= nil and math.sqrt(offset.x * offset.x + offset.y * offset.y) or 0) -- 369
-		plan:fitTo(planFitRadius( -- 370
-			bodies, -- 370
-			level.probeStart, -- 370
-			def.goal.planetIndex, -- 370
-			planTolerance, -- 370
-			def.planCenter, -- 370
-			starOrbits(index) -- 370
+		plan:fitTo(math.max( -- 370
+			planFitRadius( -- 370
+				bodies, -- 370
+				level.probeStart, -- 370
+				def.goal.planetIndex, -- 370
+				planTolerance, -- 370
+				def.planCenter, -- 370
+				starOrbits(index) -- 370
+			), -- 370
+			def.transfer ~= nil and def.transfer.orbital ~= nil and def.transfer.orbital.region.maxRadius + 20 or 0 -- 370
 		)) -- 370
 		local aim = createAimInput( -- 372
 			levelLayers[index + 1], -- 372
@@ -373,7 +376,8 @@ else -- 142
 			def.dvBudget, -- 372
 			rt.aimMin, -- 372
 			rt.playbackSpeeds, -- 372
-			def.transfer ~= nil -- 372
+			def.transfer ~= nil, -- 372
+			def.transfer ~= nil and def.transfer.orbital ~= nil and (def.transfer.mode == "lowerPeriapsis" and "inward" or "outward") or "lunar" -- 372
 		) -- 372
 		aim:setBurnInfo(0, def.dvBudget) -- 374
 		local dateSpan = def.timeWindow ~= nil and def.timeWindow.span or 0 -- 376
@@ -402,7 +406,7 @@ else -- 142
 			end -- 397
 		end -- 397
 		local initialRockets = getMissionRockets(progress, index) -- 401
-		local drawerTitle = def.transfer ~= nil and "L1 · 奔向月球" or (def.mission ~= nil and (((("L" .. __TS__NumberToFixed(index + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or levelNames[index + 1]) -- 402
+		local drawerTitle = def.transfer ~= nil and (("L" .. __TS__NumberToFixed(index + 1, 0)) .. " · ") .. (index == 0 and "奔向月球" or (index == 1 and "金星逆向" or "双星甩尾")) or (def.mission ~= nil and (((("L" .. __TS__NumberToFixed(index + 1, 0)) .. " · ") .. def.title) .. " · ") .. def.mission.subtitle or levelNames[index + 1]) -- 402
 		aim:setMissionDrawer(drawerTitle, challengesList, initialRockets) -- 403
 		game = createGame( -- 405
 			level, -- 405
@@ -495,7 +499,7 @@ else -- 142
 					} -- 506
 					print((((("[escape-velocity] finale: dist=" .. __TS__NumberToFixed(info.distance, 0)) .. " time=") .. __TS__NumberToFixed(info.time, 1)) .. " tWorld=") .. __TS__NumberToFixed(info.tWorld, 0)) -- 507
 				end, -- 505
-				finale = index == levelTotal - 1 -- 512
+				finale = index == levelTotal - 1 and def.transfer == nil -- 512
 			} -- 512
 		) -- 512
 		aim:onQuickRetry(function() -- 515

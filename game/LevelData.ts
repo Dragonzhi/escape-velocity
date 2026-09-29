@@ -102,6 +102,8 @@ export interface WaypointSpec {
 
 /** 目标规格。 */
 export interface GoalSpec {
+	/** 独立引导点的解析轨道，不加入天体列表。 */
+	marker?: Body;
 	/** 目标光点相对天体的径向/切向偏移，不参与引力与实体碰撞。 */
 	offset?: P2;
 	/** 'planet' = 进入目标容差（掠过/到达）；'escape' = 飞出边界。 */
@@ -456,6 +458,7 @@ export function waypointProgress(
 
 /** 到达目标的采样点索引；没到返回 -1。 */
 export function findGoalIndex(points: P2[], bodies: Body[], goal: GoalSpec, dt: number, t0?: number, velocities?: P2[]): number {
+	if (goal.marker !== undefined) return -1; // 日心任务由顺序会遇与轨道区域判定，光点只有引导作用。
 	const wps = goalWaypoints(goal);
 	if (wps.length === 0) return -1;
 	const st = waypointProgress(points, bodies, goal, dt, t0, undefined, velocities);

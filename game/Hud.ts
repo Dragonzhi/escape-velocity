@@ -359,6 +359,7 @@ export function createAimInput(
 	/** 三颗倍速按钮的档位（S5 按关卡给：L1 = 0.02/0.05/0.1×，L6 = 8/16/32×）；省略 = 1/2/4 */
 	speedChoices?: number[],
 	transferTutorial: boolean = false,
+	transferMode: 'lunar' | 'inward' | 'outward' = 'lunar',
 ): AimInput {
 	const speedMin = minSpeed !== undefined && minSpeed >= 0 && minSpeed < (maxSpeed !== undefined ? maxSpeed : AimMaxSpeed)
 		? minSpeed : AimMinSpeed;
@@ -524,7 +525,8 @@ export function createAimInput(
 	// ⚠️ S3.12：太阳的光晕会扫过左上角，纯文字在亮底上几乎看不见（截图实测）⇒ 底下垫一块
 	// **半透明暗板**。UI 是 2D 层、画在 3D 之上，所以垫板是"提高对比度"而不是"遮挡"。
 	createPanel(root, 220, 50, 0x0a0e14, { alpha: 0.45 });
-	const dvLabel = createLabel(root, transferTutorial ? '拖动调整远地点' : 'Δv — / —', transferTutorial ? 22 : 30, ResultHintHex);
+	const orbitName = transferMode === 'inward' ? '近日点' : (transferMode === 'outward' ? '远日点' : '远地点高度');
+	const dvLabel = createLabel(root, transferTutorial ? '拖动调整' + orbitName : 'Δv — / —', transferTutorial ? 22 : 30, ResultHintHex);
 	if (dvLabel !== undefined) {
 		dvLabel.position = Vec2(24, viewH - (transferTutorial ? 130 : 44));
 		dvLabel.anchor = Vec2(0, 0);
@@ -903,7 +905,7 @@ export function createAimInput(
 			const r1 = drawerRockets >= 1 ? '★' : '☆';
 			const r2 = (drawerRockets >= 2 || liveFuelBonus) ? '★' : '☆';
 			const r3 = drawerRockets >= 3 ? '★' : '☆';
-			setLabelText(missionRocketsLabel, transferTutorial ? (drawerRockets >= 1 ? '已完成' : '地月转移练习') : r1 + '  ' + r2 + '  ' + r3);
+			setLabelText(missionRocketsLabel, transferTutorial ? (drawerRockets >= 1 ? '已完成' : (transferMode === 'lunar' ? '地月转移练习' : '日心借力练习')) : r1 + '  ' + r2 + '  ' + r3);
 		}
 	};
 
@@ -1084,13 +1086,14 @@ export function createAimInput(
 			if (dvLabel !== undefined) dvLabel.visible = !flying;
 			if (viewingLabel !== undefined) {
 				viewingLabel.visible = flying;
-				setLabelText(viewingLabel, completed ? '掠月完成 · 继续观察返回' : (stage === 'Launch' ? '顺行点火 · 抬高远地点' : (stage === 'Moon' ? '借月球引力 · 观察轨迹转弯' : '滑行接近月球')));
+				const near = stage === 'Venus' ? '金星减速借力' : (stage === 'Jupiter' ? '木星加速借力' : (stage === 'Saturn' ? '土星加速借力' : (stage === 'Moon' ? '借月球引力 · 观察轨迹转弯' : '滑行 · 观察航线')));
+				setLabelText(viewingLabel, completed ? (transferMode === 'lunar' ? '掠月完成 · 继续观察返回' : '目标完成 · 继续观察航线') : (stage === 'Launch' ? (transferMode === 'inward' ? '逆行点火 · 降低近日点' : '顺行点火 · 抬高' + orbitName) : near));
 				setLabelColor(viewingLabel, completed ? 0x8fe5ba : ResultHintHex);
 			}
 			if (cameraFocusButton !== undefined) {
 				cameraFocusButton.root.visible = flying && is3D;
 				cameraFocusButton.setEnabled(flying && is3D);
-				const title = mode === 'Auto' ? '自动' : (mode === 'Probe' ? '探测器' : (mode === 'Moon' ? '月球' : (mode === 'Earth' ? '地球' : '总览')));
+				const title = mode === 'Auto' ? '自动' : (mode === 'Probe' ? '探测器' : (mode === 'Moon' ? '月球' : (mode === 'Earth' ? '地球' : (mode === 'Venus' ? '金星' : (mode === 'Jupiter' ? '木星' : (mode === 'Saturn' ? '土星' : (mode === 'Sun' ? '太阳' : '总览')))))));
 				cameraFocusButton.setText('镜头 · ' + title);
 			}
 			if (endViewingButton !== undefined) { endViewingButton.root.visible = flying && completed; endViewingButton.setEnabled(flying && completed); }
@@ -1159,7 +1162,7 @@ export function createAimInput(
 		},
 		current: (): AimResult => aim,
 		setTransferInfo: (apoapsis: number, duration: number, reachable?: boolean): void => {
-			setLabelText(dvLabel, '远地点高度 ' + apoapsis.toFixed(0) + ' · 点火 ' + duration.toFixed(2) + 's' + (reachable !== undefined ? (reachable ? ' · 可减速掠月' : ' · 等待窗口') : ''));
+			setLabelText(dvLabel, orbitName + ' ' + apoapsis.toFixed(0) + ' · 点火 ' + duration.toFixed(2) + 's' + (reachable !== undefined ? (reachable ? (transferMode === 'lunar' ? ' · 可减速掠月' : ' · 航线可行') : ' · 等待窗口') : ''));
 		},
 		setProbeOffset: (offset: ScreenOffset): void => {
 			probeOffset = offset;
@@ -1522,7 +1525,7 @@ export function createResultPanel(
 							const ok = detail.achieved[k];
 							const icon = ok ? '★' : '☆';
 							const rank = k === 0 ? '一星' : (k === 1 ? '二星' : '三星');
-							const text = detail.completionOnly === true ? (ok ? '安全掠月 · 完成记录已保存' : '尚未完成安全减速掠月') : icon + ' [' + rank + '] ' + detail.challenges[k];
+							const text = detail.completionOnly === true ? (ok ? '目标完成 · 记录已保存' : '尚未完成目标') : icon + ' [' + rank + '] ' + detail.challenges[k];
 							setLabelText(challengeLabels[k], text);
 							setLabelColor(challengeLabels[k], ok ? 0xffc83b : 0x607894);
 							challengeLabels[k].visible = true;

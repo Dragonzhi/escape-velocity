@@ -118,12 +118,12 @@ ____exports.LEVEL_RUNTIME = {{ -- 335
 	physicsStep = 0.016, -- 346
 	maxStepsPerFrame = 4, -- 346
 	sampleEvery = 1, -- 346
-	predictSteps = 800, -- 346
+	predictSteps = 3600, -- 346
 	playback = 1, -- 347
 	playbackSpeeds = {0.5, 1, 2}, -- 347
 	cameraMin = 200, -- 348
-	cameraMax = 1200, -- 348
-	aimMin = 60, -- 348
+	cameraMax = 4000, -- 348
+	aimMin = 0, -- 348
 	introCloseDist = 100, -- 348
 	aimClockRate = 0, -- 349
 	slowMoFloor = 45, -- 349
@@ -136,17 +136,17 @@ ____exports.LEVEL_RUNTIME = {{ -- 335
 	speedMaxPow = 0, -- 351
 	flightSpeedPow = 0, -- 351
 	cameraNear = 0.1, -- 352
-	cameraFar = 5000 -- 352
+	cameraFar = 12000 -- 352
 }, { -- 352
 	physicsStep = 0.016, -- 355
 	maxStepsPerFrame = 4, -- 355
 	sampleEvery = 1, -- 355
-	predictSteps = 800, -- 355
+	predictSteps = 3600, -- 355
 	playback = 1, -- 356
 	playbackSpeeds = {0.5, 1, 2}, -- 356
 	cameraMin = 200, -- 357
-	cameraMax = 1200, -- 357
-	aimMin = 60, -- 357
+	cameraMax = 4000, -- 357
+	aimMin = 0, -- 357
 	introCloseDist = 100, -- 357
 	aimClockRate = 0, -- 358
 	slowMoFloor = 45, -- 358
@@ -159,7 +159,7 @@ ____exports.LEVEL_RUNTIME = {{ -- 335
 	speedMaxPow = 0, -- 360
 	flightSpeedPow = 0, -- 360
 	cameraNear = 0.1, -- 361
-	cameraFar = 5000 -- 361
+	cameraFar = 12000 -- 361
 }} -- 361
 --- 取第 index 关（0 起）的运行时参数；越界退回最后一关（宁可难看，也不要 nil）。
 function ____exports.levelRuntime(index) -- 366

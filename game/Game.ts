@@ -31,7 +31,7 @@ import { CameraRig, RigFrame } from 'game/CameraRig';
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalPositionAt, goalWaypoints, waypointProgress } from 'game/LevelData';
-import { CameraFocusMode, FlybyAnalysis, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeFlyby, nextCameraFocus, planTransfer, transferPlaybackRate, transferShotAt } from 'game/Transfer';
+import { CameraFocusMode, FlybyAnalysis, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeTransfer, nextCameraFocus, orbitalShotAt, planTransfer, transferCinematic, transferPlaybackRate, transferShotAt } from 'game/Transfer';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, BrakeShare, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
@@ -369,13 +369,13 @@ export function coreLaunch(core: GameCore, burn: P2, level: GameLevel, from?: P2
 	);
 	core.flight = flight;
 	core.missionCompleted = false;
-	const flybyCfg = level.transfer !== undefined ? level.transfer.flyby : undefined;
-	core.flyby = flybyCfg !== undefined ? analyzeFlyby(flight, level.bodies[0], level.bodies[level.goal.planetIndex], flybyCfg, core.dt, core.t0) : undefined;
+	core.flyby = level.transfer !== undefined ? analyzeTransfer(flight, level.bodies, level.goal.planetIndex, level.transfer, core.dt, core.t0) : undefined;
 	core.goalIndex = core.flyby !== undefined ? core.flyby.completionIndex : findGoalIndex(flight.points, level.bodies, level.goal, core.dt, core.t0, flight.velocities);
 	core.result = core.flyby !== undefined && core.goalIndex >= 0 ? undefined : resolveResult(flight.outcome, core.goalIndex, level.goal);
 	if (core.flyby !== undefined) print('[escape-velocity] flyby planned entry=' + core.flyby.entryIndex.toFixed(0)
 		+ ' peri=' + core.flyby.periapsis.toFixed(2) + ' exit=' + core.flyby.exitIndex.toFixed(0)
 		+ ' energyDrop=' + core.flyby.energyDrop.toFixed(2) + ' complete=' + core.flyby.completionIndex.toFixed(0) + ' end=' + core.flyby.viewEndIndex.toFixed(0));
+	if (core.flyby !== undefined && core.flyby.encounters !== undefined) for (const e of core.flyby.encounters) print('[escape-velocity] encounter body=' + e.planetIndex.toFixed(0) + ' peri=' + e.periapsis.toFixed(2) + ' energy=' + e.energyChange.toFixed(2) + ' work=' + e.work.toFixed(2) + ' passed=' + (e.passed ? '1' : '0'));
 	// 诊断（S5 L1 验收）：把"发射那一刻的真实起点与初速"打全精度。
 	// 排查"Node 侧算得出解、引擎里却 missed"时必须看这几个数 —— 差一点就是几何完全不同。
 	print('[escape-velocity][dbg] launch p0=(' + p0.x.toFixed(6) + ',' + p0.y.toFixed(6)
@@ -1302,7 +1302,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	 */
 	const framingPoints = (probe: P2, t: number): { pts: P2[]; radii: number[] } => {
 		if (level.transfer !== undefined) {
-			return { pts: [probe, bodyPositionAt(level.bodies[0], t), bodyPositionAt(level.bodies[level.goal.planetIndex], t), goalPositionAt(level.bodies[level.goal.planetIndex], t, level.goal.offset)],
+			return { pts: [probe, bodyPositionAt(level.bodies[0], t), bodyPositionAt(level.bodies[level.goal.planetIndex], t), goalPositionAt(level.goal.marker !== undefined ? level.goal.marker : level.bodies[level.goal.planetIndex], t, level.goal.offset)],
 				radii: [deps.scene.probeRadius, level.bodies[0].radius, level.bodies[level.goal.planetIndex].radius, level.goal.tolerance] };
 		}
 		// ⓪ **贴局部天体**（B2，L1 专用）：只装「探测器 + 锚点天体」，月球允许出画。
@@ -1368,22 +1368,29 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (upto !== undefined && core.flight !== undefined) {
 			passed = waypointProgress(core.flight.points, level.bodies, level.goal, core.dt, core.t0, upto, core.flight.velocities).passed;
 		}
-		if (level.transfer !== undefined && level.transfer.flyby !== undefined) passed = 0; // 引导光点不随旧的到达判定消失。
+		if (transferCinematic(level.transfer)) passed = 0; // 引导光点不随旧的到达判定消失。
 		// 只画**下一个**航点的环（S3.9 用户反馈："行星旁边的蓝色虚线圈是什么？"）。
 		// 四个航点同时亮四个圈，加上灰色的行星轨道圈，看起来像两套轨道 —— 目标环的语义只有"下一站"，
 		// 所以已经掠过的、还没轮到的都不画；掠过的航点靠 HUD 的航点灯表示。
 		if (passed >= wps.length) return [];
 		const nextWp = wps[passed];
-		const body = level.bodies[nextWp.planetIndex];
+		const body = level.goal.marker !== undefined ? level.goal.marker : level.bodies[nextWp.planetIndex];
 		if (body === undefined) return [];
-		return [{ center: goalPositionAt(body, t, nextWp.offset), radius: nextWp.tolerance, passed: false,
-			point: level.transfer !== undefined, showRange: level.transfer === undefined || (aimed && (core.phase === 'Aiming' || core.phase === 'Armed')),
+		const planning = aimed && (core.phase === 'Aiming' || core.phase === 'Armed');
+		const orbital = level.transfer !== undefined ? level.transfer.orbital : undefined;
+		const rings: GoalRing[] = [{ center: goalPositionAt(body, t, nextWp.offset), radius: nextWp.tolerance, passed: false,
+			point: level.transfer !== undefined, showRange: level.transfer === undefined || (orbital === undefined && planning),
 			pulse: 1 + 0.1 * Math.sin(t * 4) }];
+		if (orbital !== undefined && planning) {
+			const center = bodyPositionAt(level.bodies[0], t);
+			rings.push({ center, radius: orbital.region.minRadius, passed: false }, { center, radius: orbital.region.maxRadius, passed: false });
+		}
+		return rings;
 	};
 
 	/** 把自动取景按观察参数改写成"玩家的机位"（绕 target 转 + 缩放）。 */
 	const applyObserve = (f: { eye: Vec3.Type; target: Vec3.Type }): { eye: Vec3.Type; target: Vec3.Type } => {
-		if (level.transfer !== undefined && level.transfer.flyby === undefined) {
+		if (level.transfer !== undefined && !transferCinematic(level.transfer)) {
 			const basis = makeBasis(f);
 			const dx = f.eye.x - f.target.x, dy = f.eye.y - f.target.y, dz = f.eye.z - f.target.z;
 			const shift = Math.sqrt(dx * dx + dy * dy + dz * dz) * Math.tan(deps.fovYDeg * Math.PI / 360) * 0.14;
@@ -1476,6 +1483,59 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		return applyObserve(frame);
 	};
 
+	/** 日心关卡按配置逐站取景，手动选择保持到回到自动。 */
+	const orbitalCamera = (pos: P2, t: number, wallDt: number): RigFrame => {
+		const cfg = level.transfer!.orbital!;
+		const autoShot = orbitalShotAt(core.flightTime, core.burnDuration, core.flyby, cfg, core.dt);
+		const shot: TransferShot = focusMode === 'Auto' ? autoShot : (focusMode === 'Probe' ? 'Cruise' : focusMode);
+		const key = focusMode + ':' + shot;
+		const velocity = core.flight!.velocities[coreProbeIndex(core)];
+		const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+		let pts: P2[] = [pos], radii = [deps.scene.probeRadius];
+		let az = Math.atan2(core.flight!.velocities[0].x, core.flight!.velocities[0].y) * 180 / Math.PI + 100;
+		let tilt = 28, minDist = 130;
+		if (shot === 'Cruise') {
+			pts.push({ x: pos.x + (speed > 0 ? velocity.x * 32 / speed : 0), y: pos.y + (speed > 0 ? velocity.y * 32 / speed : 0) });
+			radii.push(0); tilt = 35; minDist = 180;
+		} else if (shot === 'Overview') {
+			pts.push(bodyPositionAt(level.bodies[0], t)); radii.push(level.bodies[0].radius);
+			for (const e of cfg.encounters) { pts.push(bodyPositionAt(level.bodies[e.planetIndex], t)); radii.push(level.bodies[e.planetIndex].radius); }
+			az = Math.atan2(pos.x, pos.y) * 180 / Math.PI; tilt = 60; minDist = 300;
+		} else if (shot === 'Sun') {
+			pts = [bodyPositionAt(level.bodies[0], t)]; radii = [level.bodies[0].radius]; tilt = 42; minDist = 200;
+		} else if (shot !== 'Launch') {
+			for (let i = 0; i < cfg.encounters.length; i++) {
+				const e = cfg.encounters[i];
+				if (e.focus !== shot) continue;
+				const bp = bodyPositionAt(level.bodies[e.planetIndex], t);
+				pts = focusMode === 'Auto' ? [pos, bp] : [bp];
+				radii = focusMode === 'Auto' ? [deps.scene.probeRadius, level.bodies[e.planetIndex].radius] : [level.bodies[e.planetIndex].radius];
+				const stage = core.flyby !== undefined && core.flyby.encounters !== undefined ? core.flyby.encounters[i] : undefined;
+				const at = stage !== undefined && stage.entryIndex >= 0 ? stage.entryIndex : 0;
+				const near = bodyPositionAt(level.bodies[e.planetIndex], core.t0 + at * core.dt), probe = core.flight!.points[at];
+				az = Math.atan2(probe.x - near.x, probe.y - near.y) * 180 / Math.PI + 90;
+				tilt = 45; minDist = 180; break;
+			}
+		}
+		if (key !== cineKey) {
+			cineFrom = cineFrame; cineTransition = 0;
+			if (cineKey === '' || shot === 'Launch') cineFrom = undefined;
+			cineKey = key;
+			print('[escape-velocity] camera shot -> ' + key + ' t=' + core.flightTime.toFixed(2));
+		}
+		const want = deps.rig.step(pts, deps.scene.probeRadius, radii, minDist, { azDeg: az, tiltDeg: tilt, lerp: 1 });
+		let frame = want;
+		if (cineFrom !== undefined) {
+			cineTransition += wallDt;
+			const u = Math.min(1, cineTransition / 0.6), k = u * u * (3 - 2 * u);
+			frame = { eye: Vec3(cineFrom.eye.x + (want.eye.x - cineFrom.eye.x) * k, cineFrom.eye.y + (want.eye.y - cineFrom.eye.y) * k, cineFrom.eye.z + (want.eye.z - cineFrom.eye.z) * k),
+				target: Vec3(cineFrom.target.x + (want.target.x - cineFrom.target.x) * k, cineFrom.target.y + (want.target.y - cineFrom.target.y) * k, cineFrom.target.z + (want.target.z - cineFrom.target.z) * k) };
+			if (u >= 1) cineFrom = undefined;
+		}
+		cineFrame = frame;
+		return applyObserve(frame);
+	};
+
 	const resetCinematic = (): void => {
 		focusMode = 'Auto'; cineKey = ''; cineFrame = undefined; cineFrom = undefined;
 		obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
@@ -1490,7 +1550,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		// B3：`Aiming`（没在拖）与 `Armed` 都按档位流；**瞄准中（按住探测器附近拖动）自动暂停**
 		// —— 用户口径：「只有对探测器进行瞄准的时候，时间暂停」。
 		// 街机：拖动瞄准与松手后的 Armed 都停表。线是按这一刻算的，表再走目标就从线下面跑掉。
-		const clockFrozen = dragging || core.phase === 'Armed' || (level.transfer !== undefined && level.transfer.flyby !== undefined && introTourActive);
+		const clockFrozen = dragging || core.phase === 'Armed' || (transferCinematic(level.transfer) && introTourActive);
 		if ((core.phase === 'Aiming' || core.phase === 'Armed') && !clockFrozen && idleOrbit !== undefined) {
 			// ⚠️ 0 = **冻结**（不是"回退成 1"）：L1 是教学关，开局状态必须完全确定，
 			//    否则"进关那几十帧"就足以让探测器自己转掉十几度（实测 0.017 秒 = 14°），
@@ -1501,7 +1561,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			//    （= 探测器日心轨道上 0.64 秒后的位置），而 probeStart 是 (0, 80.10)，
 			//    于是"Node 侧算得出解、引擎里却 missed"。
 			// 速率 = core.playback（档位 × 10^pow ÷ SecPerGameSec；暂停时是 0）
-			const rate = core.playback * (level.transfer !== undefined && level.transfer.flyby !== undefined ? level.transfer.flyby.standbyPlayback : 1);
+			const rate = core.playback * (level.transfer !== undefined && level.transfer.orbital !== undefined ? level.transfer.orbital.standbyPlayback : (level.transfer !== undefined && level.transfer.flyby !== undefined ? level.transfer.flyby.standbyPlayback : 1));
 			clock += dt * rate;
 			orbitClock += dt * rate;
 		}
@@ -1737,23 +1797,24 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				// ⚠️ 与 coreLaunch 共用 burnToMotion：预测线里必须带上反推段，否则"看到的 ≠ 飞到的"
 				// 基准是**此刻**的探测器状态（待机时它在动，不是 probeStart）。
 				const motion = burnToMotion(core.aim.velocity, probeVel, level.transfer === undefined && core.brakeMode, level.maxSteps);
+				const predictSample = level.transfer !== undefined ? 1 : 4;
 				const sim = simulate(
 					{ pos: { x: probePos.x, y: probePos.y }, vel: motion.init },
 					level.bodies,
-					{ steps: level.predictSteps !== undefined ? level.predictSteps : PredictSteps, dt: core.dt, sampleEvery: 4, escapeRadius: level.escapeRadius, t0: tNow, brake: motion.brake },
+					{ steps: level.predictSteps !== undefined ? level.predictSteps : PredictSteps, dt: core.dt, sampleEvery: predictSample, escapeRadius: level.escapeRadius, t0: tNow, brake: motion.brake },
 				);
 				predPoints = sim.points;
 				if (level.transfer !== undefined) {
-					const analysis = level.transfer.flyby !== undefined ? analyzeFlyby(sim, level.bodies[0], level.bodies[level.goal.planetIndex], level.transfer.flyby, core.dt * 4, tNow) : undefined;
-					const gi = analysis !== undefined ? analysis.completionIndex : findGoalIndex(sim.points, level.bodies, level.goal, core.dt * 4, tNow, sim.velocities);
+					const analysis = analyzeTransfer(sim, level.bodies, level.goal.planetIndex, level.transfer, core.dt * predictSample, tNow);
+					const gi = analysis !== undefined ? analysis.completionIndex : findGoalIndex(sim.points, level.bodies, level.goal, core.dt * predictSample, tNow, sim.velocities);
 					if (analysis !== undefined) predPoints = sim.points.slice(0, analysis.viewEndIndex + 1);
 					else if (gi >= 0) predPoints = sim.points.slice(0, gi + 1);
 					const radius = distance(probePos, bodyPositionAt(level.bodies[0], tNow));
-					const plan = planTransfer(level.bodies[0].gm, radius, probeVel, core.aim.power, level.transfer.apoapsisMax);
-					if (deps.aim.setTransferInfo !== undefined) deps.aim.setTransferInfo(plan.apoapsis - level.bodies[0].radius, plan.dv / level.transfer.thrustAcceleration, gi >= 0);
+					const plan = planTransfer(level.bodies[0].gm, radius, probeVel, core.aim.power, level.transfer.apoapsisMax, level.transfer.mode, level.transfer.periapsisMin);
+					if (deps.aim.setTransferInfo !== undefined) deps.aim.setTransferInfo(level.transfer.orbital !== undefined ? plan.apoapsis : plan.apoapsis - level.bodies[0].radius, plan.dv / level.transfer.thrustAcceleration, gi >= 0);
 				}
 				predTimes = [];
-				for (let pi = 0; pi < predPoints.length; pi++) predTimes.push(tNow + pi * core.dt * 4);
+				for (let pi = 0; pi < predPoints.length; pi++) predTimes.push(tNow + pi * core.dt * predictSample);
 			}
 			deps.trajectory.setPrediction(predPoints, basis);
 			// 2D 用的是**同一批采样点**（硬约束 5）：只换投影，不重跑 simulate
@@ -1915,8 +1976,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		} else {
 			fr = framingPoints(pos, tWorld);
 		}
-		const baseFrame = level.transfer !== undefined && level.transfer.flyby !== undefined ? transferCamera(pos, tWorld, dt) : deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii, closeDist);
-		const frame = level.transfer !== undefined && level.transfer.flyby === undefined ? applyObserve(baseFrame) : baseFrame;
+		const baseFrame = level.transfer !== undefined && level.transfer.orbital !== undefined ? orbitalCamera(pos, tWorld, dt) : (level.transfer !== undefined && level.transfer.flyby !== undefined ? transferCamera(pos, tWorld, dt) : deps.rig.step(fr.pts, deps.scene.probeRadius, fr.radii, closeDist));
+		const frame = level.transfer !== undefined && !transferCinematic(level.transfer) ? applyObserve(baseFrame) : baseFrame;
 		deps.rig.apply(deps.camera, frame);
 		deps.scene.syncBackdrop(frame.eye, frame.target);
 		const basis = makeBasis(frame);
@@ -1997,7 +2058,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		isPaused: (): boolean => paused,
 		speedRate: (): number => {
 			if (level.transfer !== undefined && (core.phase === 'Flying' || core.phase === 'Result')) return core.playback * transferPlaybackRate(core.flightTime, core.burnDuration, level.transfer, core.flyby, core.dt);
-			return core.playback * (level.transfer !== undefined && level.transfer.flyby !== undefined ? level.transfer.flyby.standbyPlayback : 1);
+			return core.playback * (level.transfer !== undefined && level.transfer.orbital !== undefined ? level.transfer.orbital.standbyPlayback : (level.transfer !== undefined && level.transfer.flyby !== undefined ? level.transfer.flyby.standbyPlayback : 1));
 		},
 		missionSeconds: (): number => {
 			const w = core.phase === 'Flying' || core.phase === 'Result' ? core.t0 + core.flightTime : core.t0 + clock;
@@ -2028,9 +2089,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			core.aim = a;
 			if (level.transfer !== undefined) {
 				const radius = distance(probePos, bodyPositionAt(level.bodies[0], core.t0 + clock));
-				const plan = planTransfer(level.bodies[0].gm, radius, probeVel, a.power, level.transfer.apoapsisMax);
+				const plan = planTransfer(level.bodies[0].gm, radius, probeVel, a.power, level.transfer.apoapsisMax, level.transfer.mode, level.transfer.periapsisMin);
 				core.aim = { power: a.power, velocity: plan.velocity, unit: a.unit };
-				if (deps.aim.setTransferInfo !== undefined) deps.aim.setTransferInfo(plan.apoapsis - level.bodies[0].radius, plan.dv / level.transfer.thrustAcceleration);
+				if (deps.aim.setTransferInfo !== undefined) deps.aim.setTransferInfo(level.transfer.orbital !== undefined ? plan.apoapsis : plan.apoapsis - level.bodies[0].radius, plan.dv / level.transfer.thrustAcceleration);
 			}
 			aimed = true; // 玩家动过手了 ⇒ 从他拖动的那一刻起，预测线才属于他（S3.12）
 		},
@@ -2072,11 +2133,12 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			applyView();
 		},
 		cameraFocus: (): CameraFocusMode => focusMode,
-		flightStage: (): TransferShot | undefined => level.transfer !== undefined && level.transfer.flyby !== undefined
-			? transferShotAt(core.flightTime, core.burnDuration, core.flyby, level.transfer.flyby, core.dt) : undefined,
+		flightStage: (): TransferShot | undefined => level.transfer !== undefined && level.transfer.orbital !== undefined ? orbitalShotAt(core.flightTime, core.burnDuration, core.flyby, level.transfer.orbital, core.dt) : (level.transfer !== undefined && level.transfer.flyby !== undefined
+			? transferShotAt(core.flightTime, core.burnDuration, core.flyby, level.transfer.flyby, core.dt) : undefined),
 		cycleCameraFocus: (): void => {
-			if (level.transfer === undefined || level.transfer.flyby === undefined || core.phase !== 'Flying') return;
-			focusMode = nextCameraFocus(focusMode);
+			if (!transferCinematic(level.transfer) || core.phase !== 'Flying') return;
+			const modes: CameraFocusMode[] | undefined = level.transfer !== undefined && level.transfer.orbital !== undefined ? ['Auto', 'Probe', ...level.transfer.orbital.encounters.map(e => e.focus), 'Sun', 'Overview'] : undefined;
+			focusMode = nextCameraFocus(focusMode, modes);
 			obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
 			print('[escape-velocity] camera focus -> ' + focusMode);
 		},

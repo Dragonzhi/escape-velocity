@@ -538,12 +538,12 @@ function ____exports.runTests() -- 8
 	coreRetry(core, 0) -- 140
 	check("retry-aiming", core.phase == "Aiming" and core.flight == nil and not core.missionCompleted and core.flyby == nil) -- 141
 	check( -- 142
-		"l2-compatible", -- 142
-		getLevel(1) ~= nil and getLevel(1).transfer == nil and #getLevel(1).stars == 3 -- 142
+		"l2-configured", -- 142
+		getLevel(1) ~= nil and getLevel(1).transfer.orbital ~= nil and #getLevel(1).stars == 0 -- 142
 	) -- 142
 	check( -- 143
-		"l3-compatible", -- 143
-		getLevel(2) ~= nil and getLevel(2).transfer == nil and #getLevel(2).stars == 3 -- 143
+		"l3-configured", -- 143
+		getLevel(2) ~= nil and getLevel(2).transfer.orbital ~= nil and #getLevel(2).stars == 0 -- 143
 	) -- 143
 	return (((((#failures == 0 and "passed" or "failed") .. "\nchecks=") .. __TS__NumberToFixed(checks, 0)) .. " failures=") .. __TS__NumberToFixed(#failures, 0)) .. (#failures > 0 and "\n" .. table.concat(failures, "\n") or "") -- 144
 end -- 8

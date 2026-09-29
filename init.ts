@@ -295,7 +295,7 @@ if (levelTotal <= 0) {
 		const rtg = def.probeVariant === 'rtg';
 		const scene = buildScene({
 			root: world,
-			backdropRadius: def.transfer !== undefined ? 3000 : undefined,
+			backdropRadius: def.transfer !== undefined ? (def.transfer.orbital !== undefined ? 6000 : 3000) : undefined,
 			bodies,
 			visuals: def.visuals,
 			probeStart: level.probeStart,
@@ -367,9 +367,9 @@ if (levelTotal <= 0) {
 		const plan = createPlanView(levelLayers[index], viewW, viewH, planOpts, def.planCenter);
 		const offset = def.goal.offset;
 		const planTolerance = arrivalRingRadius(def.goal) + (offset !== undefined ? Math.sqrt(offset.x * offset.x + offset.y * offset.y) : 0);
-		plan.fitTo(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter, starOrbits(index)));
+		plan.fitTo(Math.max(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter, starOrbits(index)), def.transfer !== undefined && def.transfer.orbital !== undefined ? def.transfer.orbital.region.maxRadius + 20 : 0));
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
-		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds, def.transfer !== undefined);
+		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds, def.transfer !== undefined, def.transfer !== undefined && def.transfer.orbital !== undefined ? (def.transfer.mode === 'lowerPeriapsis' ? 'inward' : 'outward') : 'lunar');
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
 		aim.setBurnInfo(0, def.dvBudget); // 初值；此后由主循环每帧刷新（见 burnNow）
 		// 时间流按钮（S3.9.4）：只有带 timeWindow 的关卡才启用
@@ -399,7 +399,7 @@ if (levelTotal <= 0) {
 			}
 		}
 		const initialRockets = getMissionRockets(progress, index);
-		const drawerTitle = def.transfer !== undefined ? 'L1 · 奔向月球' : def.mission !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle : levelNames[index];
+		const drawerTitle = def.transfer !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + (index === 0 ? '奔向月球' : (index === 1 ? '金星逆向' : '双星甩尾')) : def.mission !== undefined ? 'L' + (index + 1).toFixed(0) + ' · ' + def.title + ' · ' + def.mission.subtitle : levelNames[index];
 		aim.setMissionDrawer(drawerTitle, challengesList, initialRockets);
 
 		const game = createGame(level, {
@@ -509,7 +509,7 @@ if (levelTotal <= 0) {
 			},
 			// 只有**最后一关**成功才进终章。不读 goal.kind === 'escape'：S3.13 起 L6 就是
 			// 普通的目的地任务（逃逸归终章），所以判据只能是「这是最后一关」。
-			finale: index === levelTotal - 1,
+			finale: index === levelTotal - 1 && def.transfer === undefined,
 		});
 
 		aim.onQuickRetry((): void => {
