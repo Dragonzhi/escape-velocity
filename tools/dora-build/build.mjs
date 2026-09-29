@@ -111,7 +111,7 @@ function parseArgs(argv) {
 	const opts = {
 		files: [], all: false, out: undefined, root: undefined, doraDts: undefined,
 		luaTarget: tstl.LuaTarget.Lua55, luaLibImport: tstl.LuaLibImportKind.Require,
-		external: ["Dora"],
+		external: ["Dora", "nvg"],
 		deps: false, markers: true, emitSourcemap: false, json: false, quiet: false,
 	};
 	for (let i = 0; i < argv.length; i++) {

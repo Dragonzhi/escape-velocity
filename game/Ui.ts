@@ -19,7 +19,9 @@
  * 字体：`Label()` 可能返回 undefined（字体缺失）。所有创建函数都把 undefined
  * 原样交给调用方，由调用方决定是“跳过这一行字”还是报错（手册 §7.1）。
  */
-import { Audio, Color, DrawNode, Label, Node, Size, Vec2 } from 'Dora';
+/// <reference path="../tools/dora-build/dora-types/nvg.d.ts" />
+import { Audio, Color, DrawNode, Label, Node, Size, Vec2, VGNode } from 'Dora';
+import * as nvg from 'nvg';
 
 /**
  * UI 自己的时钟（秒）—— **不要改用 `App.elapsedTime`**。
@@ -48,12 +50,6 @@ export function uiClockNow(): number {
 export const FontName = 'sarasa-mono-sc-regular';
 
 /**
- * 触屏目标下限（视图逻辑像素）。
- *
- * 竖屏单手可达是硬要求（手册 §5.7），所以按钮不许做小：
- * 高度 130、宽度 560 是**下限**，不是推荐值。
- */
-/**
  * 触屏目标的**绝对下限**（视图逻辑像素）—— 不是“按钮就该这么大”。
  *
  * ⚠️ 曾经写成 560/130，结果在竖屏窄屏（实测 View.size = 601×1066）里：
@@ -61,11 +57,39 @@ export const FontName = 'sarasa-mono-sc-regular';
  * 真正的尺寸应由布局按**可用空间**算，这里只保一个“不要小到点不中”的地板。
  */
 export const MinButtonHeight = 72;
-export const MinButtonWidth = 160;
+export const MinButtonWidth = 144;
+export const IconButtonSize = 72;
+export const TextButtonWidth = 144;
+export const ButtonGap = 8;
+export type ButtonIcon = 'slow' | 'fast' | 'play' | 'pause' | 'launch' | 'cancel' | 'retry' | 'back' | 'camera' | 'stop' | 'minus' | 'plus' | 'fit';
+
+/** NanoVG paths; icon meaning does not depend on the installed font. */
+function renderButtonIcon(node: VGNode.Type, icon: ButtonIcon, hex: number): void {
+	node.render((): void => {
+		nvg.StrokeColor(colorFromHex(hex, 1)); nvg.StrokeWidth(2.4); nvg.LineCap(nvg.LineCapMode.Round); nvg.LineJoin(nvg.LineJoinMode.Round);
+		const line = (points: number[]): void => {
+			nvg.BeginPath(); nvg.MoveTo(points[0], points[1]);
+			for (let i = 2; i < points.length; i += 2) nvg.LineTo(points[i], points[i + 1]);
+			nvg.Stroke();
+		};
+		if (icon === 'pause') { line([12, 7, 12, 29]); line([24, 7, 24, 29]); }
+		else if (icon === 'play') line([11, 7, 27, 18, 11, 29, 11, 7]);
+		else if (icon === 'slow' || icon === 'fast') {
+			const a = icon === 'slow' ? 1 : -1, c = icon === 'slow' ? 0 : 36;
+			line([c + 17 * a, 8, c + 7 * a, 18, c + 17 * a, 28]); line([c + 29 * a, 8, c + 19 * a, 18, c + 29 * a, 28]);
+		} else if (icon === 'cancel') { line([9, 9, 27, 27]); line([27, 9, 9, 27]); }
+		else if (icon === 'back') { line([19, 7, 8, 18, 19, 29]); line([8, 18, 29, 18]); }
+		else if (icon === 'stop') line([9, 9, 27, 9, 27, 27, 9, 27, 9, 9]);
+		else if (icon === 'retry') { nvg.BeginPath(); nvg.Arc(18, 18, 11, -1.5, 3.9, nvg.ArcDir.CW); nvg.Stroke(); line([6, 9, 6, 18, 14, 15]); }
+		else if (icon === 'camera') { line([6, 12, 12, 12, 15, 8, 24, 8, 27, 12, 30, 12, 30, 28, 6, 28, 6, 12]); nvg.BeginPath(); nvg.Circle(18, 20, 6); nvg.Stroke(); }
+		else if (icon === 'launch') { line([13, 25, 13, 14, 18, 5, 23, 14, 23, 25, 13, 25]); line([13, 18, 7, 26, 13, 25]); line([23, 18, 29, 26, 23, 25]); line([16, 29, 16, 33]); line([20, 29, 20, 33]); }
+		else if (icon === 'minus' || icon === 'plus') { line([8, 18, 28, 18]); if (icon === 'plus') line([18, 8, 18, 28]); }
+		else { line([7, 14, 7, 7, 14, 7]); line([22, 7, 29, 7, 29, 14]); line([29, 22, 29, 29, 22, 29]); line([14, 29, 7, 29, 7, 22]); }
+	});
+}
 
 /**
  * 0xRRGGBB + alpha(0–1) → Color。
- *
  * 用除法取通道而不用 `>>` / `&`：位运算在 TSTL 的不同 Lua 目标上支持面更窄，
  * 而这里只有三次算术，代价可忽略。
  */
@@ -189,6 +213,7 @@ export function setLabelVisible(label: Label.Type | undefined, visible: boolean)
 }
 
 export interface ButtonOptions {
+	icon?: ButtonIcon;
 	w: number;
 	h: number;
 	text: string;
@@ -223,6 +248,8 @@ export interface ButtonOptions {
 
 /** 按钮句柄：自身是**可点节点**（底色 + 居中 Label + 触摸开关）。 */
 export interface UiButton {
+	setIcon: (icon: ButtonIcon) => void;
+	setSelected: (selected: boolean) => void;
 	/** 按钮节点，用 `position`（左下角）摆放。 */
 	root: Node.Type;
 	setText: (text: string) => void;
@@ -261,6 +288,20 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 	// 居中锚点的文字，位置取按钮的几何中心
 	const label = createLabel(root, opts.text, opts.fontSize, opts.fgHex);
 	if (label !== undefined) label.position = Vec2(opts.w / 2, opts.h / 2);
+	let icon = opts.icon;
+	let iconNode: VGNode.Type | undefined = undefined;
+	let renderedIcon: ButtonIcon | undefined = undefined;
+	let renderedHex = -1;
+	let buttonText = opts.text;
+	let selected = false;
+	const layoutContent = (): void => {
+		if (icon !== undefined) {
+			if (iconNode === undefined) { iconNode = VGNode(36, 36); root.addChild(iconNode); }
+			iconNode.position = Vec2(buttonText === '' ? opts.w / 2 : 26, opts.h / 2);
+		}
+		if (label !== undefined) label.position = Vec2(icon !== undefined && buttonText !== '' ? (opts.w + 40) / 2 : opts.w / 2, opts.h / 2);
+	};
+	layoutContent();
 
 	let bgHex = opts.bgHex;
 	let fgHex = opts.fgHex;
@@ -269,13 +310,19 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 
 	const repaint = (): void => {
 		const baseBg = enabled ? bgHex : shadeHex(bgHex, 0.48);
-		const bg = pressed ? shadeHex(baseBg, 1.45) : baseBg;
+		const bg = pressed ? shadeHex(baseBg, 1.45) : (selected && enabled ? shadeHex(baseBg, 1.25) : baseBg);
 		draw.clear();
 		draw.drawPolygon(rectVerts(opts.w, opts.h), colorFromHex(bg, 1));
 		if (opts.borderHex !== undefined) {
 			draw.drawPolygon(rectVerts(opts.w, opts.h), colorFromHex(0x000000, 0), 2, colorFromHex(enabled ? opts.borderHex : shadeHex(opts.borderHex, 0.48), 1));
 		}
 		setLabelColor(label, enabled ? fgHex : shadeHex(fgHex, 0.55));
+		if (iconNode !== undefined && icon !== undefined) {
+			iconNode.opacity = enabled ? 1 : 0.55;
+			if (renderedIcon !== icon || renderedHex !== fgHex) {
+				renderButtonIcon(iconNode, icon, fgHex); renderedIcon = icon; renderedHex = fgHex;
+			}
+		}
 	};
 
 	// ⚠️ 实测（2026-09-26，合成点击点「刹车」按钮）：**一次点击会被投递两次** ——
@@ -312,8 +359,11 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 
 	return {
 		root,
-		setText: (text: string): void => setLabelText(label, text),
+		setIcon: (value: ButtonIcon): void => { if (icon === value) return; icon = value; layoutContent(); repaint(); },
+		setSelected: (value: boolean): void => { if (selected === value) return; selected = value; repaint(); },
+		setText: (text: string): void => { if (buttonText === text) return; buttonText = text; setLabelText(label, text); layoutContent(); },
 		setEnabled: (value: boolean): void => {
+			if (enabled === value) return;
 			enabled = value;
 			// 不可点 = 连触摸都不该收到：只在回调里 return 会让“未解锁”按钮
 			// 吞掉本该传给下面图层的点击。
@@ -322,6 +372,7 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 			repaint();
 		},
 		setColors: (bg: number, fg: number): void => {
+			if (bgHex === bg && fgHex === fg) return;
 			bgHex = bg;
 			fgHex = fg;
 			repaint();

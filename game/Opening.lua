@@ -25,6 +25,7 @@ local pointAntenna = ____Scene.pointAntenna -- 27
 local probeYawForVelocity = ____Scene.probeYawForVelocity -- 27
 local ____Ui = require("game.Ui") -- 28
 local colorFromHex = ____Ui.colorFromHex -- 28
+local createButton = ____Ui.createButton -- 28
 local createLabel = ____Ui.createLabel -- 28
 local setLabelCenter = ____Ui.setLabelCenter -- 28
 local DegToRad = math.pi / 180 -- 30
@@ -301,6 +302,7 @@ local function applyAlpha(label, colorHex, alpha) -- 310
 end -- 310
 --- 建立开场（只建一次场景；播放由 start 驱动）。
 function ____exports.createOpening(options) -- 318
+	local finish -- 318
 	local viewW = options.viewW -- 319
 	local viewH = options.viewH -- 320
 	local root = options.root -- 321
@@ -386,7 +388,7 @@ function ____exports.createOpening(options) -- 318
 	setLabelCenter(tagline, viewW / 2, titleY - titleSize * 0.95 - taglineSize * 1.8) -- 431
 	local narration = createLabel(ui, "地球轨道上，最后一次告别", taglineSize, NarrationHex) -- 432
 	setLabelCenter(narration, viewW / 2, viewH * 0.26) -- 433
-	local skip = createLabel(ui, "轻触跳过", taglineSize, SkipHex) -- 434
+	local skip = createLabel(ui, "", taglineSize, SkipHex) -- 434
 	setLabelCenter( -- 435
 		skip, -- 435
 		viewW / 2, -- 435
@@ -399,172 +401,198 @@ function ____exports.createOpening(options) -- 318
 	skipLayer.swallowTouches = true -- 442
 	skipLayer.touchEnabled = true -- 443
 	ui:addChild(skipLayer) -- 444
-	print((("[escape-velocity] opening assets: rings=" .. (rings ~= nil and "ok" or "MISSING")) .. " sky=") .. (backdrop ~= nil and "ok" or "MISSING")) -- 447
-	local earth = ____exports.stationPlane(____exports.EarthStationIndex) -- 450
-	local mode = "off" -- 452
-	local frame = -1 -- 453
-	local bodyYawDeg = 0 -- 454
-	local function probeNow() -- 459
-		return probe -- 459
-	end -- 459
+	local skipButton = createButton( -- 445
+		ui, -- 445
+		{ -- 445
+			w = 144, -- 445
+			h = 72, -- 445
+			text = "跳过", -- 445
+			icon = "fast", -- 445
+			fontSize = 22, -- 445
+			bgHex = 1319732, -- 446
+			fgHex = 15398143, -- 446
+			borderHex = 5143454, -- 446
+			fireOn = "press", -- 446
+			onTap = function() return finish() end -- 446
+		} -- 446
+	) -- 446
+	skipButton.root.position = Vec2(viewW - 168, 80) -- 447
+	skipButton.root.order = 100 -- 448
+	skipButton:setEnabled(false) -- 449
+	print((("[escape-velocity] opening assets: rings=" .. (rings ~= nil and "ok" or "MISSING")) .. " sky=") .. (backdrop ~= nil and "ok" or "MISSING")) -- 452
+	local earth = ____exports.stationPlane(____exports.EarthStationIndex) -- 455
+	local mode = "off" -- 457
+	local frame = -1 -- 458
+	local bodyYawDeg = 0 -- 459
+	local function probeNow() -- 464
+		return probe -- 464
+	end -- 464
 	--- 把某一帧的世界状态摆好。
-	local function updateWorld(f) -- 462
-		local hp = probeNow() -- 463
-		if hp ~= nil then -- 463
-			local p = ____exports.probeOrbitPos(f, earth) -- 465
-			hp.node.position = planeToWorld(p, 0) -- 466
-			local yaw = probeYawForVelocity(____exports.probeOrbitVel(f)) -- 467
-			if yaw ~= nil then -- 467
-				bodyYawDeg = yaw -- 469
-				hp.node.angleY = yaw -- 470
-			end -- 470
-			if hp.antenna ~= nil then -- 470
-				pointAntenna(hp.antenna, p, earth, bodyYawDeg) -- 472
-			end -- 472
-		end -- 472
-		local pose = ____exports.openingPose(f, earth) -- 475
-		options.camera:lookAt( -- 476
-			pose.eye, -- 476
-			pose.target, -- 476
-			Vec3(0, 1, 0) -- 476
-		) -- 476
-		if backdrop ~= nil then -- 476
-			backdrop:sync(pose.eye, pose.target) -- 477
+	local function updateWorld(f) -- 467
+		local hp = probeNow() -- 468
+		if hp ~= nil then -- 468
+			local p = ____exports.probeOrbitPos(f, earth) -- 470
+			hp.node.position = planeToWorld(p, 0) -- 471
+			local yaw = probeYawForVelocity(____exports.probeOrbitVel(f)) -- 472
+			if yaw ~= nil then -- 472
+				bodyYawDeg = yaw -- 474
+				hp.node.angleY = yaw -- 475
+			end -- 475
+			if hp.antenna ~= nil then -- 475
+				pointAntenna(hp.antenna, p, earth, bodyYawDeg) -- 477
+			end -- 477
 		end -- 477
-		local k = ____exports.openingBlend(f) -- 479
-		if rings ~= nil then -- 479
-			rings.visible = k < OrbitRingsHideBlend -- 482
+		local pose = ____exports.openingPose(f, earth) -- 480
+		options.camera:lookAt( -- 481
+			pose.eye, -- 481
+			pose.target, -- 481
+			Vec3(0, 1, 0) -- 481
+		) -- 481
+		if backdrop ~= nil then -- 481
+			backdrop:sync(pose.eye, pose.target) -- 482
 		end -- 482
-	end -- 462
+		local k = ____exports.openingBlend(f) -- 484
+		if rings ~= nil then -- 484
+			rings.visible = k < OrbitRingsHideBlend -- 487
+		end -- 487
+	end -- 467
 	--- 文案的呼吸节奏（帧号写死在这里 = 分镜表）。
-	local function updateLabels(f) -- 486
-		if mode == "idle" then -- 486
-			hideLabel(title) -- 489
-			hideLabel(subtitle) -- 490
-			hideLabel(tagline) -- 491
-			hideLabel(narration) -- 492
-			hideLabel(skip) -- 493
-			return -- 494
-		end -- 494
-		local outA = ____exports.WideFrames - 10 -- 496
-		local outB = ____exports.WideFrames + 40 -- 497
-		applyAlpha( -- 498
-			title, -- 498
-			TitleHex, -- 498
-			fadeWindow( -- 498
-				f, -- 498
-				14, -- 498
-				48, -- 498
-				outA, -- 498
-				outB -- 498
-			) -- 498
-		) -- 498
-		applyAlpha( -- 499
-			subtitle, -- 499
-			SubtitleHex, -- 499
-			fadeWindow( -- 499
-				f, -- 499
-				20, -- 499
-				54, -- 499
-				outA, -- 499
-				outB -- 499
-			) -- 499
-		) -- 499
-		applyAlpha( -- 500
-			tagline, -- 500
-			TaglineHex, -- 500
-			fadeWindow( -- 500
-				f, -- 500
-				26, -- 500
-				62, -- 500
-				outA, -- 500
-				outB -- 500
-			) -- 500
-		) -- 500
-		applyAlpha( -- 501
-			narration, -- 501
-			NarrationHex, -- 501
-			fadeWindow( -- 502
-				f, -- 502
-				____exports.WideFrames + 70, -- 502
-				____exports.WideFrames + 130, -- 502
-				____exports.TotalFrames - 70, -- 502
-				____exports.TotalFrames - 10 -- 502
-			) -- 502
-		) -- 502
+	local function updateLabels(f) -- 491
+		if mode == "idle" then -- 491
+			hideLabel(title) -- 494
+			hideLabel(subtitle) -- 495
+			hideLabel(tagline) -- 496
+			hideLabel(narration) -- 497
+			hideLabel(skip) -- 498
+			return -- 499
+		end -- 499
+		local outA = ____exports.WideFrames - 10 -- 501
+		local outB = ____exports.WideFrames + 40 -- 502
 		applyAlpha( -- 503
-			skip, -- 503
-			SkipHex, -- 503
+			title, -- 503
+			TitleHex, -- 503
 			fadeWindow( -- 503
 				f, -- 503
-				60, -- 503
-				100, -- 503
-				____exports.TotalFrames - 40, -- 503
-				____exports.TotalFrames + 10 -- 503
+				14, -- 503
+				48, -- 503
+				outA, -- 503
+				outB -- 503
 			) -- 503
 		) -- 503
-	end -- 486
-	local function update(f) -- 506
-		if #buildQueue > 0 then -- 506
-			local job = table.remove(buildQueue, 1) -- 509
-			if job ~= nil then -- 509
-				job() -- 510
-			end -- 510
-		end -- 510
-		updateWorld(f) -- 512
-		updateLabels(f) -- 513
-	end -- 506
-	local function finish() -- 516
-		if mode ~= "intro" then -- 516
-			return -- 517
-		end -- 517
-		mode = "idle" -- 518
-		skipLayer.touchEnabled = false -- 519
-		options:onFinish() -- 520
-	end -- 516
-	skipLayer:onTapEnded(function() -- 523
-		finish() -- 524
-	end) -- 523
-	skipLayer.touchEnabled = false -- 527
-	ui.visible = false -- 528
-	return { -- 530
-		start = function() -- 531
-			mode = "intro" -- 532
-			frame = 0 -- 533
-			root.visible = true -- 534
-			ui.visible = true -- 535
-			skipLayer.touchEnabled = true -- 536
-			update(0) -- 537
-		end, -- 531
-		step = function() -- 539
-			if mode == "off" then -- 539
-				return -- 540
-			end -- 540
-			frame = frame + 1 -- 541
-			update(frame) -- 542
-			if mode == "intro" and frame >= ____exports.TotalFrames then -- 542
-				finish() -- 543
-			end -- 543
-		end, -- 539
-		skip = function() -- 545
-			finish() -- 546
-		end, -- 545
-		frameIndex = function() return frame end, -- 548
-		idle = function() -- 549
-			mode = "idle" -- 550
-			root.visible = true -- 551
-			ui.visible = true -- 552
-			skipLayer.touchEnabled = false -- 553
-			update(frame < 0 and 0 or frame) -- 554
-		end, -- 549
-		phase = function() return mode == "off" and "off" or ____exports.openingPhase(frame) end, -- 556
-		running = function() return mode ~= "off" end, -- 557
-		hide = function() -- 558
-			mode = "off" -- 559
-			root.visible = false -- 560
-			ui.visible = false -- 561
-			skipLayer.touchEnabled = false -- 562
-		end -- 558
-	} -- 558
+		applyAlpha( -- 504
+			subtitle, -- 504
+			SubtitleHex, -- 504
+			fadeWindow( -- 504
+				f, -- 504
+				20, -- 504
+				54, -- 504
+				outA, -- 504
+				outB -- 504
+			) -- 504
+		) -- 504
+		applyAlpha( -- 505
+			tagline, -- 505
+			TaglineHex, -- 505
+			fadeWindow( -- 505
+				f, -- 505
+				26, -- 505
+				62, -- 505
+				outA, -- 505
+				outB -- 505
+			) -- 505
+		) -- 505
+		applyAlpha( -- 506
+			narration, -- 506
+			NarrationHex, -- 506
+			fadeWindow( -- 507
+				f, -- 507
+				____exports.WideFrames + 70, -- 507
+				____exports.WideFrames + 130, -- 507
+				____exports.TotalFrames - 70, -- 507
+				____exports.TotalFrames - 10 -- 507
+			) -- 507
+		) -- 507
+		applyAlpha( -- 508
+			skip, -- 508
+			SkipHex, -- 508
+			fadeWindow( -- 508
+				f, -- 508
+				60, -- 508
+				100, -- 508
+				____exports.TotalFrames - 40, -- 508
+				____exports.TotalFrames + 10 -- 508
+			) -- 508
+		) -- 508
+	end -- 491
+	local function update(f) -- 511
+		if #buildQueue > 0 then -- 511
+			local job = table.remove(buildQueue, 1) -- 514
+			if job ~= nil then -- 514
+				job() -- 515
+			end -- 515
+		end -- 515
+		updateWorld(f) -- 517
+		updateLabels(f) -- 518
+	end -- 511
+	finish = function() -- 521
+		if mode ~= "intro" then -- 521
+			return -- 522
+		end -- 522
+		mode = "idle" -- 523
+		skipLayer.touchEnabled = false -- 524
+		skipButton:setEnabled(false) -- 525
+		skipButton.root.visible = false -- 525
+		options:onFinish() -- 526
+	end -- 521
+	skipLayer:onTapEnded(function() -- 529
+		finish() -- 530
+	end) -- 529
+	skipLayer.touchEnabled = false -- 533
+	ui.visible = false -- 534
+	return { -- 536
+		start = function() -- 537
+			mode = "intro" -- 538
+			frame = 0 -- 539
+			root.visible = true -- 540
+			ui.visible = true -- 541
+			skipLayer.touchEnabled = true -- 542
+			skipButton:setEnabled(true) -- 543
+			skipButton.root.visible = true -- 543
+			update(0) -- 544
+		end, -- 537
+		step = function() -- 546
+			if mode == "off" then -- 546
+				return -- 547
+			end -- 547
+			frame = frame + 1 -- 548
+			update(frame) -- 549
+			if mode == "intro" and frame >= ____exports.TotalFrames then -- 549
+				finish() -- 550
+			end -- 550
+		end, -- 546
+		skip = function() -- 552
+			finish() -- 553
+		end, -- 552
+		frameIndex = function() return frame end, -- 555
+		idle = function() -- 556
+			mode = "idle" -- 557
+			root.visible = true -- 558
+			ui.visible = true -- 559
+			skipLayer.touchEnabled = false -- 560
+			skipButton:setEnabled(false) -- 561
+			skipButton.root.visible = false -- 561
+			update(frame < 0 and 0 or frame) -- 562
+		end, -- 556
+		phase = function() return mode == "off" and "off" or ____exports.openingPhase(frame) end, -- 564
+		running = function() return mode ~= "off" end, -- 565
+		hide = function() -- 566
+			mode = "off" -- 567
+			root.visible = false -- 568
+			ui.visible = false -- 569
+			skipLayer.touchEnabled = false -- 570
+			skipButton:setEnabled(false) -- 571
+			skipButton.root.visible = false -- 571
+		end -- 566
+	} -- 566
 end -- 318
 return ____exports -- 318

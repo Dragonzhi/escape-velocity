@@ -104,14 +104,14 @@ const OrbitRingsHex = 0x3f5f88;
 
 const CardBgHex = 0x0c1626;
 const CardBorderHex = 0x2e4869;
-const PrimaryBtnBgHex = 0x1d528f;
+const PrimaryBtnBgHex = 0x142334;
 const PrimaryBtnFgHex = 0xffffff;
-const PrimaryBtnBorderHex = 0x5b95de;
-const SecondaryBtnBgHex = 0x152233;
+const PrimaryBtnBorderHex = 0x4e7b9e;
+const SecondaryBtnBgHex = 0x142334;
 const SecondaryBtnFgHex = 0x9fbcdb;
-const SecondaryBtnBorderHex = 0x38557a;
-const PinBgHex = 0x0d1f35;
-const PinBorderHex = 0x4172a6;
+const SecondaryBtnBorderHex = 0x4e7b9e;
+const PinBgHex = 0x142334;
+const PinBorderHex = 0x4e7b9e;
 const GoldStarHex = 0xffc83b;
 const DimStarHex = 0x566c85;
 
@@ -364,8 +364,8 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	}
 	const pins: MissionPin[] = [];
 
-	const PinW = 138;
-	const PinH = 50;
+	const PinW = 208;
+	const PinH = 72;
 
 	for (let i = 0; i < LEVEL_TO_STATION_INDEX.length; i++) {
 		const lvIndex = i;
@@ -411,13 +411,13 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 
 	// ---- 顶部信息栏（Top Bar）----
 	const topBar = Node();
-	topBar.size = Size(viewW, 90);
+	topBar.size = Size(viewW, 120);
 	topBar.anchor = Vec2(0, 0);
-	topBar.position = Vec2(0, viewH - 90);
+	topBar.position = Vec2(0, viewH - 120);
 	ui.addChild(topBar);
 
-	const titleLabel = createLabel(topBar, '深空航迹 · 太阳系沙盘', 32, 0xffffff);
-	setLabelCenter(titleLabel, viewW / 2, 60);
+	const titleLabel = createLabel(topBar, '太阳系沙盘', 26, 0xffffff);
+	if (titleLabel !== undefined) { titleLabel.anchor = Vec2(0, 0.5); titleLabel.position = Vec2(24, 84); }
 
 	const totalRocketsLabel = createLabel(topBar, '任务完成: 0', 22, 0x9ec5eb);
 	setLabelCenter(totalRocketsLabel, viewW / 2, 24);
@@ -425,8 +425,8 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	let replayIntroBtn: UiButton | undefined = undefined;
 	if (options.onReplayIntro !== undefined) {
 		replayIntroBtn = createButton(topBar, {
-			w: 130,
-			h: 44,
+			w: 144,
+			h: 72,
 			text: '重看开场',
 			fontSize: 20,
 			bgHex: SecondaryBtnBgHex,
@@ -437,7 +437,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 				if (options.onReplayIntro !== undefined) options.onReplayIntro();
 			},
 		});
-		replayIntroBtn.root.position = Vec2(viewW - 146, 22);
+		replayIntroBtn.root.position = Vec2(viewW - 160, 44);
 	}
 
 	// ---- 底部微缩任务栏 (Bottom Dock) ----
@@ -448,9 +448,9 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	ui.addChild(dockNode);
 
 	const dockButtons: UiButton[] = [];
-	const dockBtnW = clampNumber((viewW * 0.94 - 10 * 5) / 6, 76, 110);
-	const dockBtnH = 50;
-	const dockTotalW = dockBtnW * 6 + 10 * 5;
+	const dockBtnW = 144;
+	const dockBtnH = 72;
+	const dockTotalW = dockBtnW * LEVEL_TO_STATION_INDEX.length + 8 * (LEVEL_TO_STATION_INDEX.length - 1);
 	const dockStartX = (viewW - dockTotalW) / 2;
 
 	for (let i = 0; i < LEVEL_TO_STATION_INDEX.length; i++) {
@@ -459,6 +459,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 			w: dockBtnW,
 			h: dockBtnH,
 			text: 'L' + (lvIndex + 1).toFixed(0),
+			icon: 'launch',
 			fontSize: 20,
 			bgHex: PinBgHex,
 			fgHex: 0xd6e8fa,
@@ -468,7 +469,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 				focusMission(lvIndex);
 			},
 		});
-		btn.root.position = Vec2(dockStartX + lvIndex * (dockBtnW + 10), 0);
+		btn.root.position = Vec2(dockStartX + lvIndex * (dockBtnW + 8), 0);
 		dockButtons.push(btn);
 	}
 
@@ -485,14 +486,15 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	briefCard.position = Vec2((viewW - cardW) / 2, 40);
 	briefCard.visible = false;
 
-	const bTitleLabel = createLabel(briefCard, '', 28, 0xffffff);
-	setLabelCenter(bTitleLabel, cardW / 2, cardH - 34);
+	const bTitleLabel = createLabel(briefCard, '', 22, 0xffffff);
+	if (bTitleLabel !== undefined) bTitleLabel.textWidth = cardW - 48;
+	setLabelCenter(bTitleLabel, cardW / 2, cardH - 40);
 
 	const bSubtitleLabel = createLabel(briefCard, '', 20, 0x8ab4dc);
-	setLabelCenter(bSubtitleLabel, cardW / 2, cardH - 66);
+	setLabelCenter(bSubtitleLabel, cardW / 2, cardH - 83);
 
 	const bVehicleLabel = createLabel(briefCard, '', 18, 0xffd479);
-	setLabelCenter(bVehicleLabel, cardW / 2, cardH - 96);
+	setLabelCenter(bVehicleLabel, cardW / 2, cardH - 110);
 
 	// 三条挑战条件
 	const challengeLabels: Label.Type[] = [];
@@ -500,21 +502,21 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 		const cl = createLabel(briefCard, '', 19, 0xd0e2f5);
 		if (cl !== undefined) {
 			cl.textWidth = cardW - 48;
-			setLabelCenter(cl, cardW / 2, cardH - 138 - k * 44);
+			setLabelCenter(cl, cardW / 2, cardH - 153 - k * 44);
 			challengeLabels.push(cl);
 		}
 	}
 
 	// 按钮组
 	const btnRowY = 22;
-	const backBtnW = 120;
-	const launchBtnW = cardW - backBtnW - 40;
-	const btnH = 64;
+	const backBtnW = 72;
+	const launchBtnW = 144;
+	const btnH = 72;
 
 	const backBtn = createButton(briefCard, {
 		w: backBtnW,
 		h: btnH,
-		text: '❮ 返回',
+		text: '', icon: 'back',
 		fontSize: 22,
 		bgHex: SecondaryBtnBgHex,
 		fgHex: SecondaryBtnFgHex,
@@ -529,7 +531,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 	const launchBtn = createButton(briefCard, {
 		w: launchBtnW,
 		h: btnH,
-		text: '启动任务 / LAUNCH',
+		text: '出发', icon: 'launch',
 		fontSize: 24,
 		bgHex: PrimaryBtnBgHex,
 		fgHex: PrimaryBtnFgHex,
@@ -542,7 +544,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 			}
 		},
 	});
-	launchBtn.root.position = Vec2(backBtnW + 28, btnRowY);
+	launchBtn.root.position = Vec2(cardW - launchBtnW - 16, btnRowY);
 
 	backBtn.setEnabled(false);
 	launchBtn.setEnabled(false);
@@ -590,6 +592,7 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 
 	/** 聚焦某关特写。 */
 	const focusMission = (levelIndex: number): void => {
+		print('[escape-velocity] hub brief L' + (levelIndex + 1).toFixed(0));
 		camMode = 'focus';
 		focusLevelIndex = levelIndex;
 		const stIndex = LEVEL_TO_STATION_INDEX[levelIndex];
@@ -649,11 +652,11 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 			const count = getMissionRockets(prog, p.levelIndex);
 			const complete = getMissionCompleted(prog, p.levelIndex);
 			const total = getLevel(p.levelIndex)?.bonusPoints?.length || 0;
-			setLabelText(p.rocketLabel, (complete ? '已完成' : '待完成') + ' · 🚀 ' + count.toFixed(0) + '/' + total.toFixed(0));
+			setLabelText(p.rocketLabel, (complete ? '已完成' : '待完成') + ' · 火箭 ' + count.toFixed(0) + '/' + total.toFixed(0));
 			setLabelColor(p.rocketLabel, count > 0 ? GoldStarHex : DimStarHex);
 
 			// 同步刷新底部 Dock 按钮文字
-			dockButtons[i].setText('L' + (p.levelIndex + 1).toFixed(0) + ' ' + (complete ? '✓' : '') + ' 🚀' + count.toFixed(0));
+			dockButtons[i].setText('L' + (p.levelIndex + 1).toFixed(0) + ' ' + (complete ? '✓' : '') + ' ' + count.toFixed(0));
 		}
 	};
 
@@ -746,7 +749,13 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 					// 转换为左下原点系统的屏幕坐标
 					const screenX = viewW / 2 + over.x;
 					const screenY = viewH / 2 + over.y;
-					p.root.position = Vec2(screenX - PinW / 2, screenY + yOffset);
+					const x = clampNumber(screenX - PinW / 2, 12, viewW - PinW - 12);
+					let y = clampNumber(screenY + yOffset, 168, viewH - 200);
+					for (let j = 0; j < i; j++) {
+						const other = pins[j].root;
+						if (other.visible && x < other.x + PinW + 8 && x + PinW + 8 > other.x && y < other.y + PinH + 8 && y + PinH + 8 > other.y) y = Math.min(viewH - 200, other.y + PinH + 8);
+					}
+					p.root.position = Vec2(x, y);
 				} else {
 					p.root.visible = false;
 				}
@@ -813,12 +822,12 @@ export function createSolarHub(options: SolarHubOptions): SolarHub {
 			ui.size = Size(viewW, viewH);
 			ui.position = Vec2(0, 0);
 			gestureLayer.size = Size(viewW, viewH);
-			topBar.size = Size(viewW, 90);
-			topBar.position = Vec2(0, viewH - 90);
-			setLabelCenter(titleLabel, viewW / 2, 60);
+			topBar.size = Size(viewW, 120);
+			topBar.position = Vec2(0, viewH - 120);
+			setLabelCenter(titleLabel, 24, 84);
 			setLabelCenter(totalRocketsLabel, viewW / 2, 24);
 			if (replayIntroBtn !== undefined) {
-				replayIntroBtn.root.position = Vec2(viewW - 146, 22);
+				replayIntroBtn.root.position = Vec2(viewW - 160, 44);
 			}
 			dockNode.position = Vec2(0, 76);
 			briefCard.position = Vec2((viewW - cardW) / 2, 40);

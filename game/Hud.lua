@@ -146,9 +146,9 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 	touchLayer.swallowTouches = true -- 384
 	root:addChild(touchLayer) -- 385
 	local space = {viewW = viewW, viewH = viewH} -- 387
-	local TimeBtnW = 78 -- 388
-	local TimeBtnH = 64 -- 389
-	local TimeRowY = 170 -- 390
+	local TimeBtnW = 72 -- 388
+	local TimeBtnH = 72 -- 389
+	local TimeRowY = 176 -- 390
 	local enabled = false -- 392
 	local observing = false -- 393
 	local dragging = false -- 394
@@ -297,8 +297,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 	local warpHoldDir = 0 -- 550
 	--- 距离下一次连按还有多久（秒）。
 	local warpRepeatIn = 0 -- 552
-	local WarpButtonW = 116 -- 553
-	local WarpButtonH = 64 -- 554
+	local WarpButtonW = 72 -- 553
+	local WarpButtonH = 72 -- 554
 	local warpButtons = {} -- 555
 	local function applyWarpState() -- 556
 		local vis = dateSpan > 0 -- 557
@@ -374,19 +374,20 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		dateLabel.anchor = Vec2(1, 0) -- 615
 		dateLabel.position = Vec2(warpLeftX - 16, viewH - 96 - WarpButtonH + 18) -- 616
 	end -- 616
-	local QuickRetryW = 110 -- 620
-	local QuickRetryH = 50 -- 621
+	local QuickRetryW = 72 -- 620
+	local QuickRetryH = 72 -- 621
 	local quickRetryHandler = nil -- 622
 	local quickRetryBtn = makeHudButton( -- 623
 		root, -- 623
 		{ -- 623
 			w = QuickRetryW, -- 624
 			h = QuickRetryH, -- 625
-			text = "↺ 重试", -- 626
+			text = "", -- 626
+			icon = "retry", -- 626
 			fontSize = 26, -- 627
-			bgHex = 12730636, -- 628
+			bgHex = ResultButtonAltBgHex, -- 628
 			fgHex = 16777215, -- 629
-			borderHex = 16498468, -- 630
+			borderHex = ResultButtonBorderHex, -- 630
 			fireOn = "press", -- 631
 			onTap = function() -- 632
 				print("[escape-velocity] quick retry tapped") -- 633
@@ -406,7 +407,7 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		658964, -- 642
 		{alpha = 0.55} -- 642
 	) -- 642
-	starPlate.position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22) -- 643
+	starPlate.position = Vec2(viewW - starPlateW - 24, viewH - 164) -- 643
 	starPlate.visible = not transferTutorial -- 644
 	local starStatusLabel = createLabel(root, "☆ ☆ ☆", 30, 16766720) -- 645
 	local bonusToastLabel = createLabel(root, "", 34, 9240475) -- 646
@@ -416,7 +417,7 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 	end -- 647
 	if starStatusLabel ~= nil then -- 647
 		starStatusLabel.anchor = Vec2(0.5, 0.5) -- 649
-		starStatusLabel.position = Vec2(viewW / 2, viewH - starPlateH / 2 - 22) -- 650
+		starStatusLabel.position = Vec2(viewW - starPlateW / 2 - 24, viewH - 141) -- 650
 	end -- 650
 	local function updateStarsStatus(count) -- 652
 		if starStatusLabel == nil then -- 652
@@ -445,18 +446,19 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		if total > 0 then -- 664
 			setLabelText( -- 665
 				starStatusLabel, -- 665
-				(("🚀 " .. __TS__NumberToFixed(got, 0)) .. " / ") .. __TS__NumberToFixed(total, 0) -- 665
+				(("火箭 " .. __TS__NumberToFixed(got, 0)) .. " / ") .. __TS__NumberToFixed(total, 0) -- 665
 			) -- 665
 		end -- 665
 	end -- 661
-	local LaunchButtonW = 220 -- 670
-	local LaunchButtonH = 112 -- 671
+	local LaunchButtonW = 72 -- 670
+	local LaunchButtonH = 72 -- 671
 	local launchButton = makeHudButton( -- 672
 		root, -- 672
 		{ -- 672
 			w = LaunchButtonW, -- 673
 			h = LaunchButtonH, -- 674
-			text = "▲ 发射 ▲", -- 675
+			text = "", -- 675
+			icon = "launch", -- 675
 			fontSize = 38, -- 676
 			bgHex = ResultButtonBgHex, -- 677
 			fgHex = ResultButtonFgHex, -- 678
@@ -473,7 +475,7 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 	launchButton.root.position = Vec2(viewW - LaunchButtonW - 24, 96) -- 686
 	launchButton.root.visible = false -- 687
 	launchButton:setEnabled(false) -- 688
-	local CancelButtonW = 160 -- 691
+	local CancelButtonW = 72 -- 691
 	local CancelButtonH = 72 -- 692
 	local cancelAimHandler = nil -- 693
 	local cancelAimButton = makeHudButton( -- 694
@@ -481,7 +483,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		{ -- 694
 			w = CancelButtonW, -- 695
 			h = CancelButtonH, -- 696
-			text = "✕ 取消", -- 697
+			text = "", -- 697
+			icon = "cancel", -- 697
 			fontSize = 28, -- 698
 			bgHex = ResultButtonAltBgHex, -- 699
 			fgHex = ResultButtonFgHex, -- 700
@@ -495,18 +498,18 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 			end -- 703
 		} -- 703
 	) -- 703
-	cancelAimButton.root.position = Vec2(viewW - LaunchButtonW - CancelButtonW - 40, 116) -- 708
+	cancelAimButton.root.position = Vec2(viewW - LaunchButtonW - CancelButtonW - 32, 96) -- 708
 	cancelAimButton.root.visible = false -- 709
 	cancelAimButton:setEnabled(false) -- 710
-	local ViewButtonW = 116 -- 714
-	local ViewButtonH = 64 -- 715
+	local ViewButtonW = 72 -- 714
+	local ViewButtonH = 72 -- 715
 	local viewHandler = nil -- 716
 	local viewButton = makeHudButton( -- 717
 		root, -- 717
 		{ -- 717
 			w = ViewButtonW, -- 718
 			h = ViewButtonH, -- 719
-			text = "[ 3D ]", -- 720
+			text = "3D", -- 720
 			fontSize = 26, -- 721
 			bgHex = ResultButtonAltBgHex, -- 722
 			fgHex = ResultButtonFgHex, -- 723
@@ -520,7 +523,7 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 			end -- 726
 		} -- 726
 	) -- 726
-	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 12) -- 731
+	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 8) -- 731
 	--- 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。
 	local lastViewText = "2D" -- 733
 	local cameraFocusHandler = nil -- 736
@@ -528,9 +531,10 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 	local cameraFocusButton = transferTutorial and makeHudButton( -- 738
 		root, -- 738
 		{ -- 738
-			w = 260, -- 739
-			h = 58, -- 739
-			text = "镜头 · 自动", -- 739
+			w = 144, -- 739
+			h = 72, -- 739
+			text = "自动", -- 739
+			icon = "camera", -- 739
 			fontSize = 22, -- 739
 			bgHex = ResultButtonAltBgHex, -- 740
 			fgHex = ResultButtonFgHex, -- 740
@@ -546,9 +550,10 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 	local endViewingButton = transferTutorial and makeHudButton( -- 743
 		root, -- 743
 		{ -- 743
-			w = 220, -- 744
-			h = LaunchButtonH, -- 744
-			text = "结束观赏", -- 744
+			w = 72, -- 744
+			h = 72, -- 744
+			text = "", -- 744
+			icon = "stop", -- 744
 			fontSize = 26, -- 744
 			bgHex = ResultButtonAltBgHex, -- 745
 			fgHex = ResultButtonFgHex, -- 745
@@ -562,12 +567,12 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		} -- 746
 	) or nil -- 746
 	if cameraFocusButton ~= nil then -- 746
-		cameraFocusButton.root.position = Vec2(24, 266) -- 748
+		cameraFocusButton.root.position = Vec2(24, 256) -- 748
 		cameraFocusButton.root.visible = false -- 748
 		cameraFocusButton:setEnabled(false) -- 748
 	end -- 748
 	if endViewingButton ~= nil then -- 748
-		endViewingButton.root.position = Vec2(viewW - 244, 96) -- 749
+		endViewingButton.root.position = Vec2(viewW - 96, 96) -- 749
 		endViewingButton.root.visible = false -- 749
 		endViewingButton:setEnabled(false) -- 749
 	end -- 749
@@ -584,7 +589,7 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		viewingLabel.visible = false -- 751
 	end -- 751
 	local viewingKey = "" -- 752
-	local ZoomBtnSize = 58 -- 755
+	local ZoomBtnSize = 72 -- 755
 	local zoomGap = 8 -- 756
 	local zoomButtons = {} -- 757
 	local zoomInHandler = nil -- 758
@@ -596,7 +601,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 			{ -- 763
 				w = ZoomBtnSize, -- 764
 				h = ZoomBtnSize, -- 765
-				text = text, -- 766
+				text = "", -- 766
+				icon = text == "−" and "minus" or (text == "+" and "plus" or "fit"), -- 766
 				fontSize = fontSize, -- 767
 				bgHex = ResultButtonAltBgHex, -- 768
 				fgHex = ResultButtonFgHex, -- 769
@@ -664,7 +670,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		{ -- 811
 			w = TimeBtnW, -- 812
 			h = TimeBtnH, -- 812
-			text = "◀ 慢", -- 812
+			text = "", -- 812
+			icon = "slow", -- 812
 			fontSize = 26, -- 812
 			bgHex = ResultButtonAltBgHex, -- 813
 			fgHex = ResultButtonFgHex, -- 813
@@ -684,7 +691,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		{ -- 821
 			w = TimeBtnW, -- 822
 			h = TimeBtnH, -- 822
-			text = "⏸", -- 822
+			text = "", -- 822
+			icon = "pause", -- 822
 			fontSize = 30, -- 822
 			bgHex = ResultButtonAltBgHex, -- 823
 			fgHex = ResultButtonFgHex, -- 823
@@ -704,7 +712,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		{ -- 831
 			w = TimeBtnW, -- 832
 			h = TimeBtnH, -- 832
-			text = "快 ▶", -- 832
+			text = "", -- 832
+			icon = "fast", -- 832
 			fontSize = 26, -- 832
 			bgHex = ResultButtonAltBgHex, -- 833
 			fgHex = ResultButtonFgHex, -- 833
@@ -752,7 +761,7 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 	local lastPaused = false -- 863
 	local function setTimeControl(pow, minPow, maxPow, paused, missionSeconds, actualRate) -- 864
 		local rateText = actualRate ~= nil and __TS__NumberToFixed(actualRate, actualRate > 0 and actualRate < 0.1 and 3 or 2) .. "×" or powText(pow) -- 865
-		local txt = (((transferTutorial and rateText or powText(pow)) .. (paused and " ⏸ 暂停" or "")) .. "  ") .. (transferTutorial and ("T+ " .. __TS__NumberToFixed(missionSeconds, 1)) .. "s" or missionText(missionSeconds)) -- 866
+		local txt = (((transferTutorial and rateText or powText(pow)) .. (paused and " 暂停" or "")) .. "  ") .. (transferTutorial and ("T+ " .. __TS__NumberToFixed(missionSeconds, 1)) .. "s" or missionText(missionSeconds)) -- 866
 		if txt ~= lastTimeText then -- 866
 			lastTimeText = txt -- 868
 			if timeLabel ~= nil then -- 868
@@ -761,7 +770,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		end -- 869
 		if paused ~= lastPaused then -- 869
 			lastPaused = paused -- 872
-			pauseButton:setText(paused and "▶" or "⏸") -- 873
+			pauseButton:setIcon(paused and "play" or "pause") -- 873
+			pauseButton:setSelected(paused) -- 873
 			pauseButton:setColors(paused and ResultButtonBgHex or ResultButtonAltBgHex, ResultButtonFgHex) -- 874
 		end -- 874
 		fastButton:setEnabled(pow < maxPow) -- 877
@@ -825,8 +835,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 		introBannerHint.position = Vec2(IntroBannerW / 2, IntroBannerH * 0.28) -- 928
 	end -- 928
 	introBannerPlate.visible = false -- 930
-	local PlaybackButtonW = 116 -- 939
-	local PlaybackButtonH = 64 -- 940
+	local PlaybackButtonW = 72 -- 939
+	local PlaybackButtonH = 72 -- 940
 	local playbackGap = 10 -- 941
 	local playbackButtons = {} -- 942
 	local playbackSpeeds = {} -- 943
@@ -959,7 +969,8 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 				cameraFocusButton.root.visible = flying and is3D -- 1050
 				cameraFocusButton:setEnabled(flying and is3D) -- 1051
 				local title = mode == "Mercury" and "水星" or (mode == "Auto" and "自动" or (mode == "Probe" and "探测器" or (mode == "Moon" and "月球" or (mode == "Earth" and "地球" or (mode == "Venus" and "金星" or (mode == "Jupiter" and "木星" or (mode == "Saturn" and "土星" or (mode == "Sun" and "太阳" or "总览")))))))) -- 1052
-				cameraFocusButton:setText("镜头 · " .. title) -- 1053
+				cameraFocusButton:setText(title) -- 1053
+				cameraFocusButton:setSelected(mode ~= "Auto") -- 1053
 			end -- 1053
 			if endViewingButton ~= nil then -- 1053
 				endViewingButton.root.visible = flying and completed -- 1055
@@ -971,7 +982,7 @@ function ____exports.createAimInput(parent, viewW, viewH, maxSpeed, minSpeed, sp
 				return -- 1058
 			end -- 1058
 			lastViewText = mode -- 1059
-			local btnText = mode == "2D" and "[ 3D ]" or "[ 2D ]" -- 1061
+			local btnText = mode == "2D" and "3D" or "2D" -- 1061
 			viewButton:setText(btnText) -- 1062
 		end, -- 1057
 		onPlayback = function(____, callback) -- 1064
@@ -1162,10 +1173,10 @@ local ResultCardBorderHex = 3362938 -- 1225
 local ResultLevelHex = 9417948 -- 1226
 local ResultBodyHex = 14149367 -- 1227
 ResultHintHex = 8229803 -- 1228
-ResultButtonBgHex = 1919610 -- 1229
-ResultButtonAltBgHex = 1779509 -- 1230
+ResultButtonBgHex = 1319732 -- 1229
+ResultButtonAltBgHex = 1319732 -- 1230
 ResultButtonFgHex = 15398143 -- 1231
-ResultButtonBorderHex = 5211846 -- 1232
+ResultButtonBorderHex = 5143454 -- 1232
 local TitleSuccessHex = 8381344 -- 1233
 local TitleMissedHex = 16766073 -- 1234
 local TitleCrashedHex = 16743019 -- 1235
@@ -1247,8 +1258,8 @@ function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1329
 		{alpha = 0.78} -- 1335
 	) -- 1335
 	local cardW = clampNumber(viewW * 0.9, 360, 560) -- 1337
-	local btnW = clampNumber(cardW - 60, MinButtonWidth, 480) -- 1338
-	local btnH = clampNumber(viewH * 0.08, 48, 60) -- 1339
+	local btnW = 72 -- 1338
+	local btnH = 72 -- 1339
 	local padX = (cardW - btnW) / 2 -- 1340
 	local padY = 28 -- 1341
 	local fontLevel = 24 -- 1343
@@ -1314,7 +1325,8 @@ function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1329
 	local retryButton = createButton(card, { -- 1409
 		w = btnW, -- 1410
 		h = btnH, -- 1411
-		text = "重试本关", -- 1412
+		text = "", -- 1412
+		icon = "retry", -- 1412
 		fontSize = btnFont, -- 1413
 		bgHex = ResultButtonBgHex, -- 1414
 		fgHex = ResultButtonFgHex, -- 1415
@@ -1323,11 +1335,12 @@ function ____exports.createResultPanel(parent, viewW, viewH, opts) -- 1329
 		onTap = opts.onRetry -- 1418
 	}) -- 1418
 	retryButton.root.position = Vec2(padX, cursor) -- 1420
-	cursor = cursor - (14 + btnH) -- 1422
+	cursor = cursor - (8 + btnH) -- 1422
 	local backButton = createButton(card, { -- 1423
 		w = btnW, -- 1424
 		h = btnH, -- 1425
-		text = "返回关卡选择", -- 1426
+		text = "", -- 1426
+		icon = "back", -- 1426
 		fontSize = btnFont, -- 1427
 		bgHex = ResultButtonAltBgHex, -- 1428
 		fgHex = ResultButtonFgHex, -- 1429
@@ -1474,12 +1487,13 @@ function ____exports.createFinalePanel(parent, viewW, viewH, opts) -- 1554
 	if subLabel ~= nil then -- 1573
 		setLabelCenter(subLabel, viewW / 2, viewH * 0.71) -- 1574
 	end -- 1574
-	local btnW = clampNumber(viewW * 0.62, MinButtonWidth, 560) -- 1576
-	local btnH = clampNumber(viewH * 0.085, MinButtonHeight, 120) -- 1577
+	local btnW = 72 -- 1576
+	local btnH = 72 -- 1577
 	local backButton = createButton(root, { -- 1578
 		w = btnW, -- 1579
 		h = btnH, -- 1580
-		text = "返回关卡选择", -- 1581
+		text = "", -- 1581
+		icon = "back", -- 1581
 		fontSize = btnFont, -- 1582
 		bgHex = ResultButtonBgHex, -- 1583
 		fgHex = ResultButtonFgHex, -- 1584
@@ -1583,7 +1597,7 @@ function ____exports.createLevelSelect(parent, viewW, viewH, opts) -- 1646
 	local replayButton = opts.onReplayIntro ~= nil and createButton( -- 1706
 		root, -- 1707
 		{ -- 1707
-			w = clampNumber(viewW * 0.36, 180, 300), -- 1708
+			w = 144, -- 1708
 			h = MinButtonHeight, -- 1709
 			text = "重看开场", -- 1710
 			fontSize = 30, -- 1711

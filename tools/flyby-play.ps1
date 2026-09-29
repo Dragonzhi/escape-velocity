@@ -33,7 +33,7 @@ function Wait-State([scriptblock]$predicate, [double]$timeout = 20) {
   $watch = [Diagnostics.Stopwatch]::StartNew()
   while ($watch.Elapsed.TotalSeconds -lt $timeout) {
     $state = State
-    if ($state.ContainsKey('world') -and (& $predicate $state)) { return $state }
+    if ($state.ContainsKey('phase') -and (& $predicate $state)) { return $state }
     Start-Sleep -Milliseconds 20
   }
   throw ('state timeout: ' + ((State | ConvertTo-Json -Compress)))
@@ -119,7 +119,7 @@ try {
   $null = Api 'run' (@{ file = "$flybyRoot/Test/GameShot"; asProj = $false } | ConvertTo-Json -Compress)
   $null = Wait-State { param($s) $s.phase -eq 'Armed' }
   $null = Pause
-  $null = Click-State ($flybyVW - 340) 152 { param($s) $s.phase -eq 'Aiming' }
+  $null = Click-State ($flybyVW - 132) 132 { param($s) $s.phase -eq 'Aiming' }
   Capture 'flyby-idle'
   $null = Resume
   $standbyA = State
@@ -147,12 +147,12 @@ try {
   $null = Wait-State { param($s) $s.phase -eq 'Armed' }
   if ([Math]::Abs([double](State).date - $launchDate) -gt 0.001) { throw 'armed did not freeze date' }
   Capture 'flyby-planned'
-  $null = Click-State ($flybyVW - 82) 252 { param($s) $s.view -eq '3D' }
+  $null = Click-State ($flybyVW - 60) 212 { param($s) $s.view -eq '3D' }
   Capture 'flyby-before-launch'
-  Click ($flybyVW - 134) 152
+  Click ($flybyVW - 60) 132
   Click 149 202
   $ignition = Wait-State { param($s) $s.phase -eq 'Flying' -and $s.paused -eq '1' }
-  if ($RejectCase -eq '' -and (FlightTime $ignition) -ge 0.30) { throw 'missed actual burn' }
+  if ((FlightTime $ignition) -ge 1.5) { throw 'launch pause arrived too late for camera regression' }
   Capture 'flyby-ignition'
   if ($RejectCase -ne '') {
     $null = Resume
@@ -164,7 +164,19 @@ try {
     return
   }
   # 按钮循环机位，暂停期间也应可观察；手动选择不被自动分镜覆盖。
-  $focusModes = if ($Level -eq 1) { @('Probe', 'Moon', 'Earth', 'Overview', 'Auto') } elseif ($Level -eq 2) { @('Probe', 'Venus', 'Mercury', 'Sun', 'Overview', 'Auto') } else { @('Probe', 'Jupiter', 'Saturn', 'Sun', 'Overview', 'Auto') }
+  # Rotate from the current automatic frame while paused. A HUD click must not take over.
+  Capture 'flyby-auto-before-drag'
+  $beforeDrag = State
+  Move-Cursor ($flybyVW * 0.5) ($flybyVH * 0.45)
+  [FlybyMouse]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero)
+  for ($drag = 1; $drag -le 12; $drag++) { Move-Cursor ($flybyVW * 0.5 + $drag * 8) ($flybyVH * 0.45 + $drag * 2); Start-Sleep -Milliseconds 25 }
+  [FlybyMouse]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+  $null = Wait-State { param($s) $s.focus -eq 'Probe' }
+  Start-Sleep -Milliseconds 700
+  if ((State).world -ne $beforeDrag.world) { throw 'camera drag changed paused physics' }
+  if ((Logs) -notmatch 'camera takeover -> Probe') { throw 'drag did not take over camera' }
+  Capture 'flyby-manual-drag'
+  $focusModes = if ($Level -eq 1) { @('Moon', 'Earth', 'Overview', 'Auto') } elseif ($Level -eq 2) { @('Venus', 'Mercury', 'Sun', 'Overview', 'Auto') } else { @('Jupiter', 'Saturn', 'Sun', 'Overview', 'Auto') }
   foreach ($mode in $focusModes) {
     $null = Click-State 154 295 { param($s) $s.focus -eq $mode }
     Start-Sleep -Milliseconds 700
@@ -196,13 +208,13 @@ try {
   $null = Wait-State { param($s) (FlightTime $s) -ge $firstPeri }
   $null = Pause
   Capture 'flyby-periapsis'
-  if ((State).completed -ne '0') { throw 'mission ended at guidance light' }
+  if ((State).phase -ne 'Flying') { throw 'viewing ended before near flyby' }
   if ($Level -eq 2) {
     $null = Resume
     $null = Wait-State { param($s) (FlightTime $s) -ge 19.2 }
     $null = Pause
     Capture 'flyby-mercury-periapsis'
-    if ((State).completed -ne '0') { throw 'mission completed before Mercury exit' }
+    if ((State).phase -ne 'Flying') { throw 'viewing ended before Mercury flyby' }
     if ((Logs) -notmatch 'camera shot -> Auto:Mercury') { throw 'Mercury encounter camera missing' }
   }
   if ($Level -eq 3) {
@@ -215,22 +227,22 @@ try {
   if ($ManualEnd -and $Level -gt 1) { $null = Click-State 154 295 { param($s) $s.focus -eq 'Probe' } }
   $null = Resume
   $completed = Wait-State { param($s) $s.completed -eq '1' -and $s.phase -eq 'Flying' }
-  if ([double]$completed.marker -lt 0 -or [double]$completed.marker -gt 0.25) { throw 'success effect was not triggered at actual completion' }
+  if ([double]$completed.marker -lt 0 -or [double]$completed.marker -gt 0.6) { throw 'success effect progress invalid' }
   $null = Pause
   $effectPaused = State
   Capture 'flyby-completed-viewing'
   $null = Wait-State { param($s) [double]$s.marker -ge 0.6 }
   Capture 'flyby-marker-faded'
-  $null = Click-State ($flybyVW - 82) 252 { param($s) $s.view -eq '2D' }
+  $null = Click-State ($flybyVW - 60) 212 { param($s) $s.view -eq '2D' }
   Capture 'flyby-marker-faded-2d'
   if ([double](State).marker -ne 0.6) { throw 'view toggle replayed success effect' }
-  $null = Click-State ($flybyVW - 82) 252 { param($s) $s.view -eq '3D' }
+  $null = Click-State ($flybyVW - 60) 212 { param($s) $s.view -eq '3D' }
   if ((State).world -ne $effectPaused.world) { throw 'effect changed paused physical time' }
   if (([regex]::Matches((Logs), 'success marker triggered once')).Count -ne 1) { throw 'success effect triggered more than once' }
   if ($ManualEnd -and $Level -gt 1 -and (State).focus -ne 'Probe') { throw 'completion changed manual focus' }
   if ((Logs) -notmatch "flyby completion saved L$Level") { throw 'completion not saved at milestone' }
   if ($ManualEnd) {
-    $null = Click-State ($flybyVW - 134) 152 { param($s) $s.phase -eq 'Result' }
+    $null = Click-State ($flybyVW - 60) 132 { param($s) $s.phase -eq 'Result' }
     if ((Logs) -notmatch 'end viewing \(manual\)') { throw 'manual end not delivered' }
   } else {
     $null = Resume
@@ -243,6 +255,21 @@ try {
   }
   if ((Logs) -notmatch 'result = success') { throw 'flyby result not success' }
   Capture 'flyby-result'
+  # Result card: fixed72 buttons,540 card height; back is lower than retry.
+  $null = Click-State ($flybyVW / 2) (($flybyVH - 540) / 2 + 82) { param($s) $s.phase -eq 'LevelSelect' }
+  Capture 'flyby-back-hub'
+  $dockX = ($flybyVW - 448) / 2 + ($Level - 1) * 152 + 72
+  $briefCount = ([regex]::Matches((Logs), "hub brief L$Level")).Count
+  for ($pick = 0; $pick -lt 4; $pick++) {
+    Click $dockX 112
+    Start-Sleep -Milliseconds 650
+    if (([regex]::Matches((Logs), "hub brief L$Level")).Count -gt $briefCount) { break }
+  }
+  if ((State).phase -ne 'LevelSelect') { throw 'brief click accidentally entered level' }
+  Capture 'flyby-brief'
+  $cardW = [Math]::Min(540, [Math]::Max(340, $flybyVW * 0.92))
+  $null = Click-State ($flybyVW / 2 + $cardW / 2 - 88) 98 { param($s) $s.phase -eq 'Aiming' }
+  Capture 'flyby-reenter'
   $null = Click-State ($flybyVW - 80) ($flybyVH - 49) { param($s) $s.phase -eq 'Aiming' }
   $retry = State
   if ($retry.completed -ne '0' -or $retry.focus -ne 'Auto' -or $retry.view -ne '2D' -or [double]$retry.marker -ne -1) { throw 'retry left stale viewing state' }

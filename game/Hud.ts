@@ -385,9 +385,9 @@ export function createAimInput(
 	root.addChild(touchLayer);
 
 	const space: TouchSpace = { viewW, viewH };
-	const TimeBtnW = 78;
-	const TimeBtnH = 64;
-	const TimeRowY = 170;
+	const TimeBtnW = 72;
+	const TimeBtnH = 72;
+	const TimeRowY = 176;
 
 	let enabled = false;
 	let observing = false;
@@ -550,8 +550,8 @@ export function createAimInput(
 	let warpHoldDir = 0;
 	/** 距离下一次连按还有多久（秒）。 */
 	let warpRepeatIn = 0;
-	const WarpButtonW = 116;
-	const WarpButtonH = 64;
+	const WarpButtonW = 72;
+	const WarpButtonH = 72;
 	const warpButtons: UiButton[] = [];
 	const applyWarpState = (): void => {
 		const vis = dateSpan > 0;
@@ -617,17 +617,17 @@ export function createAimInput(
 	}
 
 	// ---- 街机模式：右上角常驻秒速重试按钮 ----
-	const QuickRetryW = 110;
-	const QuickRetryH = 50;
+	const QuickRetryW = 72;
+	const QuickRetryH = 72;
 	let quickRetryHandler: (() => void) | undefined = undefined;
 	const quickRetryBtn = makeHudButton(root, {
 		w: QuickRetryW,
 		h: QuickRetryH,
-		text: '↺ 重试',
+		text: '', icon: 'retry',
 		fontSize: 26,
-		bgHex: 0xc2410c, // 醒目橙红色
+		bgHex: ResultButtonAltBgHex, // 醒目橙红色
 		fgHex: 0xffffff,
-		borderHex: 0xfbbf24,
+		borderHex: ResultButtonBorderHex,
 		fireOn: 'press',
 		onTap: (): void => {
 			print('[escape-velocity] quick retry tapped');
@@ -640,14 +640,14 @@ export function createAimInput(
 	const starPlateW = 180;
 	const starPlateH = 46;
 	const starPlate = createPanel(root, starPlateW, starPlateH, 0x0a0e14, { alpha: 0.55 });
-	starPlate.position = Vec2(viewW / 2 - starPlateW / 2, viewH - starPlateH - 22);
+	starPlate.position = Vec2(viewW - starPlateW - 24, viewH - 164);
 	starPlate.visible = !transferTutorial;
 	const starStatusLabel = createLabel(root, '☆ ☆ ☆', 30, 0xffd700);
 	const bonusToastLabel = createLabel(root, '', 34, 0x8cff9b);
 	if (bonusToastLabel !== undefined) { bonusToastLabel.position = Vec2(viewW / 2, viewH * 0.68); bonusToastLabel.visible = false; }
 	if (starStatusLabel !== undefined) {
 		starStatusLabel.anchor = Vec2(0.5, 0.5);
-		starStatusLabel.position = Vec2(viewW / 2, viewH - starPlateH / 2 - 22);
+		starStatusLabel.position = Vec2(viewW - starPlateW / 2 - 24, viewH - 141);
 	}
 	const updateStarsStatus = (count: number): void => {
 		if (starStatusLabel === undefined) return;
@@ -662,17 +662,17 @@ export function createAimInput(
 		if (starStatusLabel === undefined) return;
 		starPlate.visible = total > 0;
 		starStatusLabel.visible = total > 0;
-		if (total > 0) setLabelText(starStatusLabel, '🚀 ' + got.toFixed(0) + ' / ' + total.toFixed(0));
+		if (total > 0) setLabelText(starStatusLabel, '火箭 ' + got.toFixed(0) + ' / ' + total.toFixed(0));
 	};
 
 	// ---- 「发射」按钮（S3.10，右下角拇指区；只在 Armed 态出现）----
 	// 命中区 220×112，`fireOn: 'press'` 按下即发射
-	const LaunchButtonW = 220;
-	const LaunchButtonH = 112;
+	const LaunchButtonW = 72;
+	const LaunchButtonH = 72;
 	const launchButton = makeHudButton(root, {
 		w: LaunchButtonW,
 		h: LaunchButtonH,
-		text: '▲ 发射 ▲',
+		text: '', icon: 'launch',
 		fontSize: 38,
 		bgHex: ResultButtonBgHex,
 		fgHex: ResultButtonFgHex,
@@ -688,13 +688,13 @@ export function createAimInput(
 	launchButton.setEnabled(false); // 隐藏 + 断触摸（硬约束 4）
 
 	// 「取消瞄准」：Armed 时停在发射按钮左边。按下即回到巡航，表继续走。
-	const CancelButtonW = 160;
+	const CancelButtonW = 72;
 	const CancelButtonH = 72;
 	let cancelAimHandler: (() => void) | undefined = undefined;
 	const cancelAimButton = makeHudButton(root, {
 		w: CancelButtonW,
 		h: CancelButtonH,
-		text: '✕ 取消',
+		text: '', icon: 'cancel',
 		fontSize: 28,
 		bgHex: ResultButtonAltBgHex,
 		fgHex: ResultButtonFgHex,
@@ -705,19 +705,19 @@ export function createAimInput(
 			if (cancelAimHandler !== undefined) cancelAimHandler();
 		},
 	});
-	cancelAimButton.root.position = Vec2(viewW - LaunchButtonW - CancelButtonW - 40, 116);
+	cancelAimButton.root.position = Vec2(viewW - LaunchButtonW - CancelButtonW - 32, 96);
 	cancelAimButton.root.visible = false;
 	cancelAimButton.setEnabled(false);
 
 	// ---- 「2D / 3D」手动切换（S3.15）----
 	// 位置：右下角「发射」按钮正上方
-	const ViewButtonW = 116;
-	const ViewButtonH = 64;
+	const ViewButtonW = 72;
+	const ViewButtonH = 72;
 	let viewHandler: (() => void) | undefined = undefined;
 	const viewButton = makeHudButton(root, {
 		w: ViewButtonW,
 		h: ViewButtonH,
-		text: '[ 3D ]',
+		text: '3D',
 		fontSize: 26,
 		bgHex: ResultButtonAltBgHex,
 		fgHex: ResultButtonFgHex,
@@ -728,7 +728,7 @@ export function createAimInput(
 			if (viewHandler !== undefined) viewHandler();
 		},
 	});
-	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 12);
+	viewButton.root.position = Vec2(viewW - ViewButtonW - 24, 96 + LaunchButtonH + 8);
 	/** 上次写进按钮的文字（每帧都会被 setViewMode 调用，没变就别碰 Label）。 */
 	let lastViewText = '2D';
 
@@ -736,23 +736,23 @@ export function createAimInput(
 	let cameraFocusHandler: (() => void) | undefined = undefined;
 	let endViewingHandler: (() => void) | undefined = undefined;
 	const cameraFocusButton = transferTutorial ? makeHudButton(root, {
-		w: 260, h: 58, text: '镜头 · 自动', fontSize: 22,
+		w: 144, h: 72, text: '自动', icon: 'camera', fontSize: 22,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex, fireOn: 'press',
 		onTap: (): void => { if (cameraFocusHandler !== undefined) cameraFocusHandler(); },
 	}) : undefined;
 	const endViewingButton = transferTutorial ? makeHudButton(root, {
-		w: 220, h: LaunchButtonH, text: '结束观赏', fontSize: 26,
+		w: 72, h: 72, text: '', icon: 'stop', fontSize: 26,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex, fireOn: 'press',
 		onTap: (): void => { if (endViewingHandler !== undefined) endViewingHandler(); },
 	}) : undefined;
-	if (cameraFocusButton !== undefined) { cameraFocusButton.root.position = Vec2(24, 266); cameraFocusButton.root.visible = false; cameraFocusButton.setEnabled(false); }
-	if (endViewingButton !== undefined) { endViewingButton.root.position = Vec2(viewW - 244, 96); endViewingButton.root.visible = false; endViewingButton.setEnabled(false); }
+	if (cameraFocusButton !== undefined) { cameraFocusButton.root.position = Vec2(24, 256); cameraFocusButton.root.visible = false; cameraFocusButton.setEnabled(false); }
+	if (endViewingButton !== undefined) { endViewingButton.root.position = Vec2(viewW - 96, 96); endViewingButton.root.visible = false; endViewingButton.setEnabled(false); }
 	const viewingLabel = transferTutorial ? createLabel(root, '', 24, ResultHintHex) : undefined;
 	if (viewingLabel !== undefined) { viewingLabel.position = Vec2(24, viewH - 130); viewingLabel.anchor = Vec2(0, 0); viewingLabel.visible = false; }
 	let viewingKey = '';
 
 	// ---- 2D 规划缩放控制组（S8.2，左下角）----
-	const ZoomBtnSize = 58;
+	const ZoomBtnSize = 72;
 	const zoomGap = 8;
 	const zoomButtons: UiButton[] = [];
 	let zoomInHandler: (() => void) | undefined = undefined;
@@ -763,7 +763,7 @@ export function createAimInput(
 		const btn = makeHudButton(root, {
 			w: ZoomBtnSize,
 			h: ZoomBtnSize,
-			text,
+			text: '', icon: text === '−' ? 'minus' : text === '+' ? 'plus' : 'fit',
 			fontSize,
 			bgHex: ResultButtonAltBgHex,
 			fgHex: ResultButtonFgHex,
@@ -809,7 +809,7 @@ export function createAimInput(
 	let pauseHandler: (() => void) | undefined = undefined;
 
 	const slowButton = makeHudButton(root, {
-		w: TimeBtnW, h: TimeBtnH, text: '◀ 慢', fontSize: 26,
+		w: TimeBtnW, h: TimeBtnH, text: '', icon: 'slow', fontSize: 26,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
 		onTap: (): void => {
 			print('[escape-velocity] speed down fire');
@@ -819,7 +819,7 @@ export function createAimInput(
 	slowButton.root.position = Vec2(24, TimeRowY);
 	slowButton.root.order = 100;
 	const pauseButton = makeHudButton(root, {
-		w: TimeBtnW, h: TimeBtnH, text: '⏸', fontSize: 30,
+		w: TimeBtnW, h: TimeBtnH, text: '', icon: 'pause', fontSize: 30,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
 		onTap: (): void => {
 			print('[escape-velocity] pause toggle fire');
@@ -829,7 +829,7 @@ export function createAimInput(
 	pauseButton.root.position = Vec2(24 + TimeBtnW + 8, TimeRowY);
 	pauseButton.root.order = 100;
 	const fastButton = makeHudButton(root, {
-		w: TimeBtnW, h: TimeBtnH, text: '快 ▶', fontSize: 26,
+		w: TimeBtnW, h: TimeBtnH, text: '', icon: 'fast', fontSize: 26,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
 		onTap: (): void => {
 			print('[escape-velocity] speed up fire');
@@ -863,14 +863,14 @@ export function createAimInput(
 	let lastPaused = false;
 	const setTimeControl = (pow: number, minPow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number): void => {
 		const rateText = actualRate !== undefined ? actualRate.toFixed(actualRate > 0 && actualRate < 0.1 ? 3 : 2) + '×' : powText(pow);
-		const txt = (transferTutorial ? rateText : powText(pow)) + (paused ? ' ⏸ 暂停' : '') + '  ' + (transferTutorial ? 'T+ ' + missionSeconds.toFixed(1) + 's' : missionText(missionSeconds));
+		const txt = (transferTutorial ? rateText : powText(pow)) + (paused ? ' 暂停' : '') + '  ' + (transferTutorial ? 'T+ ' + missionSeconds.toFixed(1) + 's' : missionText(missionSeconds));
 		if (txt !== lastTimeText) {
 			lastTimeText = txt;
 			if (timeLabel !== undefined) timeLabel.text = txt;
 		}
 		if (paused !== lastPaused) {
 			lastPaused = paused;
-			pauseButton.setText(paused ? '▶' : '⏸');
+			pauseButton.setIcon(paused ? 'play' : 'pause'); pauseButton.setSelected(paused);
 			pauseButton.setColors(paused ? ResultButtonBgHex : ResultButtonAltBgHex, ResultButtonFgHex);
 		}
 		// 档位到底就不给点（状态驱动，AGENTS 硬约束 5）
@@ -936,8 +936,8 @@ export function createAimInput(
 	//    0.5 秒防抖；幂等由调用方保证（同一个档位设两遍没有副作用）。
 	// ⚠️ 高亮跟着 GameCore.playback 走（setPlayback 每帧同步）—— 按钮不自己存"当前档位"，
 	//    否则"按钮显示的"与"播出来的"迟早分家（AGENTS 硬约束 5）。
-	const PlaybackButtonW = 116;
-	const PlaybackButtonH = 64;
+	const PlaybackButtonW = 72;
+	const PlaybackButtonH = 72;
 	const playbackGap = 10;
 	const playbackButtons: UiButton[] = [];
 	const playbackSpeeds: number[] = [];
@@ -1050,7 +1050,7 @@ export function createAimInput(
 				cameraFocusButton.root.visible = flying && is3D;
 				cameraFocusButton.setEnabled(flying && is3D);
 				const title = mode === 'Mercury' ? '水星' : mode === 'Auto' ? '自动' : (mode === 'Probe' ? '探测器' : (mode === 'Moon' ? '月球' : (mode === 'Earth' ? '地球' : (mode === 'Venus' ? '金星' : (mode === 'Jupiter' ? '木星' : (mode === 'Saturn' ? '土星' : (mode === 'Sun' ? '太阳' : '总览')))))));
-				cameraFocusButton.setText('镜头 · ' + title);
+				cameraFocusButton.setText(title); cameraFocusButton.setSelected(mode !== 'Auto');
 			}
 			if (endViewingButton !== undefined) { endViewingButton.root.visible = flying && completed; endViewingButton.setEnabled(flying && completed); }
 		},
@@ -1058,7 +1058,7 @@ export function createAimInput(
 			if (mode === lastViewText) return;
 			lastViewText = mode;
 			// 2D 状态时按钮提示切去「[ 3D ]」，3D 状态时按钮提示切去「[ 2D ]」
-			const btnText = mode === '2D' ? '[ 3D ]' : '[ 2D ]';
+			const btnText = mode === '2D' ? '3D' : '2D';
 			viewButton.setText(btnText);
 		},
 		onPlayback: (callback: (speed: number) => void): void => {
@@ -1226,10 +1226,10 @@ const ResultCardBorderHex = 0x33507a;
 const ResultLevelHex = 0x8fb4dc;
 const ResultBodyHex = 0xd7e6f7;
 const ResultHintHex = 0x7d93ab;
-const ResultButtonBgHex = 0x1d4a7a;
-const ResultButtonAltBgHex = 0x1b2735;
+const ResultButtonBgHex = 0x142334;
+const ResultButtonAltBgHex = 0x142334;
 const ResultButtonFgHex = 0xeaf4ff;
-const ResultButtonBorderHex = 0x4f86c6;
+const ResultButtonBorderHex = 0x4e7b9e;
 const TitleSuccessHex = 0x7fe3a0;
 const TitleMissedHex = 0xffd479;
 const TitleCrashedHex = 0xff7a6b;
@@ -1335,8 +1335,8 @@ export function createResultPanel(
 	const root = createPanel(parent, viewW, viewH, ResultBackdropHex, { alpha: 0.78 });
 
 	const cardW = clampNumber(viewW * 0.90, 360, 560);
-	const btnW = clampNumber(cardW - 60, MinButtonWidth, 480);
-	let btnH = clampNumber(viewH * 0.08, 48, 60);
+	const btnW = 72;
+	let btnH = 72;
 	const padX = (cardW - btnW) / 2;
 	const padY = 28;
 
@@ -1409,7 +1409,7 @@ export function createResultPanel(
 	const retryButton = createButton(card, {
 		w: btnW,
 		h: btnH,
-		text: '重试本关',
+		text: '', icon: 'retry',
 		fontSize: btnFont,
 		bgHex: ResultButtonBgHex,
 		fgHex: ResultButtonFgHex,
@@ -1419,11 +1419,11 @@ export function createResultPanel(
 	});
 	retryButton.root.position = Vec2(padX, cursor);
 
-	cursor -= 14 + btnH;
+	cursor -= 8 + btnH;
 	const backButton = createButton(card, {
 		w: btnW,
 		h: btnH,
-		text: '返回关卡选择',
+		text: '', icon: 'back',
 		fontSize: btnFont,
 		bgHex: ResultButtonAltBgHex,
 		fgHex: ResultButtonFgHex,
@@ -1573,12 +1573,12 @@ export function createFinalePanel(
 	const subLabel = createLabel(root, '', fontSub, FinaleSubHex);
 	if (subLabel !== undefined) setLabelCenter(subLabel, viewW / 2, viewH * 0.71);
 
-	const btnW = clampNumber(viewW * 0.62, MinButtonWidth, 560);
-	const btnH = clampNumber(viewH * 0.085, MinButtonHeight, 120);
+	const btnW = 72;
+	const btnH = 72;
 	const backButton = createButton(root, {
 		w: btnW,
 		h: btnH,
-		text: '返回关卡选择',
+		text: '', icon: 'back',
 		fontSize: btnFont,
 		bgHex: ResultButtonBgHex,
 		fgHex: ResultButtonFgHex,
@@ -1705,7 +1705,7 @@ export function createLevelSelect(
 	// 位置：网格下沿与页脚提示之间的空档（竖屏 601×1066 实测有 180 px 余量），网格算完才定得下来。
 	const replayButton = opts.onReplayIntro !== undefined
 		? createButton(root, {
-			w: clampNumber(viewW * 0.36, 180, 300),
+			w: 144,
 			h: MinButtonHeight,
 			text: '重看开场',
 			fontSize: 30,

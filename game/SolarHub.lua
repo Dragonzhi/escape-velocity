@@ -141,14 +141,14 @@ local OrbitRingsPath = "Assets/Model/OrbitRings.gltf" -- 102
 local OrbitRingsHex = 4153224 -- 103
 local CardBgHex = 792102 -- 105
 local CardBorderHex = 3033193 -- 106
-local PrimaryBtnBgHex = 1921679 -- 107
+local PrimaryBtnBgHex = 1319732 -- 107
 local PrimaryBtnFgHex = 16777215 -- 108
-local PrimaryBtnBorderHex = 6002142 -- 109
-local SecondaryBtnBgHex = 1385011 -- 110
+local PrimaryBtnBorderHex = 5143454 -- 109
+local SecondaryBtnBgHex = 1319732 -- 110
 local SecondaryBtnFgHex = 10468571 -- 111
-local SecondaryBtnBorderHex = 3691898 -- 112
-local PinBgHex = 859957 -- 113
-local PinBorderHex = 4289190 -- 114
+local SecondaryBtnBorderHex = 5143454 -- 112
+local PinBgHex = 1319732 -- 113
+local PinBorderHex = 5143454 -- 114
 local GoldStarHex = 16762939 -- 115
 local DimStarHex = 5663877 -- 116
 local function clampNumber(value, lo, hi) -- 118
@@ -368,8 +368,8 @@ function ____exports.createSolarHub(options) -- 180
 		isDragging = false -- 353
 	end) -- 352
 	local pins = {} -- 365
-	local PinW = 138 -- 367
-	local PinH = 50 -- 368
+	local PinW = 208 -- 367
+	local PinH = 72 -- 368
 	do -- 368
 		local i = 0 -- 370
 		while i < #____exports.LEVEL_TO_STATION_INDEX do -- 370
@@ -419,12 +419,15 @@ function ____exports.createSolarHub(options) -- 180
 		end -- 370
 	end -- 370
 	local topBar = Node() -- 413
-	topBar.size = Size(viewW, 90) -- 414
+	topBar.size = Size(viewW, 120) -- 414
 	topBar.anchor = Vec2(0, 0) -- 415
-	topBar.position = Vec2(0, viewH - 90) -- 416
+	topBar.position = Vec2(0, viewH - 120) -- 416
 	ui:addChild(topBar) -- 417
-	local titleLabel = createLabel(topBar, "深空航迹 · 太阳系沙盘", 32, 16777215) -- 419
-	setLabelCenter(titleLabel, viewW / 2, 60) -- 420
+	local titleLabel = createLabel(topBar, "太阳系沙盘", 26, 16777215) -- 419
+	if titleLabel ~= nil then -- 419
+		titleLabel.anchor = Vec2(0, 0.5) -- 420
+		titleLabel.position = Vec2(24, 84) -- 420
+	end -- 420
 	local totalRocketsLabel = createLabel(topBar, "任务完成: 0", 22, 10405355) -- 422
 	setLabelCenter(totalRocketsLabel, viewW / 2, 24) -- 423
 	local replayIntroBtn = nil -- 425
@@ -432,8 +435,8 @@ function ____exports.createSolarHub(options) -- 180
 		replayIntroBtn = createButton( -- 427
 			topBar, -- 427
 			{ -- 427
-				w = 130, -- 428
-				h = 44, -- 429
+				w = 144, -- 428
+				h = 72, -- 429
 				text = "重看开场", -- 430
 				fontSize = 20, -- 431
 				bgHex = SecondaryBtnBgHex, -- 432
@@ -447,7 +450,7 @@ function ____exports.createSolarHub(options) -- 180
 				end -- 436
 			} -- 436
 		) -- 436
-		replayIntroBtn.root.position = Vec2(viewW - 146, 22) -- 440
+		replayIntroBtn.root.position = Vec2(viewW - 160, 44) -- 440
 	end -- 440
 	local dockNode = Node() -- 444
 	dockNode.size = Size(viewW, 64) -- 445
@@ -455,9 +458,9 @@ function ____exports.createSolarHub(options) -- 180
 	dockNode.position = Vec2(0, 76) -- 447
 	ui:addChild(dockNode) -- 448
 	local dockButtons = {} -- 450
-	local dockBtnW = clampNumber((viewW * 0.94 - 10 * 5) / 6, 76, 110) -- 451
-	local dockBtnH = 50 -- 452
-	local dockTotalW = dockBtnW * 6 + 10 * 5 -- 453
+	local dockBtnW = 144 -- 451
+	local dockBtnH = 72 -- 452
+	local dockTotalW = dockBtnW * #____exports.LEVEL_TO_STATION_INDEX + 8 * (#____exports.LEVEL_TO_STATION_INDEX - 1) -- 453
 	local dockStartX = (viewW - dockTotalW) / 2 -- 454
 	do -- 454
 		local i = 0 -- 456
@@ -469,442 +472,461 @@ function ____exports.createSolarHub(options) -- 180
 					w = dockBtnW, -- 459
 					h = dockBtnH, -- 460
 					text = "L" .. __TS__NumberToFixed(lvIndex + 1, 0), -- 461
-					fontSize = 20, -- 462
-					bgHex = PinBgHex, -- 463
-					fgHex = 14084346, -- 464
-					borderHex = PinBorderHex, -- 465
-					fireOn = "press", -- 466
-					onTap = function() -- 467
-						focusMission(lvIndex) -- 468
-					end -- 467
-				} -- 467
-			) -- 467
-			btn.root.position = Vec2(dockStartX + lvIndex * (dockBtnW + 10), 0) -- 471
-			dockButtons[#dockButtons + 1] = btn -- 472
+					icon = "launch", -- 462
+					fontSize = 20, -- 463
+					bgHex = PinBgHex, -- 464
+					fgHex = 14084346, -- 465
+					borderHex = PinBorderHex, -- 466
+					fireOn = "press", -- 467
+					onTap = function() -- 468
+						focusMission(lvIndex) -- 469
+					end -- 468
+				} -- 468
+			) -- 468
+			btn.root.position = Vec2(dockStartX + lvIndex * (dockBtnW + 8), 0) -- 472
+			dockButtons[#dockButtons + 1] = btn -- 473
 			i = i + 1 -- 456
 		end -- 456
 	end -- 456
-	local cardW = clampNumber(viewW * 0.92, 340, 540) -- 476
-	local cardH = clampNumber(viewH * 0.44, 380, 500) -- 477
-	local briefCard = createPanel( -- 479
-		ui, -- 479
-		cardW, -- 479
-		cardH, -- 479
-		CardBgHex, -- 479
-		{alpha = 0.96, borderHex = CardBorderHex, borderWidth = 2} -- 479
-	) -- 479
-	briefCard.anchor = Vec2(0, 0) -- 484
-	briefCard.position = Vec2((viewW - cardW) / 2, 40) -- 485
-	briefCard.visible = false -- 486
-	local bTitleLabel = createLabel(briefCard, "", 28, 16777215) -- 488
-	setLabelCenter(bTitleLabel, cardW / 2, cardH - 34) -- 489
-	local bSubtitleLabel = createLabel(briefCard, "", 20, 9090268) -- 491
-	setLabelCenter(bSubtitleLabel, cardW / 2, cardH - 66) -- 492
-	local bVehicleLabel = createLabel(briefCard, "", 18, 16766073) -- 494
-	setLabelCenter(bVehicleLabel, cardW / 2, cardH - 96) -- 495
-	local challengeLabels = {} -- 498
-	do -- 498
-		local k = 0 -- 499
-		while k < 3 do -- 499
-			local cl = createLabel(briefCard, "", 19, 13689589) -- 500
-			if cl ~= nil then -- 500
-				cl.textWidth = cardW - 48 -- 502
-				setLabelCenter(cl, cardW / 2, cardH - 138 - k * 44) -- 503
-				challengeLabels[#challengeLabels + 1] = cl -- 504
-			end -- 504
-			k = k + 1 -- 499
-		end -- 499
-	end -- 499
-	local btnRowY = 22 -- 509
-	local backBtnW = 120 -- 510
-	local launchBtnW = cardW - backBtnW - 40 -- 511
-	local btnH = 64 -- 512
-	local backBtn = createButton( -- 514
-		briefCard, -- 514
-		{ -- 514
-			w = backBtnW, -- 515
-			h = btnH, -- 516
-			text = "❮ 返回", -- 517
-			fontSize = 22, -- 518
-			bgHex = SecondaryBtnBgHex, -- 519
-			fgHex = SecondaryBtnFgHex, -- 520
-			borderHex = SecondaryBtnBorderHex, -- 521
-			fireOn = "press", -- 522
-			onTap = function() -- 523
-				backToPanorama() -- 524
-			end -- 523
-		} -- 523
-	) -- 523
-	backBtn.root.position = Vec2(16, btnRowY) -- 527
-	local launchBtn = createButton( -- 529
-		briefCard, -- 529
-		{ -- 529
-			w = launchBtnW, -- 530
-			h = btnH, -- 531
-			text = "启动任务 / LAUNCH", -- 532
-			fontSize = 24, -- 533
-			bgHex = PrimaryBtnBgHex, -- 534
-			fgHex = PrimaryBtnFgHex, -- 535
-			borderHex = PrimaryBtnBorderHex, -- 536
-			fireOn = "press", -- 537
-			onTap = function() -- 538
-				if focusLevelIndex >= 0 then -- 538
-					print("[escape-velocity] launch mission: L" .. __TS__NumberToFixed(focusLevelIndex + 1, 0)) -- 540
-					options:onLaunch(focusLevelIndex) -- 541
-				end -- 541
-			end -- 538
-		} -- 538
-	) -- 538
-	launchBtn.root.position = Vec2(backBtnW + 28, btnRowY) -- 545
-	backBtn:setEnabled(false) -- 547
-	launchBtn:setEnabled(false) -- 548
-	local function updateBriefCard(levelIndex, progress) -- 551
-		local lv = getLevel(levelIndex) -- 552
-		if lv == nil then -- 552
-			return -- 553
-		end -- 553
-		local m = lv.mission -- 554
-		if m == nil then -- 554
+	local cardW = clampNumber(viewW * 0.92, 340, 540) -- 477
+	local cardH = clampNumber(viewH * 0.44, 380, 500) -- 478
+	local briefCard = createPanel( -- 480
+		ui, -- 480
+		cardW, -- 480
+		cardH, -- 480
+		CardBgHex, -- 480
+		{alpha = 0.96, borderHex = CardBorderHex, borderWidth = 2} -- 480
+	) -- 480
+	briefCard.anchor = Vec2(0, 0) -- 485
+	briefCard.position = Vec2((viewW - cardW) / 2, 40) -- 486
+	briefCard.visible = false -- 487
+	local bTitleLabel = createLabel(briefCard, "", 22, 16777215) -- 489
+	if bTitleLabel ~= nil then -- 489
+		bTitleLabel.textWidth = cardW - 48 -- 490
+	end -- 490
+	setLabelCenter(bTitleLabel, cardW / 2, cardH - 40) -- 491
+	local bSubtitleLabel = createLabel(briefCard, "", 20, 9090268) -- 493
+	setLabelCenter(bSubtitleLabel, cardW / 2, cardH - 83) -- 494
+	local bVehicleLabel = createLabel(briefCard, "", 18, 16766073) -- 496
+	setLabelCenter(bVehicleLabel, cardW / 2, cardH - 110) -- 497
+	local challengeLabels = {} -- 500
+	do -- 500
+		local k = 0 -- 501
+		while k < 3 do -- 501
+			local cl = createLabel(briefCard, "", 19, 13689589) -- 502
+			if cl ~= nil then -- 502
+				cl.textWidth = cardW - 48 -- 504
+				setLabelCenter(cl, cardW / 2, cardH - 153 - k * 44) -- 505
+				challengeLabels[#challengeLabels + 1] = cl -- 506
+			end -- 506
+			k = k + 1 -- 501
+		end -- 501
+	end -- 501
+	local btnRowY = 22 -- 511
+	local backBtnW = 72 -- 512
+	local launchBtnW = 144 -- 513
+	local btnH = 72 -- 514
+	local backBtn = createButton( -- 516
+		briefCard, -- 516
+		{ -- 516
+			w = backBtnW, -- 517
+			h = btnH, -- 518
+			text = "", -- 519
+			icon = "back", -- 519
+			fontSize = 22, -- 520
+			bgHex = SecondaryBtnBgHex, -- 521
+			fgHex = SecondaryBtnFgHex, -- 522
+			borderHex = SecondaryBtnBorderHex, -- 523
+			fireOn = "press", -- 524
+			onTap = function() -- 525
+				backToPanorama() -- 526
+			end -- 525
+		} -- 525
+	) -- 525
+	backBtn.root.position = Vec2(16, btnRowY) -- 529
+	local launchBtn = createButton( -- 531
+		briefCard, -- 531
+		{ -- 531
+			w = launchBtnW, -- 532
+			h = btnH, -- 533
+			text = "出发", -- 534
+			icon = "launch", -- 534
+			fontSize = 24, -- 535
+			bgHex = PrimaryBtnBgHex, -- 536
+			fgHex = PrimaryBtnFgHex, -- 537
+			borderHex = PrimaryBtnBorderHex, -- 538
+			fireOn = "press", -- 539
+			onTap = function() -- 540
+				if focusLevelIndex >= 0 then -- 540
+					print("[escape-velocity] launch mission: L" .. __TS__NumberToFixed(focusLevelIndex + 1, 0)) -- 542
+					options:onLaunch(focusLevelIndex) -- 543
+				end -- 543
+			end -- 540
+		} -- 540
+	) -- 540
+	launchBtn.root.position = Vec2(cardW - launchBtnW - 16, btnRowY) -- 547
+	backBtn:setEnabled(false) -- 549
+	launchBtn:setEnabled(false) -- 550
+	local function updateBriefCard(levelIndex, progress) -- 553
+		local lv = getLevel(levelIndex) -- 554
+		if lv == nil then -- 554
 			return -- 555
 		end -- 555
-		setLabelText( -- 557
-			bTitleLabel, -- 557
-			(((("L" .. __TS__NumberToFixed(levelIndex + 1, 0)) .. " · ") .. lv.title) .. " · ") .. m.subtitle -- 557
-		) -- 557
-		setLabelText(bSubtitleLabel, ((m.historicalRef .. " (") .. m.codeName) .. ")") -- 558
-		local savedScore = getMissionRockets(progress, levelIndex) -- 560
-		local cleared = getMissionCompleted(progress, levelIndex) -- 561
-		local bonusCount = lv.bonusPoints ~= nil and #lv.bonusPoints or 0 -- 562
-		setLabelText( -- 563
-			bVehicleLabel, -- 563
-			(((("【 飞掠型探测器 】 · " .. (cleared and "已完成" or "待完成")) .. " · 火箭最高分 ") .. __TS__NumberToFixed(savedScore, 0)) .. "/") .. __TS__NumberToFixed(bonusCount, 0) -- 563
-		) -- 563
-		setLabelColor(bVehicleLabel, 8381344) -- 564
-		local rocketsGot = getMissionRockets(progress, levelIndex) -- 566
-		if lv.bonusPoints ~= nil then -- 566
-			local names = { -- 568
-				["moon-pass"] = "月球掠过", -- 568
-				["venus-assist"] = "金星借力", -- 568
-				["mercury-pass"] = "水星飞掠", -- 568
-				["jupiter-assist"] = "木星借力", -- 568
-				["saturn-assist"] = "土星借力", -- 568
-				["deep-space"] = "深空航点" -- 568
-			} -- 568
-			do -- 568
-				local k = 0 -- 569
-				while k < 3 do -- 569
-					do -- 569
-						if k >= #lv.bonusPoints then -- 569
-							setLabelVisible(challengeLabels[k + 1], false) -- 570
-							goto __continue52 -- 570
-						end -- 570
-						setLabelVisible(challengeLabels[k + 1], true) -- 571
-						local id = lv.bonusPoints[k + 1].id -- 572
-						setLabelText(challengeLabels[k + 1], "绿色光点 · " .. (names[id] ~= nil and names[id] or id)) -- 573
-						setLabelColor(challengeLabels[k + 1], 9240475) -- 574
-					end -- 574
-					::__continue52:: -- 574
-					k = k + 1 -- 569
-				end -- 569
-			end -- 569
-			return -- 576
-		end -- 576
-		do -- 576
-			local k = 0 -- 578
-			while k < 3 do -- 578
-				do -- 578
-					local c = m.challenges[k + 1] -- 579
-					if c == nil then -- 579
-						setLabelVisible(challengeLabels[k + 1], false) -- 580
-						goto __continue55 -- 580
-					end -- 580
-					setLabelVisible(challengeLabels[k + 1], true) -- 581
-					local achieved = rocketsGot >= k + 1 -- 582
-					local icon = achieved and "★" or "☆" -- 583
-					local prefix = k == 0 and "一星" or (k == 1 and "二星" or "三星") -- 584
-					local text = lv.transfer ~= nil and (rocketsGot >= 1 and "已完成 · " or "目标 · ") .. c.desc or (((icon .. " [") .. prefix) .. "] ") .. c.desc -- 585
-					setLabelText(challengeLabels[k + 1], text) -- 586
-					setLabelColor(challengeLabels[k + 1], achieved and GoldStarHex or 10270937) -- 587
-				end -- 587
-				::__continue55:: -- 587
-				k = k + 1 -- 578
-			end -- 578
+		local m = lv.mission -- 556
+		if m == nil then -- 556
+			return -- 557
+		end -- 557
+		setLabelText( -- 559
+			bTitleLabel, -- 559
+			(((("L" .. __TS__NumberToFixed(levelIndex + 1, 0)) .. " · ") .. lv.title) .. " · ") .. m.subtitle -- 559
+		) -- 559
+		setLabelText(bSubtitleLabel, ((m.historicalRef .. " (") .. m.codeName) .. ")") -- 560
+		local savedScore = getMissionRockets(progress, levelIndex) -- 562
+		local cleared = getMissionCompleted(progress, levelIndex) -- 563
+		local bonusCount = lv.bonusPoints ~= nil and #lv.bonusPoints or 0 -- 564
+		setLabelText( -- 565
+			bVehicleLabel, -- 565
+			(((("【 飞掠型探测器 】 · " .. (cleared and "已完成" or "待完成")) .. " · 火箭最高分 ") .. __TS__NumberToFixed(savedScore, 0)) .. "/") .. __TS__NumberToFixed(bonusCount, 0) -- 565
+		) -- 565
+		setLabelColor(bVehicleLabel, 8381344) -- 566
+		local rocketsGot = getMissionRockets(progress, levelIndex) -- 568
+		if lv.bonusPoints ~= nil then -- 568
+			local names = { -- 570
+				["moon-pass"] = "月球掠过", -- 570
+				["venus-assist"] = "金星借力", -- 570
+				["mercury-pass"] = "水星飞掠", -- 570
+				["jupiter-assist"] = "木星借力", -- 570
+				["saturn-assist"] = "土星借力", -- 570
+				["deep-space"] = "深空航点" -- 570
+			} -- 570
+			do -- 570
+				local k = 0 -- 571
+				while k < 3 do -- 571
+					do -- 571
+						if k >= #lv.bonusPoints then -- 571
+							setLabelVisible(challengeLabels[k + 1], false) -- 572
+							goto __continue54 -- 572
+						end -- 572
+						setLabelVisible(challengeLabels[k + 1], true) -- 573
+						local id = lv.bonusPoints[k + 1].id -- 574
+						setLabelText(challengeLabels[k + 1], "绿色光点 · " .. (names[id] ~= nil and names[id] or id)) -- 575
+						setLabelColor(challengeLabels[k + 1], 9240475) -- 576
+					end -- 576
+					::__continue54:: -- 576
+					k = k + 1 -- 571
+				end -- 571
+			end -- 571
+			return -- 578
 		end -- 578
-	end -- 551
+		do -- 578
+			local k = 0 -- 580
+			while k < 3 do -- 580
+				do -- 580
+					local c = m.challenges[k + 1] -- 581
+					if c == nil then -- 581
+						setLabelVisible(challengeLabels[k + 1], false) -- 582
+						goto __continue57 -- 582
+					end -- 582
+					setLabelVisible(challengeLabels[k + 1], true) -- 583
+					local achieved = rocketsGot >= k + 1 -- 584
+					local icon = achieved and "★" or "☆" -- 585
+					local prefix = k == 0 and "一星" or (k == 1 and "二星" or "三星") -- 586
+					local text = lv.transfer ~= nil and (rocketsGot >= 1 and "已完成 · " or "目标 · ") .. c.desc or (((icon .. " [") .. prefix) .. "] ") .. c.desc -- 587
+					setLabelText(challengeLabels[k + 1], text) -- 588
+					setLabelColor(challengeLabels[k + 1], achieved and GoldStarHex or 10270937) -- 589
+				end -- 589
+				::__continue57:: -- 589
+				k = k + 1 -- 580
+			end -- 580
+		end -- 580
+	end -- 553
 	--- 聚焦某关特写。
-	focusMission = function(levelIndex) -- 592
-		camMode = "focus" -- 593
-		focusLevelIndex = levelIndex -- 594
-		local stIndex = ____exports.LEVEL_TO_STATION_INDEX[levelIndex + 1] -- 595
-		local pose = calcFocusPose(stIndex) -- 596
-		targetEye = pose.eye -- 597
-		targetTarget = pose.target -- 598
-		do -- 598
-			local i = 0 -- 601
-			while i < #pins do -- 601
-				pins[i + 1].root.visible = false -- 602
-				pins[i + 1].btn:setEnabled(false) -- 603
-				i = i + 1 -- 601
-			end -- 601
-		end -- 601
-		dockNode.visible = false -- 605
-		do -- 605
-			local i = 0 -- 606
-			while i < #dockButtons do -- 606
-				dockButtons[i + 1]:setEnabled(false) -- 606
-				i = i + 1 -- 606
-			end -- 606
-		end -- 606
-		briefCard.visible = true -- 609
-		backBtn:setEnabled(true) -- 610
-		launchBtn:setEnabled(true) -- 611
-		local curProg = currentProgress -- 614
-		if curProg ~= nil then -- 614
-			updateBriefCard(levelIndex, curProg) -- 615
-		end -- 615
-	end -- 592
+	focusMission = function(levelIndex) -- 594
+		print("[escape-velocity] hub brief L" .. __TS__NumberToFixed(levelIndex + 1, 0)) -- 595
+		camMode = "focus" -- 596
+		focusLevelIndex = levelIndex -- 597
+		local stIndex = ____exports.LEVEL_TO_STATION_INDEX[levelIndex + 1] -- 598
+		local pose = calcFocusPose(stIndex) -- 599
+		targetEye = pose.eye -- 600
+		targetTarget = pose.target -- 601
+		do -- 601
+			local i = 0 -- 604
+			while i < #pins do -- 604
+				pins[i + 1].root.visible = false -- 605
+				pins[i + 1].btn:setEnabled(false) -- 606
+				i = i + 1 -- 604
+			end -- 604
+		end -- 604
+		dockNode.visible = false -- 608
+		do -- 608
+			local i = 0 -- 609
+			while i < #dockButtons do -- 609
+				dockButtons[i + 1]:setEnabled(false) -- 609
+				i = i + 1 -- 609
+			end -- 609
+		end -- 609
+		briefCard.visible = true -- 612
+		backBtn:setEnabled(true) -- 613
+		launchBtn:setEnabled(true) -- 614
+		local curProg = currentProgress -- 617
+		if curProg ~= nil then -- 617
+			updateBriefCard(levelIndex, curProg) -- 618
+		end -- 618
+	end -- 594
 	--- 返回全景模式。
-	backToPanorama = function() -- 619
-		camMode = "panorama" -- 620
-		focusLevelIndex = -1 -- 621
-		targetEye = calcPanoEye() -- 622
-		targetTarget = Vec3(0, 0, 0) -- 623
-		do -- 623
-			local i = 0 -- 626
-			while i < #pins do -- 626
-				pins[i + 1].root.visible = true -- 627
-				pins[i + 1].btn:setEnabled(true) -- 628
-				i = i + 1 -- 626
-			end -- 626
-		end -- 626
-		dockNode.visible = true -- 630
-		do -- 630
-			local i = 0 -- 631
-			while i < #dockButtons do -- 631
-				dockButtons[i + 1]:setEnabled(true) -- 631
-				i = i + 1 -- 631
-			end -- 631
-		end -- 631
-		briefCard.visible = false -- 634
-		backBtn:setEnabled(false) -- 635
-		launchBtn:setEnabled(false) -- 636
-	end -- 619
-	local isVisible = false -- 639
-	currentProgress = nil -- 640
+	backToPanorama = function() -- 622
+		camMode = "panorama" -- 623
+		focusLevelIndex = -1 -- 624
+		targetEye = calcPanoEye() -- 625
+		targetTarget = Vec3(0, 0, 0) -- 626
+		do -- 626
+			local i = 0 -- 629
+			while i < #pins do -- 629
+				pins[i + 1].root.visible = true -- 630
+				pins[i + 1].btn:setEnabled(true) -- 631
+				i = i + 1 -- 629
+			end -- 629
+		end -- 629
+		dockNode.visible = true -- 633
+		do -- 633
+			local i = 0 -- 634
+			while i < #dockButtons do -- 634
+				dockButtons[i + 1]:setEnabled(true) -- 634
+				i = i + 1 -- 634
+			end -- 634
+		end -- 634
+		briefCard.visible = false -- 637
+		backBtn:setEnabled(false) -- 638
+		launchBtn:setEnabled(false) -- 639
+	end -- 622
+	local isVisible = false -- 642
+	currentProgress = nil -- 643
 	--- 刷新所有火箭指示与统计标签。
-	local function refreshRocketsDisplay(prog) -- 643
-		currentProgress = prog -- 644
-		setLabelText( -- 645
-			totalRocketsLabel, -- 645
-			____exports.formatProgressSummary(prog) -- 645
-		) -- 645
-		do -- 645
-			local i = 0 -- 647
-			while i < #pins do -- 647
-				local p = pins[i + 1] -- 648
-				local count = getMissionRockets(prog, p.levelIndex) -- 649
-				local complete = getMissionCompleted(prog, p.levelIndex) -- 650
-				local ____opt_6 = getLevel(p.levelIndex) -- 650
-				local ____opt_4 = ____opt_6 and ____opt_6.bonusPoints -- 650
-				local total = ____opt_4 and #____opt_4 or 0 -- 651
-				setLabelText( -- 652
-					p.rocketLabel, -- 652
-					((((complete and "已完成" or "待完成") .. " · 🚀 ") .. __TS__NumberToFixed(count, 0)) .. "/") .. __TS__NumberToFixed(total, 0) -- 652
-				) -- 652
-				setLabelColor(p.rocketLabel, count > 0 and GoldStarHex or DimStarHex) -- 653
-				dockButtons[i + 1]:setText((((("L" .. __TS__NumberToFixed(p.levelIndex + 1, 0)) .. " ") .. (complete and "✓" or "")) .. " 🚀") .. __TS__NumberToFixed(count, 0)) -- 656
-				i = i + 1 -- 647
-			end -- 647
-		end -- 647
-	end -- 643
+	local function refreshRocketsDisplay(prog) -- 646
+		currentProgress = prog -- 647
+		setLabelText( -- 648
+			totalRocketsLabel, -- 648
+			____exports.formatProgressSummary(prog) -- 648
+		) -- 648
+		do -- 648
+			local i = 0 -- 650
+			while i < #pins do -- 650
+				local p = pins[i + 1] -- 651
+				local count = getMissionRockets(prog, p.levelIndex) -- 652
+				local complete = getMissionCompleted(prog, p.levelIndex) -- 653
+				local ____opt_6 = getLevel(p.levelIndex) -- 653
+				local ____opt_4 = ____opt_6 and ____opt_6.bonusPoints -- 653
+				local total = ____opt_4 and #____opt_4 or 0 -- 654
+				setLabelText( -- 655
+					p.rocketLabel, -- 655
+					((((complete and "已完成" or "待完成") .. " · 火箭 ") .. __TS__NumberToFixed(count, 0)) .. "/") .. __TS__NumberToFixed(total, 0) -- 655
+				) -- 655
+				setLabelColor(p.rocketLabel, count > 0 and GoldStarHex or DimStarHex) -- 656
+				dockButtons[i + 1]:setText((((("L" .. __TS__NumberToFixed(p.levelIndex + 1, 0)) .. " ") .. (complete and "✓" or "")) .. " ") .. __TS__NumberToFixed(count, 0)) -- 659
+				i = i + 1 -- 650
+			end -- 650
+		end -- 650
+	end -- 646
 	--- 执行一帧更新与投影。
-	local function doStep(dt) -- 661
-		do -- 661
-			local i = 0 -- 663
-			while i < #planets do -- 663
-				local h = planets[i + 1] -- 664
-				h.currentAngleDeg = h.currentAngleDeg + h.station.orbitSpeedDegPerSec * dt -- 665
-				local rad = h.currentAngleDeg * DegToRad -- 666
-				h.currentPos = { -- 667
-					x = math.cos(rad) * h.station.orbit, -- 668
-					y = math.sin(rad) * h.station.orbit -- 669
-				} -- 669
-				h.node.position = planeToWorld(h.currentPos, 0) -- 671
-				local ____h_node_8, ____angleY_9 = h.node, "angleY" -- 671
-				____h_node_8[____angleY_9] = ____h_node_8[____angleY_9] + h.station.rotSpeedDegPerSec * dt -- 672
-				i = i + 1 -- 663
-			end -- 663
-		end -- 663
-		if probeHandle ~= nil and planets[3] ~= nil then -- 663
-			local earthPos = planets[3].currentPos -- 677
-			local probeAngle = planets[3].node.angleY * 2.5 * DegToRad -- 678
-			local probeP = { -- 679
-				x = earthPos.x + math.cos(probeAngle) * 4.2, -- 680
-				y = earthPos.y + math.sin(probeAngle) * 4.2 -- 681
-			} -- 681
-			probeHandle.node.position = planeToWorld(probeP, 0) -- 683
-			local vel = { -- 684
-				x = -math.sin(probeAngle), -- 685
-				y = math.cos(probeAngle) -- 686
-			} -- 686
-			local yaw = probeYawForVelocity(vel) -- 688
-			if yaw ~= nil then -- 688
-				probeHandle.node.angleY = yaw -- 689
-			end -- 689
-			if probeHandle.antenna ~= nil then -- 689
-				pointAntenna(probeHandle.antenna, probeP, earthPos, probeHandle.node.angleY) -- 691
-			end -- 691
-		end -- 691
-		if camMode == "panorama" and not isDragging then -- 691
-			panoYawDeg = panoYawDeg + 0.035 -- 697
-			targetEye = calcPanoEye() -- 698
-		elseif camMode == "focus" then -- 698
-			local pose = calcFocusPose(____exports.LEVEL_TO_STATION_INDEX[focusLevelIndex + 1]) -- 701
-			targetEye = pose.eye -- 702
-			targetTarget = pose.target -- 703
-		end -- 703
-		curEye = dt > 0 and lerp3(curEye, targetEye, 0.08) or targetEye -- 707
-		curTarget = dt > 0 and lerp3(curTarget, targetTarget, 0.08) or targetTarget -- 708
-		camera:lookAt( -- 709
-			curEye, -- 709
-			curTarget, -- 709
-			Vec3(0, 1, 0) -- 709
-		) -- 709
-		if backdrop ~= nil then -- 709
-			backdrop:sync(curEye, curTarget) -- 710
-		end -- 710
-		if camMode == "panorama" then -- 710
-			local camView = { -- 714
-				eye = {x = curEye.x, y = curEye.y, z = curEye.z}, -- 715
-				target = {x = curTarget.x, y = curTarget.y, z = curTarget.z}, -- 716
-				up = {x = 0, y = 1, z = 0}, -- 717
-				fovYDeg = options.fovYDeg, -- 718
-				aspect = options.aspect, -- 719
-				viewW = viewW, -- 720
-				viewH = viewH -- 721
-			} -- 721
-			local basis = prepareCamera(camView, HANDEDNESS, FLIP_Y) -- 723
-			do -- 723
-				local i = 0 -- 725
-				while i < #pins do -- 725
-					do -- 725
-						local p = pins[i + 1] -- 726
-						local worldPos -- 727
-						local yOffset = 24 -- 728
-						if p.stIndex == -1 then -- 728
-							worldPos = planeToWorld({x = 0, y = 0}, 0) -- 731
-							yOffset = 48 -- 732
-						else -- 732
-							local planetHandle = planets[p.stIndex + 1] -- 734
-							if planetHandle == nil then -- 734
-								goto __continue82 -- 735
-							end -- 735
-							worldPos = planeToWorld(planetHandle.currentPos, 0) -- 736
-							yOffset = p.stIndex == 2 and 40 or (p.stIndex == 0 and 32 or 24) -- 738
-						end -- 738
-						local proj = projectPrepared({x = worldPos.x, y = worldPos.y, z = worldPos.z}, basis) -- 741
-						if proj ~= nil and proj.vz > 1 then -- 741
-							p.root.visible = true -- 744
-							local over = toOverlay(proj) -- 745
-							local screenX = viewW / 2 + over.x -- 747
-							local screenY = viewH / 2 + over.y -- 748
-							p.root.position = Vec2(screenX - PinW / 2, screenY + yOffset) -- 749
-						else -- 749
-							p.root.visible = false -- 751
-						end -- 751
-					end -- 751
-					::__continue82:: -- 751
-					i = i + 1 -- 725
-				end -- 725
-			end -- 725
-		end -- 725
-	end -- 661
-	local hub = { -- 757
-		show = function(prog) -- 758
-			isVisible = true -- 759
-			root.visible = true -- 760
-			ui.visible = true -- 761
-			gestureLayer.touchEnabled = true -- 762
-			refreshRocketsDisplay(prog) -- 764
-			backToPanorama() -- 765
-			curEye = calcPanoEye() -- 767
-			curTarget = Vec3(0, 0, 0) -- 768
-			targetEye = curEye -- 769
-			targetTarget = curTarget -- 770
-			camera:lookAt( -- 771
-				curEye, -- 771
-				curTarget, -- 771
-				Vec3(0, 1, 0) -- 771
-			) -- 771
-			doStep(0) -- 774
-		end, -- 758
-		hide = function() -- 777
-			isVisible = false -- 778
-			root.visible = false -- 779
-			ui.visible = false -- 780
-			gestureLayer.touchEnabled = false -- 781
-			do -- 781
-				local i = 0 -- 783
-				while i < #pins do -- 783
-					pins[i + 1].btn:setEnabled(false) -- 783
-					i = i + 1 -- 783
-				end -- 783
-			end -- 783
-			do -- 783
-				local i = 0 -- 784
-				while i < #dockButtons do -- 784
-					dockButtons[i + 1]:setEnabled(false) -- 784
-					i = i + 1 -- 784
-				end -- 784
-			end -- 784
-			if replayIntroBtn ~= nil then -- 784
-				replayIntroBtn:setEnabled(false) -- 785
-			end -- 785
-			backBtn:setEnabled(false) -- 786
-			launchBtn:setEnabled(false) -- 787
-		end, -- 777
-		step = function(dt) -- 790
-			if not isVisible then -- 790
-				return -- 791
-			end -- 791
-			doStep(dt) -- 792
-		end, -- 790
-		focusMission = function(levelIndex) -- 795
-			focusMission(levelIndex) -- 796
-		end, -- 795
-		backToPanorama = function() -- 799
-			backToPanorama() -- 800
+	local function doStep(dt) -- 664
+		do -- 664
+			local i = 0 -- 666
+			while i < #planets do -- 666
+				local h = planets[i + 1] -- 667
+				h.currentAngleDeg = h.currentAngleDeg + h.station.orbitSpeedDegPerSec * dt -- 668
+				local rad = h.currentAngleDeg * DegToRad -- 669
+				h.currentPos = { -- 670
+					x = math.cos(rad) * h.station.orbit, -- 671
+					y = math.sin(rad) * h.station.orbit -- 672
+				} -- 672
+				h.node.position = planeToWorld(h.currentPos, 0) -- 674
+				local ____h_node_8, ____angleY_9 = h.node, "angleY" -- 674
+				____h_node_8[____angleY_9] = ____h_node_8[____angleY_9] + h.station.rotSpeedDegPerSec * dt -- 675
+				i = i + 1 -- 666
+			end -- 666
+		end -- 666
+		if probeHandle ~= nil and planets[3] ~= nil then -- 666
+			local earthPos = planets[3].currentPos -- 680
+			local probeAngle = planets[3].node.angleY * 2.5 * DegToRad -- 681
+			local probeP = { -- 682
+				x = earthPos.x + math.cos(probeAngle) * 4.2, -- 683
+				y = earthPos.y + math.sin(probeAngle) * 4.2 -- 684
+			} -- 684
+			probeHandle.node.position = planeToWorld(probeP, 0) -- 686
+			local vel = { -- 687
+				x = -math.sin(probeAngle), -- 688
+				y = math.cos(probeAngle) -- 689
+			} -- 689
+			local yaw = probeYawForVelocity(vel) -- 691
+			if yaw ~= nil then -- 691
+				probeHandle.node.angleY = yaw -- 692
+			end -- 692
+			if probeHandle.antenna ~= nil then -- 692
+				pointAntenna(probeHandle.antenna, probeP, earthPos, probeHandle.node.angleY) -- 694
+			end -- 694
+		end -- 694
+		if camMode == "panorama" and not isDragging then -- 694
+			panoYawDeg = panoYawDeg + 0.035 -- 700
+			targetEye = calcPanoEye() -- 701
+		elseif camMode == "focus" then -- 701
+			local pose = calcFocusPose(____exports.LEVEL_TO_STATION_INDEX[focusLevelIndex + 1]) -- 704
+			targetEye = pose.eye -- 705
+			targetTarget = pose.target -- 706
+		end -- 706
+		curEye = dt > 0 and lerp3(curEye, targetEye, 0.08) or targetEye -- 710
+		curTarget = dt > 0 and lerp3(curTarget, targetTarget, 0.08) or targetTarget -- 711
+		camera:lookAt( -- 712
+			curEye, -- 712
+			curTarget, -- 712
+			Vec3(0, 1, 0) -- 712
+		) -- 712
+		if backdrop ~= nil then -- 712
+			backdrop:sync(curEye, curTarget) -- 713
+		end -- 713
+		if camMode == "panorama" then -- 713
+			local camView = { -- 717
+				eye = {x = curEye.x, y = curEye.y, z = curEye.z}, -- 718
+				target = {x = curTarget.x, y = curTarget.y, z = curTarget.z}, -- 719
+				up = {x = 0, y = 1, z = 0}, -- 720
+				fovYDeg = options.fovYDeg, -- 721
+				aspect = options.aspect, -- 722
+				viewW = viewW, -- 723
+				viewH = viewH -- 724
+			} -- 724
+			local basis = prepareCamera(camView, HANDEDNESS, FLIP_Y) -- 726
+			do -- 726
+				local i = 0 -- 728
+				while i < #pins do -- 728
+					do -- 728
+						local p = pins[i + 1] -- 729
+						local worldPos -- 730
+						local yOffset = 24 -- 731
+						if p.stIndex == -1 then -- 731
+							worldPos = planeToWorld({x = 0, y = 0}, 0) -- 734
+							yOffset = 48 -- 735
+						else -- 735
+							local planetHandle = planets[p.stIndex + 1] -- 737
+							if planetHandle == nil then -- 737
+								goto __continue84 -- 738
+							end -- 738
+							worldPos = planeToWorld(planetHandle.currentPos, 0) -- 739
+							yOffset = p.stIndex == 2 and 40 or (p.stIndex == 0 and 32 or 24) -- 741
+						end -- 741
+						local proj = projectPrepared({x = worldPos.x, y = worldPos.y, z = worldPos.z}, basis) -- 744
+						if proj ~= nil and proj.vz > 1 then -- 744
+							p.root.visible = true -- 747
+							local over = toOverlay(proj) -- 748
+							local screenX = viewW / 2 + over.x -- 750
+							local screenY = viewH / 2 + over.y -- 751
+							local x = clampNumber(screenX - PinW / 2, 12, viewW - PinW - 12) -- 752
+							local y = clampNumber(screenY + yOffset, 168, viewH - 200) -- 753
+							do -- 753
+								local j = 0 -- 754
+								while j < i do -- 754
+									local other = pins[j + 1].root -- 755
+									if other.visible and x < other.x + PinW + 8 and x + PinW + 8 > other.x and y < other.y + PinH + 8 and y + PinH + 8 > other.y then -- 755
+										y = math.min(viewH - 200, other.y + PinH + 8) -- 756
+									end -- 756
+									j = j + 1 -- 754
+								end -- 754
+							end -- 754
+							p.root.position = Vec2(x, y) -- 758
+						else -- 758
+							p.root.visible = false -- 760
+						end -- 760
+					end -- 760
+					::__continue84:: -- 760
+					i = i + 1 -- 728
+				end -- 728
+			end -- 728
+		end -- 728
+	end -- 664
+	local hub = { -- 766
+		show = function(prog) -- 767
+			isVisible = true -- 768
+			root.visible = true -- 769
+			ui.visible = true -- 770
+			gestureLayer.touchEnabled = true -- 771
+			refreshRocketsDisplay(prog) -- 773
+			backToPanorama() -- 774
+			curEye = calcPanoEye() -- 776
+			curTarget = Vec3(0, 0, 0) -- 777
+			targetEye = curEye -- 778
+			targetTarget = curTarget -- 779
+			camera:lookAt( -- 780
+				curEye, -- 780
+				curTarget, -- 780
+				Vec3(0, 1, 0) -- 780
+			) -- 780
+			doStep(0) -- 783
+		end, -- 767
+		hide = function() -- 786
+			isVisible = false -- 787
+			root.visible = false -- 788
+			ui.visible = false -- 789
+			gestureLayer.touchEnabled = false -- 790
+			do -- 790
+				local i = 0 -- 792
+				while i < #pins do -- 792
+					pins[i + 1].btn:setEnabled(false) -- 792
+					i = i + 1 -- 792
+				end -- 792
+			end -- 792
+			do -- 792
+				local i = 0 -- 793
+				while i < #dockButtons do -- 793
+					dockButtons[i + 1]:setEnabled(false) -- 793
+					i = i + 1 -- 793
+				end -- 793
+			end -- 793
+			if replayIntroBtn ~= nil then -- 793
+				replayIntroBtn:setEnabled(false) -- 794
+			end -- 794
+			backBtn:setEnabled(false) -- 795
+			launchBtn:setEnabled(false) -- 796
+		end, -- 786
+		step = function(dt) -- 799
+			if not isVisible then -- 799
+				return -- 800
+			end -- 800
+			doStep(dt) -- 801
 		end, -- 799
-		launchCurrentMission = function() -- 803
-			if focusLevelIndex >= 0 then -- 803
-				print("[escape-velocity] launch mission via api: L" .. __TS__NumberToFixed(focusLevelIndex + 1, 0)) -- 805
-				options:onLaunch(focusLevelIndex) -- 806
-			end -- 806
-		end, -- 803
-		relayout = function(w, h) -- 810
-			viewW = w -- 811
-			viewH = h -- 812
-			ui.size = Size(viewW, viewH) -- 813
-			ui.position = Vec2(0, 0) -- 814
-			gestureLayer.size = Size(viewW, viewH) -- 815
-			topBar.size = Size(viewW, 90) -- 816
-			topBar.position = Vec2(0, viewH - 90) -- 817
-			setLabelCenter(titleLabel, viewW / 2, 60) -- 818
-			setLabelCenter(totalRocketsLabel, viewW / 2, 24) -- 819
-			if replayIntroBtn ~= nil then -- 819
-				replayIntroBtn.root.position = Vec2(viewW - 146, 22) -- 821
-			end -- 821
-			dockNode.position = Vec2(0, 76) -- 823
-			briefCard.position = Vec2((viewW - cardW) / 2, 40) -- 824
-		end, -- 810
-		visible = function() return isVisible end -- 827
-	} -- 827
-	currentHubInstance = hub -- 829
-	return hub -- 830
+		focusMission = function(levelIndex) -- 804
+			focusMission(levelIndex) -- 805
+		end, -- 804
+		backToPanorama = function() -- 808
+			backToPanorama() -- 809
+		end, -- 808
+		launchCurrentMission = function() -- 812
+			if focusLevelIndex >= 0 then -- 812
+				print("[escape-velocity] launch mission via api: L" .. __TS__NumberToFixed(focusLevelIndex + 1, 0)) -- 814
+				options:onLaunch(focusLevelIndex) -- 815
+			end -- 815
+		end, -- 812
+		relayout = function(w, h) -- 819
+			viewW = w -- 820
+			viewH = h -- 821
+			ui.size = Size(viewW, viewH) -- 822
+			ui.position = Vec2(0, 0) -- 823
+			gestureLayer.size = Size(viewW, viewH) -- 824
+			topBar.size = Size(viewW, 120) -- 825
+			topBar.position = Vec2(0, viewH - 120) -- 826
+			setLabelCenter(titleLabel, 24, 84) -- 827
+			setLabelCenter(totalRocketsLabel, viewW / 2, 24) -- 828
+			if replayIntroBtn ~= nil then -- 828
+				replayIntroBtn.root.position = Vec2(viewW - 160, 44) -- 830
+			end -- 830
+			dockNode.position = Vec2(0, 76) -- 832
+			briefCard.position = Vec2((viewW - cardW) / 2, 40) -- 833
+		end, -- 819
+		visible = function() return isVisible end -- 836
+	} -- 836
+	currentHubInstance = hub -- 838
+	return hub -- 839
 end -- 180
-currentHubInstance = nil -- 833
+currentHubInstance = nil -- 842
 --- 获取当前处于活动状态的 SolarHub 单例。
-function ____exports.getActiveSolarHub() -- 836
-	return currentHubInstance -- 837
-end -- 836
-return ____exports -- 836
+function ____exports.getActiveSolarHub() -- 845
+	return currentHubInstance -- 846
+end -- 845
+return ____exports -- 845

@@ -25,7 +25,7 @@ import { Camera3D, Color, Color3, Content, DirectionalLight3D, Label, Material3D
 import { P2 } from 'game/Gravity';
 import { MiniSunLightIntensity, SunFillIntensity } from 'game/Config';
 import { ProbeHandle, applyPlanetTexture, createProbe, createStarBackdrop, modelRadius, planeToWorld, pointAntenna, probeYawForVelocity } from 'game/Scene';
-import { colorFromHex, createLabel, setLabelCenter } from 'game/Ui';
+import { colorFromHex, createButton, createLabel, setLabelCenter } from 'game/Ui';
 
 const DegToRad = Math.PI / 180;
 
@@ -431,7 +431,7 @@ export function createOpening(options: OpeningOptions): Opening {
 	setLabelCenter(tagline, viewW / 2, titleY - titleSize * 0.95 - taglineSize * 1.8);
 	const narration = createLabel(ui, '地球轨道上，最后一次告别', taglineSize, NarrationHex);
 	setLabelCenter(narration, viewW / 2, viewH * 0.26);
-	const skip = createLabel(ui, '轻触跳过', taglineSize, SkipHex);
+	const skip = createLabel(ui, '', taglineSize, SkipHex);
 	setLabelCenter(skip, viewW / 2, clampNumber(viewH * 0.06, 34, 88));
 
 	// 全屏跳过层：只有它在播的时候吃触摸（隐藏时必须断掉 touchEnabled）
@@ -442,6 +442,11 @@ export function createOpening(options: OpeningOptions): Opening {
 	skipLayer.swallowTouches = true;
 	skipLayer.touchEnabled = true;
 	ui.addChild(skipLayer);
+	const skipButton = createButton(ui, { w: 144, h: 72, text: '跳过', icon: 'fast', fontSize: 22,
+		bgHex: 0x142334, fgHex: 0xeaf4ff, borderHex: 0x4e7b9e, fireOn: 'press', onTap: (): void => finish() });
+	skipButton.root.position = Vec2(viewW - 168, 80);
+	skipButton.root.order = 100;
+	skipButton.setEnabled(false);
 
 	// 资产诊断：缺件时开场不会崩（都有回退），但日志要留痕
 	print('[escape-velocity] opening assets: rings=' + (rings !== undefined ? 'ok' : 'MISSING')
@@ -517,6 +522,7 @@ export function createOpening(options: OpeningOptions): Opening {
 		if (mode !== 'intro') return;
 		mode = 'idle';
 		skipLayer.touchEnabled = false;
+		skipButton.setEnabled(false); skipButton.root.visible = false;
 		options.onFinish();
 	};
 
@@ -534,6 +540,7 @@ export function createOpening(options: OpeningOptions): Opening {
 			root.visible = true;
 			ui.visible = true;
 			skipLayer.touchEnabled = true;
+			skipButton.setEnabled(true); skipButton.root.visible = true;
 			update(0);
 		},
 		step: (): void => {
@@ -551,6 +558,7 @@ export function createOpening(options: OpeningOptions): Opening {
 			root.visible = true;
 			ui.visible = true;
 			skipLayer.touchEnabled = false;
+			skipButton.setEnabled(false); skipButton.root.visible = false;
 			update(frame < 0 ? 0 : frame);
 		},
 		phase: (): OpeningPhase => (mode === 'off' ? 'off' : openingPhase(frame)),
@@ -560,6 +568,7 @@ export function createOpening(options: OpeningOptions): Opening {
 			root.visible = false;
 			ui.visible = false;
 			skipLayer.touchEnabled = false;
+			skipButton.setEnabled(false); skipButton.root.visible = false;
 		},
 	};
 }
