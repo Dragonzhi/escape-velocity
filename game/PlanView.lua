@@ -513,7 +513,12 @@ function ____exports.createPlanView(layer, viewW, viewH, opts, centerBodyIndex) 
 						while i < #inner and i < #outer do -- 558
 							ringDraw:drawPolygon( -- 558
 								{inner[i], outer[i], outer[i + 1], inner[i + 1]}, -- 558
-								Color(80, 255, 130, 18), -- 558
+								Color( -- 558
+									80, -- 558
+									255, -- 558
+									130, -- 558
+									math.floor(32 * (ring.pointAlpha ~= nil and ring.pointAlpha or 1)) -- 558
+								), -- 558
 								0, -- 558
 								Color(80, 255, 130, 0) -- 558
 							) -- 558

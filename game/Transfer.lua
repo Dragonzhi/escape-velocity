@@ -461,15 +461,19 @@ function ____exports.orbitalShotAt(time, burn, analysis, cfg, dt) -- 264
 		function(____, e) return e.passed and time > e.exitIndex * dt end -- 275
 	) and "Overview" or "Cruise" -- 275
 end -- 264
---- 独立显示时间；调用方每帧累加 wallDt，暂停与物理倍率不参与。
-function ____exports.successMarkerFrame(elapsed) -- 279
-	if elapsed < 0 then -- 279
-		return {visible = true, alpha = 1, scale = 1, ring = 0} -- 280
-	end -- 280
-	if elapsed >= 0.6 then -- 280
-		return {visible = false, alpha = 0, scale = 1, ring = 0} -- 281
-	end -- 281
-	local u = math.max(0, (elapsed - 0.12) / 0.48) -- 282
-	return {visible = true, alpha = 1 - u, scale = elapsed < 0.12 and 1 + elapsed / 0.12 or 2 - u, ring = elapsed < 0.12 and 0 or 8 + 30 * u} -- 283
+--- 目标区平滑呼吸；使用显示时间，不修改判定半径或物理时间。
+function ____exports.goalPulseAlpha(elapsed) -- 279
+	return 0.3 + 0.45 * (0.5 - 0.5 * math.cos(elapsed * 2 * math.pi / 1.6)) -- 280
 end -- 279
-return ____exports -- 279
+--- 独立显示时间；调用方每帧累加 wallDt，暂停与物理倍率不参与。
+function ____exports.successMarkerFrame(elapsed) -- 284
+	if elapsed < 0 then -- 284
+		return {visible = true, alpha = 1, scale = 1, ring = 0} -- 285
+	end -- 285
+	if elapsed >= 0.6 then -- 285
+		return {visible = false, alpha = 0, scale = 1, ring = 0} -- 286
+	end -- 286
+	local u = math.max(0, (elapsed - 0.12) / 0.48) -- 287
+	return {visible = true, alpha = 1 - u, scale = elapsed < 0.12 and 1 + elapsed / 0.12 or 2 - u, ring = elapsed < 0.12 and 0 or 8 + 30 * u} -- 288
+end -- 284
+return ____exports -- 284

@@ -2,7 +2,7 @@
 import { Content, json } from 'Dora';
 import { P2, bodyPositionAt, distance, simulate } from 'game/Gravity';
 import { getLevel, goalPositionAt, installArcadeLevels, findGoalIndex, evaluateRocketsDetailed } from 'game/LevelData';
-import { advanceTransferPlayback, analyzeFlyby, nextCameraFocus, planTransfer, successMarkerFrame, transferPlaybackRate, transferShotAt } from 'game/Transfer';
+import { advanceTransferPlayback, analyzeFlyby, nextCameraFocus, planTransfer, goalPulseAlpha, successMarkerFrame, transferPlaybackRate, transferShotAt } from 'game/Transfer';
 import { GameLevel, createCore, coreEndViewing, coreLaunch, coreUpdate, coreRetry, selectIdleHost } from 'game/Game';
 
 export function runTests(): string {
@@ -15,6 +15,10 @@ export function runTests(): string {
 	const tr = lv.transfer;
 	const cfg = lv.transfer.flyby;
 	const dt = 0.016;
+	check('goal-pulse-min', Math.abs(goalPulseAlpha(0) - 0.3) < 1e-9);
+	check('goal-pulse-max', Math.abs(goalPulseAlpha(0.8) - 0.75) < 1e-9);
+	check('goal-pulse-period', Math.abs(goalPulseAlpha(1.6) - goalPulseAlpha(0)) < 1e-9);
+	check('goal-pulse-smooth', goalPulseAlpha(0.4) > goalPulseAlpha(0) && goalPulseAlpha(0.4) < goalPulseAlpha(0.8));
 	check('marker-idle-visible', successMarkerFrame(-1).visible && successMarkerFrame(-1).alpha === 1);
 	check('marker-bright-pulse', successMarkerFrame(0.10).scale > 1.5 && successMarkerFrame(0.10).ring === 0);
 	check('marker-expands-and-fades', successMarkerFrame(0.3).ring > 8 && successMarkerFrame(0.3).alpha < 1);

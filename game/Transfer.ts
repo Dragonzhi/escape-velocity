@@ -275,6 +275,11 @@ export function orbitalShotAt(time: number, burn: number, analysis: FlybyAnalysi
 	return analysis !== undefined && analysis.exitIndex >= 0 && analysis.encounters !== undefined && analysis.encounters.every(e => e.passed && time > e.exitIndex * dt) ? 'Overview' : 'Cruise';
 }
 
+/** 目标区平滑呼吸；使用显示时间，不修改判定半径或物理时间。 */
+export function goalPulseAlpha(elapsed: number): number {
+	return 0.3 + 0.45 * (0.5 - 0.5 * Math.cos(elapsed * 2 * Math.PI / 1.6));
+}
+
 /** 独立显示时间；调用方每帧累加 wallDt，暂停与物理倍率不参与。 */
 export function successMarkerFrame(elapsed: number): { visible: boolean; alpha: number; scale: number; ring: number } {
 	if (elapsed < 0) return { visible: true, alpha: 1, scale: 1, ring: 0 };

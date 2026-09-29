@@ -555,7 +555,7 @@ export function createPlanView(layer: Node.Type, viewW: number, viewH: number, o
 			if (ring.bandOuterRadius !== undefined && ring.bandOuterRadius > ring.radius) {
 				const inner = circleVerts(s.x, s.y, rPx, options.ringSegments);
 				const outer = circleVerts(s.x, s.y, ring.bandOuterRadius * map.scale, options.ringSegments);
-				for (let i = 1; i < inner.length && i < outer.length; i++) ringDraw.drawPolygon([inner[i - 1], outer[i - 1], outer[i], inner[i]], Color(80, 255, 130, 18), 0, Color(80, 255, 130, 0));
+				for (let i = 1; i < inner.length && i < outer.length; i++) ringDraw.drawPolygon([inner[i - 1], outer[i - 1], outer[i], inner[i]], Color(80, 255, 130, Math.floor(32 * (ring.pointAlpha !== undefined ? ring.pointAlpha : 1))), 0, Color(80, 255, 130, 0));
 			}
 			const ringTint = ring.point === true ? colorFromHex(0x66ff88, ring.pointAlpha !== undefined ? ring.pointAlpha : 1) : (ring.pointAlpha !== undefined ? colorFromHex(options.ringHex, ring.pointAlpha) : ringColor);
 			ringDraw.drawPolygon(circleVerts(s.x, s.y, rPx, options.ringSegments), noFill, options.ringWidth, ringTint);

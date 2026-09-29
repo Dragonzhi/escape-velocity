@@ -404,145 +404,151 @@ function ____exports.createTrajectoryView(parent, opts) -- 364
 					if #verts < 3 then -- 467
 						goto __continue36 -- 468
 					end -- 468
-					if ring.bandOuterRadius ~= nil and ring.bandOuterRadius > ring.radius then -- 468
-						local outer = {} -- 470
-						do -- 470
-							local i = 0 -- 471
-							while i <= n do -- 471
-								local a = i / n * 2 * math.pi -- 471
-								outer[#outer + 1] = { -- 471
-									x = ring.center.x + ring.bandOuterRadius * math.cos(a), -- 471
-									y = ring.center.y + ring.bandOuterRadius * math.sin(a) -- 471
-								} -- 471
-								i = i + 1 -- 471
-							end -- 471
-						end -- 471
-						local ov = ____exports.projectPolyline( -- 472
-							outer, -- 472
-							options.y, -- 472
-							basis, -- 472
-							options.layerOriginX, -- 472
-							options.layerOriginY -- 472
-						) -- 472
-						do -- 472
-							local i = 1 -- 473
-							while i < #verts and i < #ov do -- 473
-								ringDraw:drawPolygon( -- 473
-									{verts[i], ov[i], ov[i + 1], verts[i + 1]}, -- 473
-									Color(80, 255, 130, 15), -- 473
-									0, -- 473
-									Color(80, 255, 130, 0) -- 473
-								) -- 473
-								i = i + 1 -- 473
-							end -- 473
-						end -- 473
-					end -- 473
-					local opacity = ring.pointAlpha ~= nil and ring.pointAlpha or 1 -- 475
-					local base = ring.point == true and ({r = 90, g = 255, b = 125}) or ({r = options.ringR, g = options.ringG, b = options.ringB}) -- 476
-					local dim = ring.passed and 0.35 or 1 -- 477
-					local rgb = {r = base.r * dim * opacity, g = base.g * dim * opacity, b = base.b * dim * opacity} -- 478
-					____exports.drawDashedPolyline( -- 479
-						ringDraw, -- 479
-						verts, -- 479
-						options.ringRadius, -- 479
-						rgb, -- 479
-						1, -- 479
-						options.glowRadiusFactor, -- 479
-						options.ringGlowAlpha, -- 479
-						options.dashOn * 1.5, -- 479
-						options.dashOff, -- 479
-						false -- 479
-					) -- 479
-				end -- 479
-				::__continue36:: -- 479
-			end -- 479
+					local opacity = ring.pointAlpha ~= nil and ring.pointAlpha or 1 -- 469
+					if ring.bandOuterRadius ~= nil and ring.bandOuterRadius > ring.radius then -- 469
+						local outer = {} -- 471
+						do -- 471
+							local i = 0 -- 472
+							while i <= n do -- 472
+								local a = i / n * 2 * math.pi -- 472
+								outer[#outer + 1] = { -- 472
+									x = ring.center.x + ring.bandOuterRadius * math.cos(a), -- 472
+									y = ring.center.y + ring.bandOuterRadius * math.sin(a) -- 472
+								} -- 472
+								i = i + 1 -- 472
+							end -- 472
+						end -- 472
+						local ov = ____exports.projectPolyline( -- 473
+							outer, -- 473
+							options.y, -- 473
+							basis, -- 473
+							options.layerOriginX, -- 473
+							options.layerOriginY -- 473
+						) -- 473
+						local fill = Color( -- 474
+							math.floor(80 * opacity), -- 474
+							math.floor(255 * opacity), -- 474
+							math.floor(130 * opacity), -- 474
+							math.floor(27 * opacity) -- 474
+						) -- 474
+						do -- 474
+							local i = 1 -- 475
+							while i < #verts and i < #ov do -- 475
+								ringDraw:drawPolygon( -- 475
+									{verts[i], ov[i], ov[i + 1], verts[i + 1]}, -- 475
+									fill, -- 475
+									0, -- 475
+									Color(80, 255, 130, 0) -- 475
+								) -- 475
+								i = i + 1 -- 475
+							end -- 475
+						end -- 475
+					end -- 475
+					local base = ring.point == true and ({r = 90, g = 255, b = 125}) or ({r = options.ringR, g = options.ringG, b = options.ringB}) -- 477
+					local dim = ring.passed and 0.35 or 1 -- 478
+					local rgb = {r = base.r * dim * opacity, g = base.g * dim * opacity, b = base.b * dim * opacity} -- 479
+					____exports.drawDashedPolyline( -- 480
+						ringDraw, -- 480
+						verts, -- 480
+						options.ringRadius, -- 480
+						rgb, -- 480
+						1, -- 480
+						options.glowRadiusFactor, -- 480
+						options.ringGlowAlpha, -- 480
+						options.dashOn * 1.5, -- 480
+						options.dashOff, -- 480
+						false -- 480
+					) -- 480
+				end -- 480
+				::__continue36:: -- 480
+			end -- 480
 		end, -- 441
-		clearGoalRings = function(self) -- 482
-			ringDraw:clear() -- 483
-		end, -- 482
-		setBurn = function(____, p, direction, on, basis) -- 485
-			burnDraw:clear() -- 486
-			if not on then -- 486
-				return -- 487
-			end -- 487
-			local mag = math.sqrt(direction.x * direction.x + direction.y * direction.y) -- 488
-			if mag <= 0 then -- 488
-				return -- 489
-			end -- 489
-			local length = options.burnLength ~= nil and options.burnLength or 32 -- 490
-			local pts = ____exports.projectPolyline( -- 491
-				{p, {x = p.x - direction.x * length / mag, y = p.y - direction.y * length / mag}}, -- 491
-				options.y, -- 491
-				basis, -- 491
-				options.layerOriginX, -- 491
-				options.layerOriginY -- 491
-			) -- 491
-			if #pts == 2 then -- 491
-				burnDraw:drawSegment( -- 493
-					pts[1], -- 493
-					pts[2], -- 493
-					5, -- 493
-					Color(255, 135, 35, 140) -- 493
-				) -- 493
+		clearGoalRings = function(self) -- 483
+			ringDraw:clear() -- 484
+		end, -- 483
+		setBurn = function(____, p, direction, on, basis) -- 486
+			burnDraw:clear() -- 487
+			if not on then -- 487
+				return -- 488
+			end -- 488
+			local mag = math.sqrt(direction.x * direction.x + direction.y * direction.y) -- 489
+			if mag <= 0 then -- 489
+				return -- 490
+			end -- 490
+			local length = options.burnLength ~= nil and options.burnLength or 32 -- 491
+			local pts = ____exports.projectPolyline( -- 492
+				{p, {x = p.x - direction.x * length / mag, y = p.y - direction.y * length / mag}}, -- 492
+				options.y, -- 492
+				basis, -- 492
+				options.layerOriginX, -- 492
+				options.layerOriginY -- 492
+			) -- 492
+			if #pts == 2 then -- 492
 				burnDraw:drawSegment( -- 494
 					pts[1], -- 494
 					pts[2], -- 494
-					2, -- 494
-					Color(255, 235, 145, 255) -- 494
+					5, -- 494
+					Color(255, 135, 35, 140) -- 494
 				) -- 494
-			end -- 494
-		end, -- 485
-		setOrbitRing = function(self, center, radius, basis) -- 497
-			orbitDraw:clear() -- 498
-			if radius <= 0 then -- 498
-				return -- 499
-			end -- 499
-			local n = options.orbitRingSegments -- 500
-			local circle = {} -- 501
-			do -- 501
-				local i = 0 -- 502
-				while i <= n do -- 502
-					local a = i / n * 2 * math.pi -- 503
-					circle[#circle + 1] = { -- 504
-						x = center.x + radius * math.cos(a), -- 504
-						y = center.y + radius * math.sin(a) -- 504
-					} -- 504
-					i = i + 1 -- 502
-				end -- 502
-			end -- 502
-			local verts = ____exports.projectPolyline( -- 506
-				circle, -- 506
-				options.y, -- 506
-				basis, -- 506
-				options.layerOriginX, -- 506
-				options.layerOriginY -- 506
-			) -- 506
-			if #verts < 2 then -- 506
-				return -- 507
-			end -- 507
-			local vx = basis.forward.x -- 509
-			local vy = basis.forward.z -- 510
-			local vl = math.sqrt(vx * vx + vy * vy) -- 511
-			if vl > 1e-9 then -- 511
-				vx = vx / vl -- 513
-				vy = vy / vl -- 514
-			end -- 514
-			local rgb = {r = options.orbitRingR, g = options.orbitRingG, b = options.orbitRingB} -- 516
-			local nearCol = segColor(rgb, options.orbitRingAlpha) -- 517
-			local farCol = segColor(rgb, options.orbitRingFarAlpha) -- 518
-			do -- 518
-				local i = 1 -- 519
-				while i < #verts and i < #circle do -- 519
-					local far = (circle[i + 1].x - center.x) * vx + (circle[i + 1].y - center.y) * vy > 0 -- 520
-					orbitDraw:drawSegment(verts[i], verts[i + 1], options.orbitRingRadius, far and farCol or nearCol) -- 521
-					i = i + 1 -- 519
-				end -- 519
-			end -- 519
-		end, -- 497
-		clearOrbitRing = function(self) -- 524
-			orbitDraw:clear() -- 525
-		end, -- 524
-		root = root -- 527
-	} -- 527
+				burnDraw:drawSegment( -- 495
+					pts[1], -- 495
+					pts[2], -- 495
+					2, -- 495
+					Color(255, 235, 145, 255) -- 495
+				) -- 495
+			end -- 495
+		end, -- 486
+		setOrbitRing = function(self, center, radius, basis) -- 498
+			orbitDraw:clear() -- 499
+			if radius <= 0 then -- 499
+				return -- 500
+			end -- 500
+			local n = options.orbitRingSegments -- 501
+			local circle = {} -- 502
+			do -- 502
+				local i = 0 -- 503
+				while i <= n do -- 503
+					local a = i / n * 2 * math.pi -- 504
+					circle[#circle + 1] = { -- 505
+						x = center.x + radius * math.cos(a), -- 505
+						y = center.y + radius * math.sin(a) -- 505
+					} -- 505
+					i = i + 1 -- 503
+				end -- 503
+			end -- 503
+			local verts = ____exports.projectPolyline( -- 507
+				circle, -- 507
+				options.y, -- 507
+				basis, -- 507
+				options.layerOriginX, -- 507
+				options.layerOriginY -- 507
+			) -- 507
+			if #verts < 2 then -- 507
+				return -- 508
+			end -- 508
+			local vx = basis.forward.x -- 510
+			local vy = basis.forward.z -- 511
+			local vl = math.sqrt(vx * vx + vy * vy) -- 512
+			if vl > 1e-9 then -- 512
+				vx = vx / vl -- 514
+				vy = vy / vl -- 515
+			end -- 515
+			local rgb = {r = options.orbitRingR, g = options.orbitRingG, b = options.orbitRingB} -- 517
+			local nearCol = segColor(rgb, options.orbitRingAlpha) -- 518
+			local farCol = segColor(rgb, options.orbitRingFarAlpha) -- 519
+			do -- 519
+				local i = 1 -- 520
+				while i < #verts and i < #circle do -- 520
+					local far = (circle[i + 1].x - center.x) * vx + (circle[i + 1].y - center.y) * vy > 0 -- 521
+					orbitDraw:drawSegment(verts[i], verts[i + 1], options.orbitRingRadius, far and farCol or nearCol) -- 522
+					i = i + 1 -- 520
+				end -- 520
+			end -- 520
+		end, -- 498
+		clearOrbitRing = function(self) -- 525
+			orbitDraw:clear() -- 526
+		end, -- 525
+		root = root -- 528
+	} -- 528
 end -- 364
 return ____exports -- 364

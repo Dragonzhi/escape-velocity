@@ -32,7 +32,7 @@ import { ObservePose, captureObserve, rotateObserve, stepObserve, zoomObserve } 
 import { GoalRing, TrajectoryView } from 'game/Trajectory';
 import { CameraBasis, FLIP_Y, HANDEDNESS, prepareCamera, projectPrepared } from 'game/Projection';
 import { BonusPointSpec, GameSecondsPerRealSecond, GoalSpec, MissionMeta, PlanetVisualDef, bodyVelocityAt, findGoalIndex, goalPositionAt, goalWaypoints, waypointProgress } from 'game/LevelData';
-import { CameraFocusMode, FlybyAnalysis, TargetFlybySpec, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeTransfer, nextCameraFocus, orbitalShotAt, planTransfer, successMarkerFrame, transferCinematic, transferPlaybackRate, transferShotAt } from 'game/Transfer';
+import { CameraFocusMode, FlybyAnalysis, TargetFlybySpec, TransferShot, TransferTutorial, advanceTransferPlayback, analyzeTransfer, nextCameraFocus, orbitalShotAt, planTransfer, goalPulseAlpha, successMarkerFrame, transferCinematic, transferPlaybackRate, transferShotAt } from 'game/Transfer';
 import { PlanView, PlanViewMode } from 'game/PlanView';
 import {
 	AimMinSpeed, CameraFramingBudget, CameraTiltMax, CameraTiltMin, FlightPlayback, IntroCloseDist,
@@ -1071,6 +1071,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	let obsZoom = 1;
 	let focusMode: CameraFocusMode = 'Auto';
 	let markerElapsed = -1;
+	let goalDisplayTime = 0;
 	let reportedBonusIds: Record<string, boolean> = {};
 	let bonusEffectElapsed: number[] = [];
 	let cineKey = '';
@@ -1266,9 +1267,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			const body = level.bodies[region.bodyIndex];
 			if (body !== undefined && (markerElapsed < 0 || marker.visible)) {
 				const center = bodyPositionAt(body, t);
-				const alpha = markerElapsed >= 0 ? marker.alpha : 0.55;
+				const alpha = markerElapsed >= 0 ? marker.alpha : goalPulseAlpha(goalDisplayTime);
 				out.push({ center, radius: body.radius + region.minAltitude, bandOuterRadius: body.radius + region.maxAltitude, passed: false, pointAlpha: alpha });
-				out.push({ center, radius: body.radius + region.maxAltitude, passed: false, pointAlpha: alpha });
 				out.push({ center, radius: body.radius + region.maxAltitude, passed: false, pointAlpha: alpha });
 			}
 			if (level.bonusPoints !== undefined) for (let i = 0; i < level.bonusPoints.length; i++) {
@@ -1527,6 +1527,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 
 	const resetCinematic = (): void => {
 		markerElapsed = -1;
+		goalDisplayTime = 0;
 		focusMode = 'Auto'; cineKey = ''; cineFrame = undefined; cineFrom = undefined;
 		playerPose = undefined;
 		obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
@@ -2044,6 +2045,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	};
 
 	const update = (dt: number): void => {
+		goalDisplayTime += dt;
 		if (markerElapsed >= 0 && markerElapsed < 0.6) markerElapsed = Math.min(0.6, markerElapsed + dt);
 		for (let i = 0; i < bonusEffectElapsed.length; i++) if (bonusEffectElapsed[i] >= 0 && bonusEffectElapsed[i] < 0.6) bonusEffectElapsed[i] = Math.min(0.6, bonusEffectElapsed[i] + dt);
 		// 视图也必须**状态驱动**（AGENTS 硬约束 5）：每帧按 core.viewMode 对一次节点，

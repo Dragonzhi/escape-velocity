@@ -120,7 +120,9 @@ threadLoop(function()
   if Content:exist(observeFile) then
     local initMod = package.loaded["init"]
     if initMod ~= nil and initMod.getDebugGameState ~= nil then
-      Content:save(stateFile, initMod.getDebugGameState())
+      local sound = package.loaded["game.Sound"] or package.loaded["game/Sound"]
+      local musicState = sound ~= nil and sound.backgroundMusicState ~= nil and sound.backgroundMusicState() or "missing"
+      Content:save(stateFile, initMod.getDebugGameState() .. "\nmusic=" .. musicState)
     end
   end
   if Content:exist(reqFile) then

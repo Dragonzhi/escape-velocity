@@ -147,6 +147,16 @@ try {
   $null = Wait-State { param($s) $s.phase -eq 'Armed' }
   if ([Math]::Abs([double](State).date - $launchDate) -gt 0.001) { throw 'armed did not freeze date' }
   Capture 'flyby-planned'
+  # Actual native clicks must change the planning rate without leaving Armed or moving the date.
+  $null = Click-State 60 212 { param($s) [Math]::Abs([double]$s.rate - 0.025) -lt 0.000001 }
+  Capture 'flyby-slow-button'
+  $null = Click-State 220 212 { param($s) [Math]::Abs([double]$s.rate - 0.25) -lt 0.000001 }
+  Start-Sleep -Milliseconds 550
+  $null = Click-State 220 212 { param($s) [Math]::Abs([double]$s.rate - 2.5) -lt 0.000001 }
+  Capture 'flyby-fast-button'
+  $null = Click-State 60 212 { param($s) [Math]::Abs([double]$s.rate - 0.25) -lt 0.000001 }
+  if ((State).phase -ne 'Armed' -or [Math]::Abs([double](State).date - $launchDate) -gt 0.001) { throw 'time buttons changed planning state/date' }
+  $null = Pause
   $null = Click-State ($flybyVW - 60) 212 { param($s) $s.view -eq '3D' }
   Capture 'flyby-before-launch'
   Click ($flybyVW - 60) 132
@@ -176,6 +186,11 @@ try {
   if ((State).world -ne $beforeDrag.world) { throw 'camera drag changed paused physics' }
   if ((Logs) -notmatch 'camera takeover -> Probe') { throw 'drag did not take over camera' }
   Capture 'flyby-manual-drag'
+  Move-Cursor ($flybyVW * 0.5) ($flybyVH * 0.45)
+  [FlybyMouse]::mouse_event(0x0800, 0, 0, 120, [IntPtr]::Zero)
+  Start-Sleep -Milliseconds 700
+  Capture 'flyby-manual-wheel'
+  if ((State).world -ne $beforeDrag.world -or (State).focus -ne 'Probe') { throw 'wheel changed paused flight state' }
   $focusModes = if ($Level -eq 1) { @('Moon', 'Earth', 'Overview', 'Auto') } elseif ($Level -eq 2) { @('Venus', 'Mercury', 'Sun', 'Overview', 'Auto') } else { @('Jupiter', 'Saturn', 'Sun', 'Overview', 'Auto') }
   foreach ($mode in $focusModes) {
     $null = Click-State 154 295 { param($s) $s.focus -eq $mode }
@@ -274,6 +289,7 @@ try {
   $retry = State
   if ($retry.completed -ne '0' -or $retry.focus -ne 'Auto' -or $retry.view -ne '2D' -or [double]$retry.marker -ne -1) { throw 'retry left stale viewing state' }
   Capture 'flyby-retry'
+  if ((State).music -ne 'playing=true loop=true volume=0.5 starts=1') { throw 'music stopped or restarted across level changes/retry' }
   $logName = if ($ManualEnd) { 'flyby-manual-input-log.txt' } else { 'flyby-input-log.txt' }
   if ($Level -gt 1) { $logName = if ($ManualEnd) { "orbital-L$Level-manual-input-log.txt" } else { "orbital-L$Level-input-log.txt" } }
   $log = Logs

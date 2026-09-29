@@ -466,13 +466,14 @@ export function createTrajectoryView(
 				}
 				const verts = projectPolyline(circle, options.y, basis, options.layerOriginX, options.layerOriginY);
 				if (verts.length < 3) continue;
+				const opacity = ring.pointAlpha !== undefined ? ring.pointAlpha : 1;
 				if (ring.bandOuterRadius !== undefined && ring.bandOuterRadius > ring.radius) {
 					const outer: P2[] = [];
 					for (let i = 0; i <= n; i++) { const a = (i / n) * 2 * Math.PI; outer.push({ x: ring.center.x + ring.bandOuterRadius * Math.cos(a), y: ring.center.y + ring.bandOuterRadius * Math.sin(a) }); }
 					const ov = projectPolyline(outer, options.y, basis, options.layerOriginX, options.layerOriginY);
-					for (let i = 1; i < verts.length && i < ov.length; i++) ringDraw.drawPolygon([verts[i - 1], ov[i - 1], ov[i], verts[i]], Color(80, 255, 130, 15), 0, Color(80, 255, 130, 0));
+					const fill = Color(Math.floor(80 * opacity), Math.floor(255 * opacity), Math.floor(130 * opacity), Math.floor(27 * opacity));
+					for (let i = 1; i < verts.length && i < ov.length; i++) ringDraw.drawPolygon([verts[i - 1], ov[i - 1], ov[i], verts[i]], fill, 0, Color(80, 255, 130, 0));
 				}
-				const opacity = ring.pointAlpha !== undefined ? ring.pointAlpha : 1;
 				const base = ring.point === true ? { r: 90, g: 255, b: 125 } : { r: options.ringR, g: options.ringG, b: options.ringB };
 				const dim = ring.passed ? 0.35 : 1;
 				const rgb: RGB = { r: base.r * dim * opacity, g: base.g * dim * opacity, b: base.b * dim * opacity };
