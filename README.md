@@ -1,107 +1,96 @@
+<a href="https://dora-ssr.net/">
+  <img src="https://dora-ssr.net/img/site/dora.svg" alt="Dora SSR" width="96" />
+</a>
+
 # 《单程》Escape Velocity
 
-> 用一次发射，借行星的力，把一枚探测器送出太阳系。
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-527A35?style=for-the-badge)](LICENSE)
+[![Dora SSR QQ 群：512620381](https://img.shields.io/badge/QQ%E7%BE%A4-512620381-12B7F5&style=for-the-badge&logo=qq&logoColor=white)](https://qm.qq.com/q/VnzYhvCDgy)
 
-竖屏、单指触屏、六关的物理规划小游戏。玩家在发射前调整方向与力度、观察被引力掰弯的预测轨迹；松手后不可修正，只能看着探测器按物理飞出去。
+用一次发射，借行星的力，把一枚探测器送出太阳系。
 
-## 状态
+本作品使用 **[Dora SSR](https://dora-ssr.net/)** 游戏引擎开发，参与原子派社区小游戏征集活动。
 
-✅ **可玩闭环已交付**：六个独立任务（月球 / 金星 / 木星 / 土星 / 天王星 / 海王星）、一次点火的瞄准与预测线、
-结算三态面板（借力成功 / 错过目标 / 信号中断）、关卡选择与**解锁存档**（`%APPDATA%/IppClub/DoraSSR/escape-velocity.progress`）。
-✅ **时间轴是六关共同的玩法**：拖「发射日期」改变行星排布，也就改变这条路通不通 —— L5/L6 进关那一天的日期是**无解**的，
-必须先等行星转到航线上（六关的窗口形状由 `tools/level-window.mjs` 设计、`Test/LevelDataTest.ts` 的硬门守着）。
-✅ **视觉**：真实比例的行星与环（Blender 交付的 .glb + 贴图）、发光的太阳、程序化星空、轨迹彗尾、开场「太阳系全景 → 地球旁的探测器」。
-⚠️ 手机 Web 版**待复测**（桌面 Web 已跑通）。
+**发布与展示平台：[原子派](https://atompie.osgame.org/)<br>
+**活动页面：[社区小游戏征集活动](https://atompie.osgame.org/events/minigame-2026?view=rules)**
 
-## 操作说明
+## 游戏介绍
 
-- **瞄准**：在屏幕**任意位置**按下并拖动 —— **位移方向 = 发射方向、位移长度 = 力度**，预测线实时跟着变（松手保留这条线）。
-  ⇒ 按在哪里都能瞄，不需要去抓飞行器。
-- **发射**：右下角「发射」按钮，**按下即动作**（引擎会丢触摸事件，所以一次性按钮都在按下时触发）；发射后不可修正。
-- **时间轴**：「发射日期」的 ◀ / ▶（按住即连续走）改变**行星在这个日期排在哪** —— 日期决定这条航线通不通。
-- **Δv 预算**：左上角 `Δv x / N` 是本关的燃料上限（满力 = N），「力大砖飞」被预算挡住。
-- **结算**：飞行结束后给出「借力成功 / 错过目标 / 信号中断」，可「重试本关」或「返回关卡选择」。
-- **进度**：解锁制 —— 只有达成目标才解锁下一关，写入本地存档（一行 `unlocked=N`，存在引擎的可写目录，不在仓库内）。
+- 核心目标：在三段街机尺度的太阳系旅程中规划一次点火，让探测器借天体引力抵达目标区域。L1 从地球出发掠过月球，L2 从日心轨道借金星减速后飞掠水星，L3 借木星和土星驶向太阳系外。进入目标环即可完成，沿途绿色光点提供可选加分。
+- 操作方式：竖屏单指触控，桌面端也支持鼠标。规划阶段拖动探测器调整点火方向和力度，点发射开始飞行；时间按钮可以减速、暂停或加速。飞行后可切换2D/3D视图；在3D空白处拖动可旋转镜头，滚轮可缩放，也可点选探测器、行星或总览作为观察中心。
+- 玩法特色：固定步长的引力模拟驱动预测轨迹和实际飞行；发射后轨迹不可修正，玩家可以观察航线如何被行星弯折。每关有目标环和可选得分点，过关后仍可继续观看飞行。
+- 作者／团队：Dragonzhi
 
-## 文档
+## 开发环境
+
+- 引擎：Dora SSR v1.9.3（引擎自报 1.9.3.6）
+- 编程语言：TypeScript（经 TypeScriptToLua 编译为 Lua 后由引擎执行；仓库中 `.ts` 与编译产物 `.lua` 同目录共存，修改 `.ts` 后必须重新构建才会生效）
+- 官方文档：https://dora-ssr.net/docs/tutorial/quick-start/
+- 引擎源码：https://github.com/IppClub/Dora-SSR
+
+## 运行项目
+
+1. 安装与本项目相匹配版本的 Dora SSR（v1.9.3），启动并打开引擎显示的 Web IDE 地址。
+2. 将本仓库完整源码与资源放入 Dora SSR 工作空间的独立项目目录。
+3. 打开项目入口 `init.ts` 并在 Web IDE 编译运行；引擎执行由 TypeScript 生成的 `init.lua`。
+4. 保持竖屏以呈现预期布局；运行时改变窗口尺寸会自动重建界面。修改 TypeScript 后须重新生成同目录的 Lua：首次进入 `tools/dora-build` 并安装构建工具依赖（`npm i --legacy-peer-deps`），之后在该目录执行 `node build.mjs --all`；也可在 Web IDE 中编译。
+5. 游戏运行不需要第三方 npm 依赖、API Key、密码或其他密钥。解锁与得分保存在引擎可写目录，不存入仓库。
+
+提交前请从一个干净目录重新取得仓库内容，确认他人能按照以上步骤运行。
+
+## Web（HTML）版本与测试
+
+- 导出方法：在 Dora SSR Web IDE 打开项目文件，点击快捷操作栏的“打包”按钮，在弹窗中选择“导出 HTML”。
+- 已测试 Web 版本：当前仓库没有与这版源码对应的 Web 导出包；完成导出及测试后再填写文件名和链接。
+- 启动方法：完整解压导出包，在浏览器打开根目录 index.html，保留全部配套资源。
+- 测试环境：Web 版尚未在当前源码版本上导出，因此没有本版浏览器测试结果。
+- 测试结果：桌面 Dora SSR 中已完成三关真实鼠标流程、构建和引擎单测；Web 桌面与手机浏览器需在最新导出包生成后再验收。
+
+## 项目内容
+
+仓库包含游戏源码（`init.ts`、`game/*.ts` 及对应 `.lua`）、运行资源（`Assets/`）、单元测试（`Test/`）、构建和素材工具（`tools/`）及项目文档（`docs/`）。Web 导出包尚未放入仓库。界面字体由 Dora SSR 提供，本项目未单独打包字体文件。
+
+- 应用图标：[`submission/icon-1024.png`](./submission/icon-1024.png)，1024×1024 PNG。
+- 封面：[`submission/cover-1080x1920.jpg`](./submission/cover-1080x1920.jpg)，1080×1920 JPG。
+- 演示视频与当前源码对应的 Web 导出包尚未放入仓库。
+
+## 素材与第三方组件
+
+| 内容 | 作者／来源 | 许可证 | 使用说明 |
+| --- | --- | --- | --- |
+| Dora SSR 引擎（运行时随 Web 导出包分发） | [IppClub/Dora-SSR](https://github.com/IppClub/Dora-SSR) | MIT | 保留引擎原有版权与许可声明；本项目代码许可证不替代引擎许可 |
+| 天体与探测器 3D 模型（`Assets/Model/*.glb`） | 团队自制（Blender 制作） | 随本项目 AGPL-3.0-only | 无第三方素材 |
+| 行星 / 太阳 / 探测器贴图（`Assets/Image/*.jpg`、`*.png`） | 团队自制 | 随本项目 AGPL-3.0-only | 无第三方素材 |
+| 星空、光晕、轨道圈等贴图 | 仓库内脚本程序化生成（`Test/gen_*.py`、`Test/gen_shapes.lua`） | 随本项目 AGPL-3.0-only | 不引入第三方素材 |
+| 游戏音效（`Assets/Audio/*.wav`） | 项目制作 | 随本项目 AGPL-3.0-only | 完成提示音由 `tools/gen_success_cue.py` 生成 |
+| 背景音乐 `bgm_galactic_temple.ogg` | yd，[OpenGameArt](https://opengameart.org/content/galactic-temple) | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | 使用来源、处理方式和工程文件见 [MUSIC_LICENSE.md](./Assets/Audio/MUSIC_LICENSE.md) |
+
+保留 Dora SSR 与第三方组件原有的版权及许可声明。第三方素材按其各自授权使用，本项目代码许可证不替代第三方素材许可证。
+
+## 仓库文档
 
 | 文档 | 内容 |
 |---|---|
-| [`docs/单程_游戏设计案.md`](./docs/单程_游戏设计案.md) | **唯一设计事实来源**：愿景、双载具模式（飞掠/轨道器）、制动窗口、六关舞台表与终章 |
-| [`docs/开发手册.md`](./docs/开发手册.md) | **唯一工程事实来源**：决策记录（ADR）、系统架构、物理与相机方案、编码与构建规范 |
-| [`docs/提交物清单.md`](./docs/提交物清单.md) | 比赛交付物检查清单（包体、图标、封面、演示视频） |
-| [`docs/DSH-vs-Dora内置Agent-能力对照.md`](./docs/DSH-vs-Dora内置Agent-能力对照.md) | 开发环境说明：引擎 API / 鉴权 / 构建链路事实，与外部 Agent 的能力对照 |
-| [`docs/archive/`](./docs/archive/) | 历史文档归档：早期愿景初稿、历史关卡草案、Trae 建模交接记录等 |
-| [`.agent/plan/PLAN.md`](./.agent/plan/PLAN.md) | 实施计划（分步、依赖、当前 S5/S6 里程碑） |
-| [`.agent/plan/PROGRESS.md`](./.agent/plan/PROGRESS.md) | 实施进度与证据 |
-| [`AGENTS.md`](./AGENTS.md) | **仓库级 Agent 守则**：硬约束（构建、触摸、坐标）与验证纪律 |
-| [`tools/dora-build/README.md`](./tools/dora-build/README.md) | 本地 TS→Lua 构建工具（安装、用法、版本钉死、一致性门禁） |
-| [`tools/input-inject/README.md`](./tools/input-inject/README.md) | 合成鼠标输入：坐标换算、常用点位、触摸回归模板 |
-| [`.dsh/skills/dora-ssr-engine/SKILL.md`](./.dsh/skills/dora-ssr-engine/SKILL.md) | Dora SSR 引擎操作手册（DSH 技能：引擎路径/端口/API/构建/探针） |
+| [docs/单程_数据驱动街机引力弹弓_设计案.md](./docs/单程_数据驱动街机引力弹弓_设计案.md) | 当前三关玩法、目标、视听和关卡数据设计 |
+| [docs/开发手册.md](./docs/开发手册.md) | 唯一工程事实来源：决策记录、系统架构、物理与相机方案、构建规范 |
+| [docs/提交物清单.md](./docs/提交物清单.md) | 比赛交付物检查清单（图标、封面、演示视频、Web 导出） |
+| [AGENTS.md](./AGENTS.md) | 仓库级开发守则：硬约束与验证纪律 |
 
-## 技术栈
+## 开源协议
 
-- 引擎：**Dora SSR v1.9.3**（引擎自报 1.9.3.6）
-- 语言：TypeScript（编译为 Lua 后由引擎执行）
-- 渲染：low poly 3D + 贴图 + 纯色材质；**天体与探测器是队友用 Blender 做的 .glb**（`Assets/Model`）+ 外部贴图（`Assets/Image`），
-  星空 / 光晕 / 轨道圈等由仓库内脚本生成（`Test/gen_*.py`、`Test/gen_shapes.lua`）—— **不使用任何第三方素材或自制以外的素材**
-- 物理：**2D 平面积分 + 3D 渲染**（见开发手册 §5.1）
+本项目原创代码使用 **GNU Affero General Public License v3.0 only（AGPL-3.0-only）**，完整协议见 [LICENSE](LICENSE)。
 
-## 快速开始
+Copyright (C) 2026 Dragonzhi
 
-1. 启动 Dora SSR 引擎，并保持 Web IDE 可用。
-2. 用 Web IDE 打开本项目，入口为 `init.ts`。
-3. **开发时保持竖屏窗口**（交付形态就是竖屏；运行中改窗口也能正确重建）：
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, version 3 of the License.
 
-```powershell
-powershell -File tools/input-inject/set-window.ps1 -Shape portrait    # 客户区 400×710 → View.size 601×1066
-```
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
 
-4. 修改 TypeScript 源码后执行构建，检查每个文件的编译诊断。两种构建方式：
-   - **本地（推荐，不依赖引擎与浏览器）**：
+You should have received a copy of the GNU Affero General Public License along with this program. If not, see https://www.gnu.org/licenses/.
 
-```bash
-cd tools/dora-build && npm i --legacy-peer-deps    # 版本钉死 tstl 1.37.1 + TS 5.9.3，必须带该参数
-node build.mjs --all                              # 整项目构建，提交前应 41/41 全绿
-```
+---
 
-   - 引擎侧：`Dora.exe cli build -p <项目目录>`（**需要 Web IDE 已连接**，TS 编译实际发生在浏览器里）
-5. 单元测试（引擎内执行）：运行入口 `Test/UnitRunner.lua`，结果写入 `.agent/test-results/unit-summary.txt`；
-   基线 `SUMMARY passed=8 failed=0 total=8`（8 个模块 / 273 条断言）。新增单测模块要加进它的 `modules` 列表。
-6. 桌面触摸回归（可选）：`tools/input-inject/mousectl.ps1` 用合成鼠标事件驱动真实命中判定与状态机，用法见该目录 README。
+使用 Dora SSR 创作 · 在原子派分享<br>
+[Dora SSR](https://dora-ssr.net/) · [原子派](https://atompie.osgame.org/)
 
-Web 导出见开发手册 §8.2：用 **Web IDE 自带的「导出 HTML」**即可，浏览器内 3D 正常（**不需要**从源码编译引擎）。
-⚠️ 仅当你要**从源码**构建 Web 运行时，才需要显式开启 `DORA_WEB_FEATURE_MODEL_3D=ON`（该开关默认为 `OFF`）。
-
-**已测设备**：**桌面 Web 浏览器** 通过 —— Web 导出版本完整跑通：选关、拖动瞄准、松手发射、飞行、结算。
-
-**手机 Web 导出：待复测**。手机浏览器上暴露过两处真机问题，均已修复并有截图 / 日志证据：
-
-1. **触摸命中框只剩左下象限** —— 全屏容器 `anchor` 用了 (0.5,0.5)，子坐标原点被推走半个屏幕；已改为 (0,0)（六个方位的实测网格全通过）。
-2. **视口尺寸变化没重建** —— 手机浏览器画布在启动后还会变一次；现在监听 `onAppChange === 'Size'` 并整体重建（预测线不再跑偏、新区域能收到触摸）。
-
-⇒ 还需要在手机上把「导出 → 选关 → 拖 → 松手 → 结算」重跑一遍（真机 DPR / 视口 / 手指遮挡）。
-
-## 许可与版权
-
-本项目以 **AGPL-3.0-only** 授权。[`LICENSE`](./LICENSE) 为 GNU Affero 通用公共许可证第 3 版的**官方全文**（自 <https://www.gnu.org/licenses/agpl-3.0.txt> 取得，未做任何改动）。
-
-> 《单程》Escape Velocity
-> Copyright (C) 2026 Dragonzhi
->
-> This program is free software: you can redistribute it and/or modify
-> it under the terms of the GNU Affero General Public License as published
-> by the Free Software Foundation, either version 3 of the License, or
-> (at your option) any later version.
->
-> This program is distributed in the hope that it will be useful,
-> but WITHOUT ANY WARRANTY; without even the implied warranty of
-> MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-> GNU Affero General Public License for more details.
->
-> You should have received a copy of the GNU Affero General Public License
-> along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-- 作者/团队：**Dragonzhi**
-- 引擎：[Dora SSR](https://github.com/IppClub/Dora-SSR) v1.9.3
-- 活动：Dora SSR × Agent 社区小游戏征集 · [活动页](https://atompie.osgame.org/events/minigame-2026)
+原子派为活动及展示平台；上述平台署名不改变作品实际作者及著作权归属。
