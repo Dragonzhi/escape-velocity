@@ -10,7 +10,7 @@ import { GoalSpec } from 'game/LevelData';
 import {
 	GameLevel, anchorBodyIndex, calcFlightTelemetry, coreArm, coreBackToSelect, coreCancelArm, coreHandoffDate, coreLaunch,
 	coreProbeIndex, coreRetry, coreTimeWarpAllowed, coreToggleView, coreUpdate,
-	createCore, resolveResult, slowMotionBody,
+	createCore, resolveResult, shiftSpeedPow, slowMotionBody, speedRateOf,
 } from 'game/Game';
 
 interface Failure {
@@ -24,6 +24,15 @@ let checks = 0;
 function check(name: string, ok: boolean, detail: string): void {
 	checks += 1;
 	if (!ok) failures.push({ name, detail });
+}
+
+function testTimeControlBounds(): void {
+	check('speed-min-step', shiftSpeedPow(0, -1, 1, -1) === -1, '慢速按钮应能从默认档降一级');
+	check('speed-min-clamp', shiftSpeedPow(-1, -1, 1, -1) === -1, '最慢档不可继续降低');
+	check('speed-max-step', shiftSpeedPow(0, -1, 1, 1) === 1, '加速按钮应能从默认档升一级');
+	check('speed-max-clamp', shiftSpeedPow(1, -1, 1, 1) === 1, '最快档不可继续提升');
+	check('speed-slow-real-rate', Math.abs(speedRateOf(-1, 1) * 0.25 - 0.025) < 1e-9, '待机慢档应为 0.025×');
+	check('speed-fast-real-rate', Math.abs(speedRateOf(1, 1) * 0.25 - 2.5) < 1e-9, '待机快档应为 2.5×');
 }
 
 /** 测试关：一颗静止行星在原点，探测器从 (0,16) 出发，目标 = 逃逸。 */
@@ -513,6 +522,7 @@ function testArcadeStars(): void {
 }
 
 export function runTests(): string {
+	testTimeControlBounds();
 	testResolveResult();
 	testTimeWarpGuard();
 	testDateHandoff();

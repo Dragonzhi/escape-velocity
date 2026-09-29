@@ -304,6 +304,7 @@ export interface LevelRuntime {
 	 * 自动提到的那一档**（L1 = 4 档 = 10,000× ⇒ 0.9 天的快转移 8.6 秒打完）。
 	 */
 	speedDefaultPow?: number;
+	speedMinPow?: number;
 	speedMaxPow?: number;
 	flightSpeedPow?: number;
 	// ---- 裁剪面（B 修复①，2026-09-28）----
@@ -339,7 +340,7 @@ export const LEVEL_RUNTIME: LevelRuntime[] = [
 		cameraMin: 200, cameraMax: 2000, aimMin: 0, introCloseDist: 100,
 		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 10,
 		tiltDeg: 45, orbitFlowDots: false, orbitRings: false,
-		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
+		speedDefaultPow: 0, speedMinPow: -1, speedMaxPow: 1, flightSpeedPow: 0,
 		cameraNear: 0.1, cameraFar: 5000,
 	},
 	{ // L2 借金星减速，安全飞掠水星
@@ -348,7 +349,7 @@ export const LEVEL_RUNTIME: LevelRuntime[] = [
 		cameraMin: 200, cameraMax: 4000, aimMin: 0, introCloseDist: 100,
 		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 2,
 		aimFraming: 'local', tiltDeg: 0, orbitFlowDots: false, orbitRings: false,
-		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
+		speedDefaultPow: 0, speedMinPow: -1, speedMaxPow: 1, flightSpeedPow: 0,
 		cameraNear: 0.1, cameraFar: 12000,
 	},
 	{ // L3 双星大甩尾 (Grand Slingshot)
@@ -357,7 +358,7 @@ export const LEVEL_RUNTIME: LevelRuntime[] = [
 		cameraMin: 200, cameraMax: 4000, aimMin: 0, introCloseDist: 100,
 		aimClockRate: 0, slowMoFloor: 45, probeVisualRadius: 10,
 		aimFraming: 'local', tiltDeg: 0, orbitFlowDots: false, orbitRings: false,
-		speedDefaultPow: 0, speedMaxPow: 0, flightSpeedPow: 0,
+		speedDefaultPow: 0, speedMinPow: -1, speedMaxPow: 1, flightSpeedPow: 0,
 		cameraNear: 0.1, cameraFar: 12000,
 	},
 ];

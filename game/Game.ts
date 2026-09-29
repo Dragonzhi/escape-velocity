@@ -106,6 +106,8 @@ export interface GameLevel {
 	speedUnit?: number;
 	/** 进关默认档位（B3，来自 Tuning.speedDefaultPow）；省略 = 0（1× = 现实 1 秒）。 */
 	speedDefaultPow?: number;
+	/** 档位下限（省略 = 0，保持旧关卡行为）。 */
+	speedMinPow?: number;
 	/** 档位上限（B3）；省略 = 7（1000 万×）。 */
 	speedMaxPow?: number;
 	/** 发射瞬间自动提到的那一档（B3，来自 Tuning.flightSpeedPow）。 */
@@ -233,6 +235,13 @@ export function speedRateOf(pow: number, gameSecPerRealSec: number): number {
 		n += 1;
 	}
 	return rate;
+}
+
+/** 按关卡上下界调整档位，供状态转换与边界测试共用。 */
+export function shiftSpeedPow(pow: number, minPow: number, maxPow: number, direction: number): number {
+	if (direction < 0) return pow > minPow ? pow - 1 : pow;
+	if (direction > 0) return pow < maxPow ? pow + 1 : pow;
+	return pow;
 }
 
 function neutralAim(minSpeed: number): AimResult {
@@ -805,6 +814,8 @@ export interface GameDeps {
 	/** 非模态里程碑：首次安全离开月球时记通关，仍继续 Flying。 */
 	onMissionCompleted?: (telemetry: FlightTelemetry) => void;
 	onBonusCollected?: (score: number, pointId: string) => void;
+	/** 首次进入某颗天体的近掠慢放窗口时触发；每次发射、每颗天体最多一次。 */
+	onFlyby?: (bodyIndex: number) => void;
 	/**
 	 * 这一关成功之后是否进**终章「暗淡蓝点」**（S3.18）。
 	 *
@@ -903,6 +914,8 @@ export interface Game {
 	isIntroTourActive: () => boolean;
 	/** 当前档位指数（B3）：速率 = 10^pow ÷ SecPerGameSec 游戏秒/真实秒。 */
 	speedPow: () => number;
+	/** 档位下限（HUD 用它决定"减速"是否还点得动）。 */
+	speedMinPow: () => number;
 	/** 档位上限（HUD 用它决定"加速"是否还点得动）。 */
 	speedMaxPow: () => number;
 	/** 当前是否暂停（暂停 = 速率 0）。 */
@@ -913,7 +926,7 @@ export interface Game {
 	missionSeconds: () => number;
 	/** 加速一档（×10）。 */
 	speedUp: () => void;
-	/** 减速一档（÷10，下限 0 = 1×）。 */
+	/** 减速一档（÷10，下限由关卡给，省略 = 0）。 */
 	speedDown: () => void;
 	/** 暂停 / 继续（状态型，任何相态都有效）。 */
 	togglePause: () => void;
@@ -931,6 +944,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	// 暂停 = 速率 0（飞行段也因此免费获得暂停：coreUpdate 里 speed = playback × slowmo）。
 	let speedPow = level.speedDefaultPow !== undefined ? level.speedDefaultPow : 0;
 	let paused = false;
+	const speedMinPow = level.speedMinPow !== undefined ? level.speedMinPow : 0;
 	const speedMaxPow = level.speedMaxPow !== undefined ? level.speedMaxPow : 7;
 	/** 换算基准（1 真实秒 = 多少游戏秒）：关卡没给就用 LevelData 的默认值。 */
 	const speedUnit = level.speedUnit !== undefined && level.speedUnit > 0 ? level.speedUnit : GameSecondsPerRealSecond;
@@ -1080,6 +1094,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	/** S3.17：慢动作的上一帧状态（打迁移日志用）与飞行日志累加器（每 0.5 真实秒一行）。 */
 	let lastSlowmo = false;
 	let lastSlowmoBody = -1;
+	let flybySounded: Record<string, boolean> = {};
+	let cruiseAzimuth = 0;
+	let cruiseAzimuthReady = false;
 	let flightLogT = 0;
 	/** 探测器**此刻**在哪 / 以什么速度前进（待机会绕着地球走，所以不能写死 probeStart）。 */
 	let probePos: P2 = { x: level.probeStart.x, y: level.probeStart.y };
@@ -1322,6 +1339,21 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		};
 	};
 
+	/** 相机放在探测器后方，平滑追随当前速度向量，避免巡航继续沿用点火方向。 */
+	const cruiseAzFor = (velocity: P2, wallDt: number): number => {
+		const target = Math.atan2(-velocity.x, -velocity.y) * 180 / Math.PI;
+		if (!cruiseAzimuthReady) {
+			cruiseAzimuth = target;
+			cruiseAzimuthReady = true;
+			return cruiseAzimuth;
+		}
+		let delta = target - cruiseAzimuth;
+		while (delta > 180) delta -= 360;
+		while (delta < -180) delta += 360;
+		cruiseAzimuth += delta * (1 - Math.exp(-Math.max(0, wallDt) * 5));
+		return cruiseAzimuth;
+	};
+
 	/** 五个具体机位，沿用 CameraRig 的真实投影拟合；近景只包含当下的主体。 */
 	const transferCamera = (pos: P2, t: number, wallDt: number): RigFrame => {
 		const cfg = level.transfer!.flyby!;
@@ -1344,8 +1376,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		let pts: P2[] = [pos], radii = [deps.scene.probeRadius];
 		let az = launchAz, tilt = 28, minDist = 130;
 		if (shot === 'Cruise') {
-			pts.push({ x: pos.x + (vmag > 0 ? velocity.x * 32 / vmag : 0), y: pos.y + (vmag > 0 ? velocity.y * 32 / vmag : 0) });
-			radii.push(0); minDist = 180; tilt = 35;
+			az = cruiseAzFor(velocity, wallDt);
+			pts.push({ x: pos.x + (vmag > 0 ? velocity.x * 24 / vmag : 0), y: pos.y + (vmag > 0 ? velocity.y * 24 / vmag : 0) });
+			radii.push(0); minDist = 100; tilt = 35;
 		} else if (shot === 'Moon') {
 			pts = focusMode === 'Moon' ? [moon] : [pos, moon];
 			radii = focusMode === 'Moon' ? [level.bodies[level.goal.planetIndex].radius] : [deps.scene.probeRadius, level.bodies[level.goal.planetIndex].radius];
@@ -1402,8 +1435,9 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		if (cfg.targetFlyby !== undefined) encounterSpecs.push(cfg.targetFlyby);
 		let tilt = 28, minDist = targetFlybyMission ? 40 : 130;
 		if (shot === 'Cruise') {
-			pts.push({ x: pos.x + (speed > 0 ? velocity.x * 32 / speed : 0), y: pos.y + (speed > 0 ? velocity.y * 32 / speed : 0) });
-			radii.push(0); tilt = 35; minDist = targetFlybyMission ? 65 : 180;
+			az = cruiseAzFor(velocity, wallDt);
+			pts.push({ x: pos.x + (speed > 0 ? velocity.x * 24 / speed : 0), y: pos.y + (speed > 0 ? velocity.y * 24 / speed : 0) });
+			radii.push(0); tilt = 35; minDist = targetFlybyMission ? 65 : 100;
 		} else if (shot === 'Overview') {
 			pts.push(bodyPositionAt(level.bodies[0], t)); radii.push(level.bodies[0].radius);
 			for (const e of encounterSpecs) { pts.push(bodyPositionAt(level.bodies[e.planetIndex], t)); radii.push(level.bodies[e.planetIndex].radius); }
@@ -1447,6 +1481,8 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 		markerElapsed = -1;
 		focusMode = 'Auto'; cineKey = ''; cineFrame = undefined; cineFrom = undefined;
 		obsYawDeg = 0; obsPitchDeg = 0; obsZoom = 1;
+		cruiseAzimuthReady = false;
+		flybySounded = {};
 	};
 
 	const updateAiming = (dt: number): void => {
@@ -1833,6 +1869,10 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 				' body#' + core.slowmoBody.toFixed(0) +
 				' r=' + (near !== undefined ? near.radius.toFixed(2) : '-') +
 				' d=' + nearD.toFixed(1) + ' t=' + core.flightTime.toFixed(2));
+			if (core.slowmo && core.slowmoBody >= 0 && !flybySounded[core.slowmoBody.toFixed(0)]) {
+				flybySounded[core.slowmoBody.toFixed(0)] = true;
+				if (deps.onFlyby !== undefined) deps.onFlyby(core.slowmoBody);
+			}
 		}
 		// 定频飞行日志（每 0.5 真实秒一行）：**同样帧数下推进的世界时间更少**就是"真的放慢了"
 		// 的直接证据（S3.17 验收第 4 条）。慢动作期间 speed 从 2.00 掉到 0.50，一行就看得出。
@@ -1979,6 +2019,7 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 	return {
 		phase: (): GamePhase => core.phase,
 		speedPow: (): number => speedPow,
+		speedMinPow: (): number => speedMinPow,
 		speedMaxPow: (): number => speedMaxPow,
 		isPaused: (): boolean => paused,
 		speedRate: (): number => {
@@ -1990,15 +2031,17 @@ export function createGame(level: GameLevel, deps: GameDeps): Game {
 			return speedUnit > 0 ? w / speedUnit : 0;
 		},
 		speedUp: (): void => {
-			if (speedPow >= speedMaxPow) return;
-			speedPow += 1;
+			const next = shiftSpeedPow(speedPow, speedMinPow, speedMaxPow, 1);
+			if (next === speedPow) return;
+			speedPow = next;
 			paused = false;
 			applySpeedRate();
 			print('[escape-velocity] speed -> 1e' + speedPow.toFixed(0) + 'x (' + core.playback.toFixed(6) + ' 游戏秒/真实秒)');
 		},
 		speedDown: (): void => {
-			if (speedPow <= 0) return;
-			speedPow -= 1;
+			const next = shiftSpeedPow(speedPow, speedMinPow, speedMaxPow, -1);
+			if (next === speedPow) return;
+			speedPow = next;
 			paused = false;
 			applySpeedRate();
 			print('[escape-velocity] speed -> 1e' + speedPow.toFixed(0) + 'x (' + core.playback.toFixed(6) + ' 游戏秒/真实秒)');

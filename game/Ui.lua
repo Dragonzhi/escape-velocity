@@ -1,6 +1,7 @@
 -- [ts]: Ui.ts
 local ____exports = {} -- 1
 local ____Dora = require("Dora") -- 22
+local Audio = ____Dora.Audio -- 22
 local Color = ____Dora.Color -- 22
 local DrawNode = ____Dora.DrawNode -- 22
 local Label = ____Dora.Label -- 22
@@ -189,72 +190,80 @@ function ____exports.createButton(parent, opts) -- 248
 	local enabled = true -- 267
 	local pressed = false -- 268
 	local function repaint() -- 270
-		local bg = pressed and ____exports.shadeHex(bgHex, 1.45) or bgHex -- 271
-		draw:clear() -- 272
-		draw:drawPolygon( -- 273
-			____exports.rectVerts(opts.w, opts.h), -- 273
-			____exports.colorFromHex(bg, 1) -- 273
-		) -- 273
-		if opts.borderHex ~= nil then -- 273
-			draw:drawPolygon( -- 275
-				____exports.rectVerts(opts.w, opts.h), -- 275
-				____exports.colorFromHex(0, 0), -- 275
-				2, -- 275
-				____exports.colorFromHex(opts.borderHex, 1) -- 275
-			) -- 275
-		end -- 275
-		____exports.setLabelColor(label, fgHex) -- 277
+		local baseBg = enabled and bgHex or ____exports.shadeHex(bgHex, 0.48) -- 271
+		local bg = pressed and ____exports.shadeHex(baseBg, 1.45) or baseBg -- 272
+		draw:clear() -- 273
+		draw:drawPolygon( -- 274
+			____exports.rectVerts(opts.w, opts.h), -- 274
+			____exports.colorFromHex(bg, 1) -- 274
+		) -- 274
+		if opts.borderHex ~= nil then -- 274
+			draw:drawPolygon( -- 276
+				____exports.rectVerts(opts.w, opts.h), -- 276
+				____exports.colorFromHex(0, 0), -- 276
+				2, -- 276
+				____exports.colorFromHex( -- 276
+					enabled and opts.borderHex or ____exports.shadeHex(opts.borderHex, 0.48), -- 276
+					1 -- 276
+				) -- 276
+			) -- 276
+		end -- 276
+		____exports.setLabelColor( -- 278
+			label, -- 278
+			enabled and fgHex or ____exports.shadeHex(fgHex, 0.55) -- 278
+		) -- 278
 	end -- 270
-	local function fireTap() -- 284
-		local now = ____exports.uiClockNow() -- 285
-		if lastTapAt >= 0 and now - lastTapAt < 0.5 then -- 285
-			return -- 286
-		end -- 286
-		lastTapAt = now -- 287
-		opts:onTap() -- 288
-	end -- 284
-	root:onTapBegan(function() -- 290
-		if not enabled then -- 290
-			return -- 291
-		end -- 291
-		pressed = true -- 292
-		repaint() -- 293
-		if opts.onPressBegan ~= nil then -- 293
-			opts:onPressBegan() -- 294
-		end -- 294
-		if opts.fireOn == "press" then -- 294
-			fireTap() -- 296
+	local function fireTap() -- 285
+		local now = ____exports.uiClockNow() -- 286
+		if lastTapAt >= 0 and now - lastTapAt < 0.5 then -- 286
+			return -- 287
+		end -- 287
+		lastTapAt = now -- 288
+		Audio:play("Assets/Audio/ui_click.wav") -- 289
+		opts:onTap() -- 290
+	end -- 285
+	root:onTapBegan(function() -- 292
+		if not enabled then -- 292
+			return -- 293
+		end -- 293
+		pressed = true -- 294
+		repaint() -- 295
+		if opts.onPressBegan ~= nil then -- 295
+			opts:onPressBegan() -- 296
 		end -- 296
-	end) -- 290
-	root:onTapEnded(function() -- 298
-		if not enabled then -- 298
-			return -- 299
-		end -- 299
-		pressed = false -- 300
-		repaint() -- 301
-		if opts.onPressEnded ~= nil then -- 301
-			opts:onPressEnded() -- 304
-		end -- 304
-		if opts.fireOn ~= "press" then -- 304
-			fireTap() -- 305
-		end -- 305
-	end) -- 298
-	repaint() -- 308
-	parent:addChild(root) -- 309
-	return { -- 311
-		root = root, -- 312
-		setText = function(____, text) return ____exports.setLabelText(label, text) end, -- 313
-		setEnabled = function(____, value) -- 314
-			enabled = value -- 315
-			root.touchEnabled = value -- 318
-			pressed = false -- 319
-			repaint() -- 320
-		end, -- 314
-		setColors = function(____, bg, fg) -- 322
-			bgHex = bg -- 323
-			fgHex = fg -- 324
-			repaint() -- 325
-		end -- 322
-	} -- 322
+		if opts.fireOn == "press" then -- 296
+			fireTap() -- 298
+		end -- 298
+	end) -- 292
+	root:onTapEnded(function() -- 300
+		if not enabled then -- 300
+			return -- 301
+		end -- 301
+		pressed = false -- 302
+		repaint() -- 303
+		if opts.onPressEnded ~= nil then -- 303
+			opts:onPressEnded() -- 306
+		end -- 306
+		if opts.fireOn ~= "press" then -- 306
+			fireTap() -- 307
+		end -- 307
+	end) -- 300
+	repaint() -- 310
+	parent:addChild(root) -- 311
+	return { -- 313
+		root = root, -- 314
+		setText = function(____, text) return ____exports.setLabelText(label, text) end, -- 315
+		setEnabled = function(____, value) -- 316
+			enabled = value -- 317
+			root.touchEnabled = value -- 320
+			pressed = false -- 321
+			repaint() -- 322
+		end, -- 316
+		setColors = function(____, bg, fg) -- 324
+			bgHex = bg -- 325
+			fgHex = fg -- 326
+			repaint() -- 327
+		end -- 324
+	} -- 324
 end -- 248
 return ____exports -- 248

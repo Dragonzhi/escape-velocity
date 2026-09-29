@@ -92,80 +92,83 @@ ____exports.CLIP_FAR_DEFAULT = 10000 -- 172
 -- 
 -- 播放倍速的推导（每关都要能"看得见"）：
 -- L1 转移飞行 0.40 游戏秒 ⇒ 0.05× 播放 = 8 真实秒；L6 飞行 513 秒 ⇒ 16× = 32 真实秒。
-____exports.LEVEL_RUNTIME = {{ -- 335
-	physicsStep = 0.016, -- 337
-	maxStepsPerFrame = 4, -- 337
-	sampleEvery = 1, -- 337
-	predictSteps = 3600, -- 337
-	playback = 1, -- 338
-	playbackSpeeds = {0.5, 1, 2}, -- 338
-	cameraMin = 200, -- 339
-	cameraMax = 2000, -- 339
-	aimMin = 0, -- 339
-	introCloseDist = 100, -- 339
-	aimClockRate = 0, -- 340
-	slowMoFloor = 45, -- 340
-	probeVisualRadius = 10, -- 340
-	tiltDeg = 45, -- 341
-	orbitFlowDots = false, -- 341
-	orbitRings = false, -- 341
-	speedDefaultPow = 0, -- 342
-	speedMaxPow = 0, -- 342
-	flightSpeedPow = 0, -- 342
-	cameraNear = 0.1, -- 343
-	cameraFar = 5000 -- 343
-}, { -- 343
-	physicsStep = 0.016, -- 346
-	maxStepsPerFrame = 4, -- 346
-	sampleEvery = 1, -- 346
-	predictSteps = 3600, -- 346
-	playback = 1, -- 347
-	playbackSpeeds = {0.5, 1, 2}, -- 347
-	cameraMin = 200, -- 348
-	cameraMax = 4000, -- 348
-	aimMin = 0, -- 348
-	introCloseDist = 100, -- 348
-	aimClockRate = 0, -- 349
-	slowMoFloor = 45, -- 349
-	probeVisualRadius = 2, -- 349
-	aimFraming = "local", -- 350
-	tiltDeg = 0, -- 350
-	orbitFlowDots = false, -- 350
-	orbitRings = false, -- 350
-	speedDefaultPow = 0, -- 351
-	speedMaxPow = 0, -- 351
-	flightSpeedPow = 0, -- 351
-	cameraNear = 0.1, -- 352
-	cameraFar = 12000 -- 352
-}, { -- 352
-	physicsStep = 0.016, -- 355
-	maxStepsPerFrame = 4, -- 355
-	sampleEvery = 1, -- 355
-	predictSteps = 3600, -- 355
-	playback = 1, -- 356
-	playbackSpeeds = {0.5, 1, 2}, -- 356
-	cameraMin = 200, -- 357
-	cameraMax = 4000, -- 357
-	aimMin = 0, -- 357
-	introCloseDist = 100, -- 357
-	aimClockRate = 0, -- 358
-	slowMoFloor = 45, -- 358
-	probeVisualRadius = 10, -- 358
-	aimFraming = "local", -- 359
-	tiltDeg = 0, -- 359
-	orbitFlowDots = false, -- 359
-	orbitRings = false, -- 359
-	speedDefaultPow = 0, -- 360
-	speedMaxPow = 0, -- 360
-	flightSpeedPow = 0, -- 360
-	cameraNear = 0.1, -- 361
-	cameraFar = 12000 -- 361
-}} -- 361
+____exports.LEVEL_RUNTIME = {{ -- 336
+	physicsStep = 0.016, -- 338
+	maxStepsPerFrame = 4, -- 338
+	sampleEvery = 1, -- 338
+	predictSteps = 3600, -- 338
+	playback = 1, -- 339
+	playbackSpeeds = {0.5, 1, 2}, -- 339
+	cameraMin = 200, -- 340
+	cameraMax = 2000, -- 340
+	aimMin = 0, -- 340
+	introCloseDist = 100, -- 340
+	aimClockRate = 0, -- 341
+	slowMoFloor = 45, -- 341
+	probeVisualRadius = 10, -- 341
+	tiltDeg = 45, -- 342
+	orbitFlowDots = false, -- 342
+	orbitRings = false, -- 342
+	speedDefaultPow = 0, -- 343
+	speedMinPow = -1, -- 343
+	speedMaxPow = 1, -- 343
+	flightSpeedPow = 0, -- 343
+	cameraNear = 0.1, -- 344
+	cameraFar = 5000 -- 344
+}, { -- 344
+	physicsStep = 0.016, -- 347
+	maxStepsPerFrame = 4, -- 347
+	sampleEvery = 1, -- 347
+	predictSteps = 3600, -- 347
+	playback = 1, -- 348
+	playbackSpeeds = {0.5, 1, 2}, -- 348
+	cameraMin = 200, -- 349
+	cameraMax = 4000, -- 349
+	aimMin = 0, -- 349
+	introCloseDist = 100, -- 349
+	aimClockRate = 0, -- 350
+	slowMoFloor = 45, -- 350
+	probeVisualRadius = 2, -- 350
+	aimFraming = "local", -- 351
+	tiltDeg = 0, -- 351
+	orbitFlowDots = false, -- 351
+	orbitRings = false, -- 351
+	speedDefaultPow = 0, -- 352
+	speedMinPow = -1, -- 352
+	speedMaxPow = 1, -- 352
+	flightSpeedPow = 0, -- 352
+	cameraNear = 0.1, -- 353
+	cameraFar = 12000 -- 353
+}, { -- 353
+	physicsStep = 0.016, -- 356
+	maxStepsPerFrame = 4, -- 356
+	sampleEvery = 1, -- 356
+	predictSteps = 3600, -- 356
+	playback = 1, -- 357
+	playbackSpeeds = {0.5, 1, 2}, -- 357
+	cameraMin = 200, -- 358
+	cameraMax = 4000, -- 358
+	aimMin = 0, -- 358
+	introCloseDist = 100, -- 358
+	aimClockRate = 0, -- 359
+	slowMoFloor = 45, -- 359
+	probeVisualRadius = 10, -- 359
+	aimFraming = "local", -- 360
+	tiltDeg = 0, -- 360
+	orbitFlowDots = false, -- 360
+	orbitRings = false, -- 360
+	speedDefaultPow = 0, -- 361
+	speedMinPow = -1, -- 361
+	speedMaxPow = 1, -- 361
+	flightSpeedPow = 0, -- 361
+	cameraNear = 0.1, -- 362
+	cameraFar = 12000 -- 362
+}} -- 362
 --- 取第 index 关（0 起）的运行时参数；越界退回最后一关（宁可难看，也不要 nil）。
-function ____exports.levelRuntime(index) -- 366
-	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 366
-		return ____exports.LEVEL_RUNTIME[index + 1] -- 367
-	end -- 367
-	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 368
-end -- 366
-return ____exports -- 366
+function ____exports.levelRuntime(index) -- 367
+	if index >= 0 and index < #____exports.LEVEL_RUNTIME then -- 367
+		return ____exports.LEVEL_RUNTIME[index + 1] -- 368
+	end -- 368
+	return ____exports.LEVEL_RUNTIME[#____exports.LEVEL_RUNTIME] -- 369
+end -- 367
+return ____exports -- 367

@@ -19,7 +19,7 @@
  * 字体：`Label()` 可能返回 undefined（字体缺失）。所有创建函数都把 undefined
  * 原样交给调用方，由调用方决定是“跳过这一行字”还是报错（手册 §7.1）。
  */
-import { Color, DrawNode, Label, Node, Size, Vec2 } from 'Dora';
+import { Audio, Color, DrawNode, Label, Node, Size, Vec2 } from 'Dora';
 
 /**
  * UI 自己的时钟（秒）—— **不要改用 `App.elapsedTime`**。
@@ -268,13 +268,14 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 	let pressed = false;
 
 	const repaint = (): void => {
-		const bg = pressed ? shadeHex(bgHex, 1.45) : bgHex;
+		const baseBg = enabled ? bgHex : shadeHex(bgHex, 0.48);
+		const bg = pressed ? shadeHex(baseBg, 1.45) : baseBg;
 		draw.clear();
 		draw.drawPolygon(rectVerts(opts.w, opts.h), colorFromHex(bg, 1));
 		if (opts.borderHex !== undefined) {
-			draw.drawPolygon(rectVerts(opts.w, opts.h), colorFromHex(0x000000, 0), 2, colorFromHex(opts.borderHex, 1));
+			draw.drawPolygon(rectVerts(opts.w, opts.h), colorFromHex(0x000000, 0), 2, colorFromHex(enabled ? opts.borderHex : shadeHex(opts.borderHex, 0.48), 1));
 		}
-		setLabelColor(label, fgHex);
+		setLabelColor(label, enabled ? fgHex : shadeHex(fgHex, 0.55));
 	};
 
 	// ⚠️ 实测（2026-09-26，合成点击点「刹车」按钮）：**一次点击会被投递两次** ——
@@ -285,6 +286,7 @@ export function createButton(parent: Node.Type, opts: ButtonOptions): UiButton {
 		const now = uiClockNow();
 		if (lastTapAt >= 0 && now - lastTapAt < 0.5) return;
 		lastTapAt = now;
+		Audio.play('Assets/Audio/ui_click.wav');
 		opts.onTap();
 	};
 	root.onTapBegan(() => {

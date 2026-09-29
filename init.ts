@@ -34,6 +34,7 @@ import { advanceUiClock } from 'game/Ui';
 import { CLIP_NEAR_DEFAULT, levelRuntime } from 'game/Tuning';
 import { Opening, createOpening, loadIntroSeen, saveIntroSeen } from 'game/Opening';
 import { SolarHub, createSolarHub } from 'game/SolarHub';
+import { playSound, startBackgroundMusic } from 'game/Sound';
 
 /** 一关的运行时（惰性创建，切关只切 visible）。 */
 interface LevelRuntime {
@@ -133,6 +134,7 @@ if (!installArcadeLevels(levelsText, bodiesText, decodeLevelJson)) {
 	print('[escape-velocity] FATAL: levels.json 没有装上');
 }
 const levelTotal = levelCount();
+startBackgroundMusic();
 let totalBonusPoints = 0;
 for (let i = 0; i < levelTotal; i++) totalBonusPoints += getLevel(i)?.bonusPoints?.length || 0;
 
@@ -275,6 +277,7 @@ if (levelTotal <= 0) {
 			// 街机关：pow 0 = 1 游戏秒 / 1 真实秒。太阳系那套 GameSecondsPerRealSecond 会把表冻住。
 			speedUnit: 1,
 			speedDefaultPow: levelRuntime(index).speedDefaultPow,
+			speedMinPow: levelRuntime(index).speedMinPow,
 			speedMaxPow: levelRuntime(index).speedMaxPow,
 			flightSpeedPow: levelRuntime(index).flightSpeedPow,
 			aimFraming: levelRuntime(index).aimFraming,
@@ -370,6 +373,7 @@ if (levelTotal <= 0) {
 		plan.fitTo(Math.max(planFitRadius(bodies, level.probeStart, def.goal.planetIndex, planTolerance, def.planCenter, starOrbits(index)), def.transfer !== undefined && def.transfer.orbital !== undefined && def.transfer.orbital.region !== undefined ? def.transfer.orbital.region.maxRadius + 20 : 0));
 		// S3.9.2b：满力速度 = 这一关的 Δv 预算（不再是全局 55）—— "力大砖飞"从这里被挡住。
 		const aim = createAimInput(levelLayers[index], viewW, viewH, def.dvBudget, rt.aimMin, rt.playbackSpeeds, def.transfer !== undefined, def.transfer !== undefined && def.transfer.orbital !== undefined ? (def.transfer.mode === 'lowerPeriapsis' ? 'inward' : 'outward') : 'lunar');
+		let dragSoundPlayed = false;
 		// 进关先给一个初值：满力 = 这一关的 Δv 预算
 		aim.setBurnInfo(0, def.dvBudget); // 初值；此后由主循环每帧刷新（见 burnNow）
 		// 时间流按钮（S3.9.4）：只有带 timeWindow 的关卡才启用
@@ -440,11 +444,13 @@ if (levelTotal <= 0) {
 				}
 			},
 			onMissionCompleted: (telem: FlightTelemetry): void => {
+				playSound('gate_reach');
 				progress = recordMissionResult(progress, index, def.bonusPoints !== undefined ? (telem.bonusRockets || 0) : 0, levelTotal, true);
 				saveProgress(progress);
 				print('[escape-velocity] flyby completion saved L' + (index + 1).toFixed(0));
 			},
 			onBonusCollected: (score: number, pointId: string): void => {
+				playSound(score <= 1 ? 'star_1' : (score === 2 ? 'star_2' : 'star_3'));
 				aim.setBonusFeedback(1);
 				if (game.missionCompleted()) {
 					progress = recordMissionResult(progress, index, score, levelTotal, true);
@@ -452,7 +458,11 @@ if (levelTotal <= 0) {
 				}
 				print('[escape-velocity] bonus +' + score.toFixed(0) + ' id=' + pointId);
 			},
+			onFlyby: (_bodyIndex: number): void => {
+				playSound('slingshot_whoosh');
+			},
 			onResult: (r: ResultKind, telemetry?: FlightTelemetry): void => {
+				if (r === 'crashed') playSound('crash');
 				const telem = telemetry !== undefined ? telemetry : {
 					burnDv: 0,
 					flightTime: 0,
@@ -535,22 +545,27 @@ if (levelTotal <= 0) {
 		// “进关卡拖不动飞行器”：触摸收到了，但 aim 的拖动/松手回调没人接，
 		// 于是预测线不跟手、松手也不发射。旧版 init.ts(7cb72b0) 里就是这两行。）
 		aim.onDrag((a: AimResult): void => {
+			if (!dragSoundPlayed) { playSound('aim_stretch'); dragSoundPlayed = true; }
 			game.onAimDrag(a);
 			// Δv 读数：本次点火的大小（拖动时实时变）
 			aim.setBurnInfo(Math.sqrt(a.velocity.x * a.velocity.x + a.velocity.y * a.velocity.y), def.dvBudget);
 		});
 		// S3.10：松手**不发射** —— 进 Armed（出「发射」按钮），点按钮才真的打出去
 		aim.onAimReady((a: AimResult): void => {
+			dragSoundPlayed = false;
 			game.onAimDrag(a);
 			game.aimReady();
 			print('[escape-velocity] aim ready -> Armed');
 		});
 		aim.onLaunch((): void => {
 			print('[escape-velocity] launch button tap');
+			playSound('launch');
 			game.launchArmed();
 		});
 		aim.onCancelAim((): void => {
 			print('[escape-velocity] cancel aim tap');
+			dragSoundPlayed = false;
+			playSound('aim_cancel');
 			game.cancelAim();
 		});
 		// 观察：拖动增量 -> 转相机；捏合 -> 远近
@@ -1021,6 +1036,7 @@ if (levelTotal <= 0) {
 			// 旧的 1×/2×/4× 倍速按钮退役（不再显示），它的状态由档位接管。
 			runtime.aim.setTimeControl(
 				runtime.game.speedPow(),
+				runtime.game.speedMinPow(),
 				runtime.game.speedMaxPow(),
 				runtime.game.isPaused(),
 				runtime.game.missionSeconds(),

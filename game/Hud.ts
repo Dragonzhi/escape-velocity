@@ -300,7 +300,7 @@ export interface AimInput {
 	/** 暂停 / 继续。 */
 	onTogglePause: (callback: () => void) => void;
 	/** 每帧同步：档位指数、上限、是否暂停、任务时钟（**真实秒**）。 */
-	setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number) => void;
+	setTimeControl: (pow: number, minPow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number) => void;
 	/** 顶部常驻三火箭任务抽屉（S8.4）。 */
 	setMissionDrawer: (levelName: string, challenges: string[], currentRockets: number) => void;
 	setMissionDrawerVisible: (visible: boolean) => void;
@@ -840,8 +840,9 @@ export function createAimInput(
 	};
 	let lastTimeText = '';
 	let lastPaused = false;
-	const setTimeControl = (pow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number): void => {
-		const txt = (transferTutorial && actualRate !== undefined ? actualRate.toFixed(2) + '×' : powText(pow)) + (paused ? ' ⏸ 暂停' : '') + '  ' + (transferTutorial ? 'T+ ' + missionSeconds.toFixed(1) + 's' : missionText(missionSeconds));
+	const setTimeControl = (pow: number, minPow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number): void => {
+		const rateText = actualRate !== undefined ? actualRate.toFixed(actualRate > 0 && actualRate < 0.1 ? 3 : 2) + '×' : powText(pow);
+		const txt = (transferTutorial ? rateText : powText(pow)) + (paused ? ' ⏸ 暂停' : '') + '  ' + (transferTutorial ? 'T+ ' + missionSeconds.toFixed(1) + 's' : missionText(missionSeconds));
 		if (txt !== lastTimeText) {
 			lastTimeText = txt;
 			if (timeLabel !== undefined) timeLabel.text = txt;
@@ -853,7 +854,7 @@ export function createAimInput(
 		}
 		// 档位到底就不给点（状态驱动，AGENTS 硬约束 5）
 		fastButton.setEnabled(pow < maxPow);
-		slowButton.setEnabled(pow > 0);
+		slowButton.setEnabled(pow > minPow);
 	};
 
 	// ---- 顶部常驻三火箭任务抽屉（S8.4）----
@@ -1112,8 +1113,8 @@ export function createAimInput(
 		onTogglePause: (callback: () => void): void => {
 			pauseHandler = callback;
 		},
-		setTimeControl: (pow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number): void => {
-			setTimeControl(pow, maxPow, paused, missionSeconds, actualRate);
+		setTimeControl: (pow: number, minPow: number, maxPow: number, paused: boolean, missionSeconds: number, actualRate?: number): void => {
+			setTimeControl(pow, minPow, maxPow, paused, missionSeconds, actualRate);
 		},
 		onZoomIn: (callback: () => void): void => {
 			zoomInHandler = callback;
