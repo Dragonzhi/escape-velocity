@@ -11,6 +11,8 @@
 
 本作品使用 **[Dora SSR](https://dora-ssr.net/)** 游戏引擎开发，参与原子派社区小游戏征集活动。
 
+项目发布于 AtomGit，并在 [GitHub](https://github.com/Dragonzhi/escape-velocity) 保留同步镜像；当前仓库配置的 Git 远端为 GitHub。
+
 **发布与展示平台：[原子派](https://atompie.osgame.org/)<br>
 **活动页面：[社区小游戏征集活动](https://atompie.osgame.org/events/minigame-2026?view=rules)**
 
@@ -41,18 +43,18 @@
 ## Web（HTML）版本与测试
 
 - 导出方法：在 Dora SSR Web IDE 打开项目根目录，点击“导出”并选择“导出 HTML”。若 IDE 编译缓存报错，可在项目根目录运行 `node tools/export-web.mjs --engine "Dora.exe 所在目录"`，先全量构建和检查 Lua 一致性，再调用已安装引擎的官方 HTML 打包器。
-- 当前导出包：离线工具生成 `build/escape-velocity-web-html.zip`，并解压至 `build/web-html/`；构建产物不纳入 Git，发布时单独提供该 ZIP。
-- 启动方法：完整解压导出包，在浏览器打开根目录 index.html，保留全部配套资源。
-- 测试环境：本版已生成 Dora SSR v1.9.3 HTML 包并核对资源校验值；尚未完成本版浏览器运行验收。
-- 测试结果：桌面 Dora SSR 中已完成三关真实鼠标流程、构建和引擎单测；Web 桌面与手机浏览器需在最新导出包生成后再验收。
+- 当前导出包：[`escape-velocity-web-html.zip`](./escape-velocity-web-html.zip)，Dora SSR 1.9.3，约 23 MB；已在桌面浏览器实测可玩。
+- 启动方法：完整解压并通过 HTTPS 或 localhost 打开 `index.html`，保留全部配套资源；`file://` 方式不受支持。
+- 测试结果：全量构建 60/60，UnitRunner 15 个模块、648 项检查通过；Web 包已核对完整性并在桌面浏览器实测。手机触控回归尚待单独复测。
 
 ## 项目内容
 
-仓库包含游戏源码（`init.ts`、`game/*.ts` 及对应 `.lua`）、运行资源（`Assets/`）、单元测试（`Test/`）、构建和素材工具（`tools/`）及项目文档（`docs/`）。Web 导出包尚未放入仓库。界面字体由 Dora SSR 提供，本项目未单独打包字体文件。
+仓库包含游戏源码（`init.ts`、`game/*.ts` 及对应 `.lua`）、运行资源（`Assets/`）、单元测试（`Test/`）、构建和素材工具（`tools/`）、比赛素材（`submission/`）、Web 导出包及项目文档（`docs/`）。界面字体由 Dora SSR 提供，本项目未单独打包字体文件。
 
 - 应用图标：[`submission/icon-1024.png`](./submission/icon-1024.png)，1024×1024 PNG。
 - 封面：[`submission/cover-1080x1920.jpg`](./submission/cover-1080x1920.jpg)，1080×1920 JPG。
-- 演示视频与当前源码对应的 Web 导出包尚未放入仓库。
+- 演示视频：[`submission/demo-1080x1920.mp4`](./submission/demo-1080x1920.mp4)，1080×1920 H.264 MP4，60 秒。
+- 可玩 Web 版本：[`escape-velocity-web-html.zip`](./escape-velocity-web-html.zip)，解压后按上面的说明启动。
 
 ## 素材与第三方组件
 
