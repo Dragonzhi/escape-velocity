@@ -678,8 +678,10 @@ if (levelTotal <= 0) {
 		const runtime = rt;
 		// 只有 Result 态才允许返回（coreBackToSelect 会把关），否则这次点按作废
 		if (!runtime.game.backToSelect()) return;
-		runtime.world.visible = false;
-		runtime.aim.setEnabled(false);
+		// 结算与终章共用此出口。关掉整层而不只是 3D 世界和瞄准输入，
+		// 否则关卡内的按钮、标签和轨迹会透到太阳系选关沙盘上。
+		showOnlyLevel(-1);
+		activeIndex = -1;
 		if (resultPanel !== undefined) resultPanel.hide();
 		// 终章（S3.18）的「返回关卡选择」与结算面板那颗走同一条路 ⇒ 这里也要收
 		if (finalePanel !== undefined) finalePanel.hide();

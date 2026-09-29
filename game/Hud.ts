@@ -369,10 +369,17 @@ export function createAimInput(
 	touchLayer.size = Size(viewW, viewH);
 	touchLayer.anchor = Vec2(0.5, 0.5);
 	touchLayer.position = Vec2(viewW / 2, viewH / 2);
+	// Put the full-screen gesture catcher behind HUD controls in both render and
+	// touch order. Dora dispatches overlapping touches by node order; without an
+	// explicit order, a planning gesture can win over the time buttons.
+	touchLayer.order = -100;
 	touchLayer.swallowTouches = true;
 	root.addChild(touchLayer);
 
 	const space: TouchSpace = { viewW, viewH };
+	const TimeBtnW = 78;
+	const TimeBtnH = 64;
+	const TimeRowY = 170;
 
 	let enabled = false;
 	let dragging = false;
@@ -415,8 +422,20 @@ export function createAimInput(
 	const aimRadius = Math.max(96, viewW * 0.25); // 屏宽 1/4（用户拍板）
 	let mode: 'none' | 'aim' | 'observe' = 'none';
 	let observeLast: ScreenOffset = { x: 0, y: 0 };
+	const hitsTimeControls = (local: ScreenOffset): boolean => {
+		const left = 24 - 8;
+		const right = 24 + (TimeBtnW + 8) * 2 + TimeBtnW + 8;
+		return local.x >= left && local.x <= right && local.y >= TimeRowY - 8 && local.y <= TimeRowY + TimeBtnH + 8;
+	};
 	touchLayer.onTapBegan((touch) => {
 		if (!enabled) return;
+		// Defense in depth: even if touch dispatch order changes, a tap over the
+		// time-control strip must never start aiming or camera observation.
+		if (hitsTimeControls({ x: touch.location.x, y: touch.location.y })) {
+			mode = 'none';
+			dragging = false;
+			return;
+		}
 		if (tourActiveChecker !== undefined && tourActiveChecker() && skipTourHandler !== undefined) {
 			skipTourHandler();
 			return;
@@ -764,9 +783,6 @@ export function createAimInput(
 	// 位置：左下角 y = 170 那一行（2D 缩放组在 y = 96，故意错开一行，两组不再抢位置）。
 	// 口径：速率 = 10^pow ÷ SecPerGameSec 游戏秒/真实秒；pow 0 = 1× = 现实 1 秒。
 	// ⚠️ 状态型按钮用 fireOn: 'release'（AGENTS 硬约束 9）；每次动作打一行日志。
-	const TimeBtnW = 78;
-	const TimeBtnH = 64;
-	const TimeRowY = 170;
 	let speedUpHandler: (() => void) | undefined = undefined;
 	let speedDownHandler: (() => void) | undefined = undefined;
 	let pauseHandler: (() => void) | undefined = undefined;
@@ -780,6 +796,7 @@ export function createAimInput(
 		},
 	});
 	slowButton.root.position = Vec2(24, TimeRowY);
+	slowButton.root.order = 100;
 	const pauseButton = createButton(root, {
 		w: TimeBtnW, h: TimeBtnH, text: '⏸', fontSize: 30,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
@@ -789,6 +806,7 @@ export function createAimInput(
 		},
 	});
 	pauseButton.root.position = Vec2(24 + TimeBtnW + 8, TimeRowY);
+	pauseButton.root.order = 100;
 	const fastButton = createButton(root, {
 		w: TimeBtnW, h: TimeBtnH, text: '快 ▶', fontSize: 26,
 		bgHex: ResultButtonAltBgHex, fgHex: ResultButtonFgHex, borderHex: ResultButtonBorderHex,
@@ -798,6 +816,7 @@ export function createAimInput(
 		},
 	});
 	fastButton.root.position = Vec2(24 + (TimeBtnW + 8) * 2, TimeRowY);
+	fastButton.root.order = 100;
 
 	// 读数：档位 + 任务时钟（垫暗板，理由与 Δv 读数的光晕问题相同）
 	const timePlate = createPanel(root, 300, 50, 0x0a0e14, { alpha: 0.45 });
