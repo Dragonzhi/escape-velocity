@@ -109,7 +109,8 @@ ____exports.HUB_STATIONS = { -- 78
 		orbitSpeedDegPerSec = 0.5, -- 90
 		rotSpeedDegPerSec = 22, -- 90
 		colorHex = 13878426, -- 90
-		emissiveHex = 0 -- 90
+		emissiveHex = 0, -- 90
+		levelIndex = 2 -- 90
 	}, -- 90
 	{ -- 92
 		model = "Planet_Uranus", -- 92
@@ -129,12 +130,11 @@ ____exports.HUB_STATIONS = { -- 78
 		orbitSpeedDegPerSec = 0.25, -- 94
 		rotSpeedDegPerSec = 11, -- 94
 		colorHex = 8099312, -- 94
-		emissiveHex = 0, -- 94
-		levelIndex = 2 -- 94
+		emissiveHex = 0 -- 94
 	} -- 94
 } -- 94
---- 关卡索引 -> HUB_STATIONS 下标的映射（L1 地球: 2, L2 水星: 0, L3 海王星: 7）。
-____exports.LEVEL_TO_STATION_INDEX = {2, 0, 7} -- 98
+--- 关卡索引 -> HUB_STATIONS 下标的映射（L1 地球: 2, L2 水星: 0, L3 土星: 5）。
+____exports.LEVEL_TO_STATION_INDEX = {2, 0, 5} -- 98
 --- 视觉配置常量。
 local SunRadius = 4.8 -- 101
 local OrbitRingsPath = "Assets/Model/OrbitRings.gltf" -- 102

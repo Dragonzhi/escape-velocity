@@ -86,16 +86,16 @@ export const HUB_STATIONS: HubPlanetStation[] = [
 	{ model: 'Planet_Mars', radius: 1.50, orbit: 22.5, baseAngleDeg: 318, orbitSpeedDegPerSec: 1.3, rotSpeedDegPerSec: 14.0, colorHex: 0xd07f4a, emissiveHex: 0 },
 	// 木星（点缀 / 大巡游首站弹弓）
 	{ model: 'Planet_Jupiter', radius: 4.60, orbit: 30.0, baseAngleDeg: 12, orbitSpeedDegPerSec: 0.8, rotSpeedDegPerSec: 25.0, colorHex: 0xe0c092, emissiveHex: 0 },
-	// 土星（点缀 / 大巡游中继站）
-	{ model: 'Planet_Saturn', radius: 3.20, orbit: 38.5, baseAngleDeg: 68, orbitSpeedDegPerSec: 0.5, rotSpeedDegPerSec: 22.0, colorHex: 0xd3c49a, emissiveHex: 0 },
+	// 土星 -> L3（旅行者任务的巡游目标）
+	{ model: 'Planet_Saturn', radius: 3.20, orbit: 38.5, baseAngleDeg: 68, orbitSpeedDegPerSec: 0.5, rotSpeedDegPerSec: 22.0, colorHex: 0xd3c49a, emissiveHex: 0, levelIndex: 2 },
 	// 天王星（点缀 / 大巡游中继站）
 	{ model: 'Planet_Uranus', radius: 2.00, orbit: 47.0, baseAngleDeg: 124, orbitSpeedDegPerSec: 0.35, rotSpeedDegPerSec: 12.0, colorHex: 0xa8dde4, emissiveHex: 0 },
-	// 海王星 -> L3 旅行者2号（终点站与星际之门）
-	{ model: 'Planet_Neptune', radius: 1.90, orbit: 55.0, baseAngleDeg: 180, orbitSpeedDegPerSec: 0.25, rotSpeedDegPerSec: 11.0, colorHex: 0x7b95f0, emissiveHex: 0, levelIndex: 2 },
+	// 海王星（太阳系背景天体）
+	{ model: 'Planet_Neptune', radius: 1.90, orbit: 55.0, baseAngleDeg: 180, orbitSpeedDegPerSec: 0.25, rotSpeedDegPerSec: 11.0, colorHex: 0x7b95f0, emissiveHex: 0 },
 ];
 
-/** 关卡索引 -> HUB_STATIONS 下标的映射（L1 地球: 2, L2 水星: 0, L3 海王星: 7）。 */
-export const LEVEL_TO_STATION_INDEX: number[] = [2, 0, 7];
+/** 关卡索引 -> HUB_STATIONS 下标的映射（L1 地球: 2, L2 水星: 0, L3 土星: 5）。 */
+export const LEVEL_TO_STATION_INDEX: number[] = [2, 0, 5];
 
 /** 视觉配置常量。 */
 const SunRadius = 4.8;
